@@ -1,0 +1,32 @@
+{
+  "name": "sepolia-to-base_sepolia",
+  "source": { "alias": "sepolia", "chainSelector": "16015286601757825753" },
+  "dest": { "alias": "base_sepolia", "chainSelector": "10344971235874465080" },
+  "signatureConfig": {
+    "threshold": 7,
+    "signers": [
+      "0x1000000000000000000000000000000000000001",
+      "0x1000000000000000000000000000000000000002",
+      "0x1000000000000000000000000000000000000003",
+      "0x1000000000000000000000000000000000000004",
+      "0x1000000000000000000000000000000000000005",
+      "0x1000000000000000000000000000000000000006",
+      "0x1000000000000000000000000000000000000007",
+      "0x1000000000000000000000000000000000000008",
+      "0x1000000000000000000000000000000000000009",
+      "0x100000000000000000000000000000000000000a"
+    ]
+  },
+  "remoteChainConfig": {
+    "router": "0x0000000000000000000000000000000000000000",
+    "allowlistEnabled": false,
+    "feeUSDCents": 0,
+    "gasForVerification": 200000,
+    "payloadSizeBytes": 0
+  },
+  "allowlist": {
+    "allowlistEnabled": false,
+    "addedAllowlistedSenders": [],
+    "removedAllowlistedSenders": []
+  }
+}

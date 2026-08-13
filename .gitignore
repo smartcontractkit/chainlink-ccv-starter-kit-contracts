@@ -1,0 +1,22 @@
+# Foundry
+artifacts/
+cache/
+broadcast/
+
+# Node
+node_modules/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# Local scratch — generated governance snapshots/drift reports that are run-local.
+# NOTE: generated Safe batches under out/safe/ are intentionally NOT ignored;
+# they are release artifacts reviewed and committed per deployment.
+# Test Safe batch output is ignored.
+out/governance/*.local.json
+out/safe/test-batch-*.json

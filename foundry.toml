@@ -1,0 +1,77 @@
+# =============================================================================
+#  CCV Starter Kit — Onchain (Foundry) workstream
+# =============================================================================
+#  Compiler settings are pinned to EXACTLY match Chainlink's release profile for
+#  @chainlink/contracts-ccip@2.0.0 (see node_modules/@chainlink/contracts-ccip/
+#  foundry.toml, profile `ccip-compile`). This matters for two reasons:
+#
+#   1. CREATE2 determinism. The VersionedVerifierResolver (and the CREATE2Factory)
+#      must land on the SAME address on every target chain. The address derives
+#      from keccak256(initcode), and initcode = creation bytecode + constructor
+#      args. Identical solc version + optimizer settings + evm_version +
+#      bytecode_hash="none" across all chains => identical bytecode => identical
+#      address. Any drift is silent and only surfaces later as fee-quoting reverts.
+#
+#   2. Source verification (outline step 17). Matching Chainlink's release
+#      settings lets the deployed bytecode reproduce/verify against the audited
+#      artifacts shipped in the npm package.
+#
+#  ==> Production deploys MUST use the default profile. Use `dev` only for fast
+#      local iteration; NEVER deploy anything address-sensitive from `dev`.
+# =============================================================================
+
+[profile.default]
+solc = "0.8.26"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 80000
+via_ir = true
+bytecode_hash = "none"
+
+src = "src"
+script = "script"
+test = "test"
+out = "artifacts"
+libs = ["node_modules", "lib"]
+
+# Scripts read config/ at runtime and write generated Safe batches to out/safe/.
+fs_permissions = [
+  { access = "read", path = "./config" },
+  { access = "read", path = "./artifacts" },
+  { access = "read-write", path = "./out/safe" },
+  { access = "read-write", path = "./out/governance" },
+]
+
+# ---------------------------------------------------------------------------
+# Fast iteration profile. via_ir off + low optimizer runs => quick compiles.
+# Bytecode from this profile is NOT address-compatible with `default`.
+# Run with: FOUNDRY_PROFILE=dev forge build
+# ---------------------------------------------------------------------------
+[profile.dev]
+via_ir = false
+optimizer = true
+optimizer_runs = 200
+
+# ---------------------------------------------------------------------------
+# CI profile: same deterministic settings as default, warnings are hard errors.
+# ---------------------------------------------------------------------------
+[profile.ci]
+deny_warnings = true
+
+[fmt]
+tab_width = 2
+line_length = 120
+multiline_func_header = "params_first"
+sort_imports = true
+single_line_statement_blocks = "preserve"
+
+[rpc_endpoints]
+# Populate from environment. One entry per target chain; the key is the chain
+# alias used by --rpc-url and by the config/ files.
+# sepolia            = "${SEPOLIA_RPC_URL}"
+# base_sepolia       = "${BASE_SEPOLIA_RPC_URL}"
+# arbitrum_sepolia   = "${ARBITRUM_SEPOLIA_RPC_URL}"
+
+[etherscan]
+# One entry per chain for `forge verify-contract` (outline step 17).
+# sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }

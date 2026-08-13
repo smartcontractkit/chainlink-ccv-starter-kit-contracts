@@ -1,0 +1,9 @@
+{
+  "alias": "sepolia",
+  "chainId": 11155111,
+  "chainSelector": "16015286601757825753",
+  "rmn": "0x0000000000000000000000000000000000000000",
+  "versionTag": "0x00010001",
+  "storageLocations": ["https://aggregator.operator.example/ccv"],
+  "resolverSalt": "0x0000000000000000000000000000000000000000000000000000000000000001"
+}

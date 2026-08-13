@@ -1,0 +1,21 @@
+{
+  "name": "",
+  "source": { "alias": "", "chainSelector": "" },
+  "dest": { "alias": "", "chainSelector": "" },
+  "signatureConfig": {
+    "threshold": 0,
+    "signers": []
+  },
+  "remoteChainConfig": {
+    "router": "0x0000000000000000000000000000000000000000",
+    "allowlistEnabled": false,
+    "feeUSDCents": 0,
+    "gasForVerification": 0,
+    "payloadSizeBytes": 0
+  },
+  "allowlist": {
+    "allowlistEnabled": false,
+    "addedAllowlistedSenders": [],
+    "removedAllowlistedSenders": []
+  }
+}
