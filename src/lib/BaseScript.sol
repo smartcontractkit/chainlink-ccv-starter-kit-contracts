@@ -67,6 +67,19 @@ abstract contract BaseScript is Script {
     }
   }
 
+  /// @notice Stage a pre-built Call (as returned by the per-operation `callsFor`
+  ///         builders on the individual scripts).
+  function _stage(Call memory c) internal {
+    _stage(c.to, c.value, c.data);
+  }
+
+  /// @notice Stage a batch of pre-built Calls, preserving order.
+  function _stageMany(Call[] memory calls) internal {
+    for (uint256 i; i < calls.length; ++i) {
+      _stage(calls[i]);
+    }
+  }
+
   /// @notice In SAFE mode, write the buffered calls to a Safe Transaction Builder
   ///         batch. `name` should carry the execution order prefix so signers
   ///         cannot reorder multi-step ceremonies, e.g. "a-transfer-owner".

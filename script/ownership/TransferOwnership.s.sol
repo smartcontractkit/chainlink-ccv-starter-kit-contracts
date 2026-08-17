@@ -20,6 +20,12 @@ import {Types} from "../../src/lib/Types.sol";
 ///   OUTPUT_MODE=SAFE SAFE_ADDRESS=0x... forge script script/ownership/TransferOwnership.s.sol \
 ///     --sig "run(string,string)" sepolia verifier
 contract TransferOwnership is BaseScript {
+ 
+  function callsFor(address to, address newOwner) public pure returns (Call[] memory calls) {
+    calls = new Call[](1);
+    calls[0] = Call({to: to, value: 0, data: abi.encodeWithSignature("transferOwnership(address)", newOwner)});
+  }
+
   function run(string calldata chainAlias, string calldata target) external {
     _initOutput();
 
@@ -34,7 +40,7 @@ contract TransferOwnership is BaseScript {
     console2.log("  target:", to);
     console2.log("  newOwner:", newOwner);
 
-    _stage(to, abi.encodeWithSignature("transferOwnership(address)", newOwner));
+    _stageMany(callsFor(to, newOwner));
     _flush(string.concat("a-transfer-owner-", target));
   }
 

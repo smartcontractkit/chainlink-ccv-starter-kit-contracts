@@ -13,6 +13,17 @@ import {Types} from "../../src/lib/Types.sol";
 ///      new admin accepts (AcceptStorageLocationsAdmin).
 /// @dev Target call (grounded): CommitteeVerifier.transferStorageLocationsAdmin(address).
 contract TransferStorageLocationsAdmin is BaseScript {
+  /// @notice Single source of truth for the transfer-storageLocationsAdmin calldata.
+  ///         Reused by Handover.s.sol so any change here propagates to the ceremony.
+  function callsFor(address verifier, address newAdmin) public pure returns (Call[] memory calls) {
+    calls = new Call[](1);
+    calls[0] = Call({
+      to: verifier,
+      value: 0,
+      data: abi.encodeWithSignature("transferStorageLocationsAdmin(address)", newAdmin)
+    });
+  }
+
   function run(string calldata chainAlias) external {
     _initOutput();
 
@@ -25,10 +36,7 @@ contract TransferStorageLocationsAdmin is BaseScript {
     console2.log("[TransferStorageLocationsAdmin] verifier:", dep.verifier);
     console2.log("  newAdmin:", roles.verifier.storageLocationsAdmin);
 
-    _stage(
-      dep.verifier,
-      abi.encodeWithSignature("transferStorageLocationsAdmin(address)", roles.verifier.storageLocationsAdmin)
-    );
+    _stageMany(callsFor(dep.verifier, roles.verifier.storageLocationsAdmin));
     _flush("a-transfer-storage-locations-admin");
   }
 }

@@ -5,6 +5,10 @@ import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {TransferOwnership} from "./TransferOwnership.s.sol";
+import {AcceptOwnership} from "./AcceptOwnership.s.sol";
+import {TransferStorageLocationsAdmin} from "./TransferStorageLocationsAdmin.s.sol";
+import {AcceptStorageLocationsAdmin} from "./AcceptStorageLocationsAdmin.s.sol";
 
 /// @title Handover
 /// @notice Outline step 13 orchestration. Emits the full handover as THREE ordered,
@@ -32,6 +36,11 @@ import {Types} from "../../src/lib/Types.sol";
 /// @dev In EOA mode only the propose leg (a-) is executed, because accept must come
 ///      from the new holders. Run this in SAFE mode to generate all three batches.
 ///
+/// @dev This orchestrator does NOT re-implement the calldata. It reuses the `callsFor`
+///      builders on the individual ownership scripts (TransferOwnership,
+///      AcceptOwnership, TransferStorageLocationsAdmin, AcceptStorageLocationsAdmin),
+///      so any future change to how an operation is encoded propagates here for free.
+///
 /// Usage (Phase 2):
 ///   OUTPUT_MODE=SAFE SAFE_ADDRESS=0x<currentOwnerSafe> \
 ///     forge script script/ownership/Handover.s.sol --sig "run(string)" sepolia
@@ -49,13 +58,16 @@ contract Handover is BaseScript {
 
     bool safe = outputMode == OutputMode.SAFE;
 
+    // Reuse the per-operation call builders (single source of truth for the calldata).
+    TransferOwnership transferOwner = new TransferOwnership();
+    AcceptOwnership acceptOwner = new AcceptOwnership();
+    TransferStorageLocationsAdmin transferSla = new TransferStorageLocationsAdmin();
+    AcceptStorageLocationsAdmin acceptSla = new AcceptStorageLocationsAdmin();
+
     // ---- a) propose (current holders) ----
-    _stage(dep.verifier, abi.encodeWithSignature("transferOwnership(address)", roles.verifier.owner));
-    _stage(dep.resolver, abi.encodeWithSignature("transferOwnership(address)", roles.resolver.owner));
-    _stage(
-      dep.verifier,
-      abi.encodeWithSignature("transferStorageLocationsAdmin(address)", roles.verifier.storageLocationsAdmin)
-    );
+    _stageMany(transferOwner.callsFor(dep.verifier, roles.verifier.owner));
+    _stageMany(transferOwner.callsFor(dep.resolver, roles.resolver.owner));
+    _stageMany(transferSla.callsFor(dep.verifier, roles.verifier.storageLocationsAdmin));
     _flush("a-handover-propose");
 
     if (!safe) {
@@ -65,9 +77,9 @@ contract Handover is BaseScript {
     }
 
     // ---- b) accept (new holders) ----
-    _stage(dep.verifier, abi.encodeWithSignature("acceptOwnership()"));
-    _stage(dep.resolver, abi.encodeWithSignature("acceptOwnership()"));
-    _stage(dep.verifier, abi.encodeWithSignature("acceptStorageLocationsAdmin()"));
+    _stageMany(acceptOwner.callsFor(dep.verifier));
+    _stageMany(acceptOwner.callsFor(dep.resolver));
+    _stageMany(acceptSla.callsFor(dep.verifier));
     _flush("b-handover-accept");
 
     // ---- c) finalize / revoke transitional roles (run AFTER acceptance) ----

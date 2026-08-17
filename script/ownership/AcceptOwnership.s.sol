@@ -12,6 +12,12 @@ import {Types} from "../../src/lib/Types.sol";
 ///         by the incoming owner Safe.
 /// @dev Generic over target ("verifier" | "resolver").
 contract AcceptOwnership is BaseScript {
+
+  function callsFor(address to) public pure returns (Call[] memory calls) {
+    calls = new Call[](1);
+    calls[0] = Call({to: to, value: 0, data: abi.encodeWithSignature("acceptOwnership()")});
+  }
+
   function run(string calldata chainAlias, string calldata target) external {
     _initOutput();
 
@@ -23,7 +29,7 @@ contract AcceptOwnership is BaseScript {
 
     console2.log("[AcceptOwnership]", target, "->", to);
 
-    _stage(to, abi.encodeWithSignature("acceptOwnership()"));
+    _stageMany(callsFor(to));
     _flush(string.concat("b-accept-owner-", target));
   }
 }
