@@ -14,9 +14,24 @@ node_modules/
 # OS
 .DS_Store
 
-# Local scratch — generated governance snapshots/drift reports that are run-local.
-# NOTE: generated Safe batches under out/safe/ are intentionally NOT ignored;
-# they are release artifacts reviewed and committed per deployment.
-# Test Safe batch output is ignored.
-out/governance/*.local.json
+# -----------------------------------------------------------------------------
+# Config privacy policy
+# -----------------------------------------------------------------------------
+# Real per-deployment config (staging AND prod addresses) must not be committed
+# to this repo
+# Commit ONLY the schema templates (_template.json) and illustrative examples
+# (*.example.json); ignore every other config/*.json (the real, per-deployment
+# files named by chain alias / lane, e.g. sepolia.json, sepolia-to-fuji.json).
+config/**/*.json
+!config/**/_template.json
+!config/**/*.example.json
+
+# -----------------------------------------------------------------------------
+# Generated outputs
+# -----------------------------------------------------------------------------
+# Test-only Safe batch produced by test/unit/SafeOutput.t.sol on the test chain.
 out/safe/test-batch-*.json
+# Run-local governance snapshots / drift reports.
+out/governance/*.local.json
+# NOTE: real generated Safe batches under out/safe/ are intentionally NOT ignored;
+# they are release artifacts reviewed and committed per deployment.

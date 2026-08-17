@@ -27,13 +27,14 @@ contract ConfigLibTest is Test {
   }
 
   function test_listLanes_skipsTemplatesAndExamples() public view {
-    // Only real (non-_template, non-.example) files should be listed.
+    // Every listed path must be a .json and must NOT be a template or example,
+    // regardless of how many real (gitignored) lane files exist locally.
     string[] memory lanes = ConfigLib.listLanes();
     for (uint256 i; i < lanes.length; ++i) {
-      assertEq(_endsWithJson(lanes[i]), true);
+      assertTrue(_endsWithJson(lanes[i]), "listed path must end in .json");
+      assertFalse(_contains(lanes[i], "_template"), "must skip _template files");
+      assertFalse(_contains(lanes[i], ".example."), "must skip .example files");
     }
-    // With only example/template files present, expect zero real lanes.
-    assertEq(lanes.length, 0);
   }
 
   // TODO: once real config/chains/<alias>.json and config/roles/<alias>.json exist,
@@ -45,5 +46,22 @@ contract ConfigLibTest is Test {
     if (b.length < 5) return false;
     return b[b.length - 5] == "." && b[b.length - 4] == "j" && b[b.length - 3] == "s"
       && b[b.length - 2] == "o" && b[b.length - 1] == "n";
+  }
+
+  function _contains(string memory s, string memory needle) private pure returns (bool) {
+    bytes memory b = bytes(s);
+    bytes memory n = bytes(needle);
+    if (n.length == 0 || n.length > b.length) return false;
+    for (uint256 i; i <= b.length - n.length; ++i) {
+      bool ok = true;
+      for (uint256 j; j < n.length; ++j) {
+        if (b[i + j] != n[j]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return true;
+    }
+    return false;
   }
 }
