@@ -9,21 +9,22 @@ import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 
 /// @title DeployResolver
-/// @notice Outline step 4. Deploys the VersionedVerifierResolver via CREATE2 with a
-///         FIXED salt so it gets the SAME address on every chain.
+/// @notice Deploys the VersionedVerifierResolver via CREATE2 with a
+///         FIXED salt so it gets the SAME address on every chain, and hands ownership
+///         to the CONFIGURED resolver owner (config/roles/<alias>.json `resolver.owner`).
 ///
-/// @dev The resolver has no constructor arguments, so its CREATE2 initcode is just
-///      the creation bytecode — nothing per-chain can perturb the address (only the
-///      salt and compiler settings matter). Keep `resolverSalt` identical across
-///      chains (config/chains/<alias>.json) and deploy with the default (release)
-///      profile so bytecode matches everywhere.
+/// @dev The resolver has NO constructor arguments, so its CREATE2 initcode is just the
+///      creation bytecode: nothing per-chain can perturb the address (only the salt +
+///      compiler settings). Keep `resolverSalt` identical across chains and deploy with
+///      the default (release) profile so the bytecode matches everywhere.
 ///
-/// @dev Because the factory is the deployer, the factory is the resolver's initial
-///      owner. We use `createAndTransferOwnership` so ownership is handed to the
-///      intended holder immediately; that holder later calls `acceptOwnership()`
-///      (2-step). See script/ownership/.
-///
-/// @dev EOA path (the deployer must be factory-allowlisted — see BootstrapFactory).
+/// @dev Ownership. The factory (the deployer) is the resolver's initial owner. We use
+///      createAndTransferOwnership to PROPOSE ownership to the configured owner:
+///        - configured owner == deployer: the script accepts in-place, so the deployer
+///          owns it and can run the resolver config scripts directly (EOA / testing).
+///        - configured owner is another EOA / a Safe: it must call acceptOwnership()
+///          before configuring (via script/ownership/AcceptOwnership or the b- handover
+///          batch). Until then the factory remains the owner.
 ///
 /// Usage:
 ///   OUTPUT_MODE=EOA forge script script/deploy/DeployResolver.s.sol \
@@ -31,30 +32,41 @@ import {Types} from "../../src/lib/Types.sol";
 contract DeployResolver is Script {
   function run(string calldata chainAlias) external returns (address resolver) {
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
-    require(dep.factory != address(0), "DeployResolver: factory not recorded for chain");
+    require(dep.factory != address(0), "DeployResolver: factory not recorded; run BootstrapFactory first");
+    address configuredOwner = roles.resolver.owner;
+    require(configuredOwner != address(0), "DeployResolver: resolver.owner role unset");
 
-    // Predict the address so we can assert cross-chain parity BEFORE deploying.
+    address deployer = msg.sender;
     bytes memory creationCode = type(VersionedVerifierResolver).creationCode;
+
+    // Precompute the address so parity can be asserted after deployment.
     address predicted = CREATE2Factory(dep.factory).computeAddress(creationCode, cc.resolverSalt);
-    console2.log("Predicted resolver address:", predicted);
+    console2.log("[DeployResolver] chain:", chainAlias);
+    console2.log("  factory:", dep.factory);
+    console2.log("  predicted resolver:", predicted);
 
-    // The resolver owner should ultimately be governance (roles.resolver.owner).
-    address initialOwner = roles.resolver.owner;
-    require(initialOwner != address(0), "DeployResolver: resolver owner role unset");
-
+    // Deploy via CREATE2 and propose ownership to the configured owner.
     vm.broadcast();
-    resolver = CREATE2Factory(dep.factory).createAndTransferOwnership(creationCode, cc.resolverSalt, initialOwner);
+    resolver = CREATE2Factory(dep.factory).createAndTransferOwnership(creationCode, cc.resolverSalt, configuredOwner);
+    require(resolver == predicted, "DeployResolver: deployed address != predicted (determinism broken)");
+    console2.log("  resolver deployed:", resolver);
 
-    require(resolver == predicted, "DeployResolver: deployed address != predicted");
-    console2.log("Resolver deployed:", resolver);
+    if (configuredOwner == deployer) {
+      // Deployer is the configured owner: accept now so it is immediately usable.
+      vm.broadcast();
+      VersionedVerifierResolver(resolver).acceptOwnership();
+      console2.log("  owner: deployer (accepted in-place)");
+    } else {
+      console2.log("  owner PROPOSED to configured resolver.owner:", configuredOwner);
+      console2.log("  (that owner must acceptOwnership() before running resolver config scripts)");
+    }
 
-    // TODO(step 4): record `resolver` into config/deployments/<alias>.json.
-    // TODO: assert `resolver` equals the resolver address on already-deployed chains
-    //       (the same-address-everywhere guarantee). A mismatch is silent otherwise.
-    // NOTE: fee aggregator + implementation wiring happen in the configure/ scripts,
-    //       and the new owner must call acceptOwnership() (script/ownership/).
+    dep.resolver = resolver;
+    ConfigLib.writeDeployment(dep);
+    console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
+    console2.log("  ACTION: confirm this matches the resolver address on other chains.");
   }
 }

@@ -88,6 +88,14 @@ library ConfigLib {
     return readRolesByPath(string.concat(ROLES_DIR, aliasName, ".json"));
   }
 
+  /// @notice Read roles, or a zeroed struct if the file does not exist. Lets optional
+  ///         steps (e.g. factory ownership handover) proceed without a roles file.
+  function readRolesOrEmpty(string memory aliasName) internal view returns (Types.RolesConfig memory r) {
+    string memory path = string.concat(ROLES_DIR, aliasName, ".json");
+    if (vm.exists(path)) return readRolesByPath(path);
+    r.aliasName = aliasName;
+  }
+
   function readRolesByPath(string memory path) internal view returns (Types.RolesConfig memory r) {
     string memory json = vm.readFile(path);
     r.aliasName = vm.parseJsonString(json, ".alias");
@@ -103,18 +111,51 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  deployments (recorded addresses; written by the deploy scripts)
   // --------------------------------------------------------------------------
-  function readDeployment(string memory aliasName) internal view returns (Types.Deployment memory d) {
-    string memory json = vm.readFile(string.concat(DEPLOYMENTS_DIR, aliasName, ".json"));
+  function deploymentPath(string memory aliasName) internal pure returns (string memory) {
+    return string.concat(DEPLOYMENTS_DIR, aliasName, ".json");
+  }
+
+  function readDeployment(string memory aliasName) internal view returns (Types.Deployment memory) {
+    return readDeploymentByPath(deploymentPath(aliasName));
+  }
+
+  function readDeploymentByPath(string memory path) internal view returns (Types.Deployment memory d) {
+    string memory json = vm.readFile(path);
     d.aliasName = vm.parseJsonString(json, ".alias");
     d.factory = vm.parseJsonAddress(json, ".factory");
     d.resolver = vm.parseJsonAddress(json, ".resolver");
     d.verifier = vm.parseJsonAddress(json, ".verifier");
   }
 
+  /// @notice Read the deployment record, or a zeroed struct (with alias set) if the
+  ///         file does not exist yet. Lets deploy scripts merge one address at a time.
+  function readDeploymentOrEmpty(string memory aliasName) internal view returns (Types.Deployment memory d) {
+    string memory path = deploymentPath(aliasName);
+    if (vm.exists(path)) return readDeploymentByPath(path);
+    d.aliasName = aliasName;
+  }
+
+  /// @notice Persist a deployment record to config/deployments/<alias>.json.
+  function writeDeployment(Types.Deployment memory d) internal {
+    vm.createDir(DEPLOYMENTS_DIR, true); // idempotent
+    writeDeploymentByPath(deploymentPath(d.aliasName), d);
+  }
+
+  /// @notice Persist a deployment record to an explicit path (used by tests).
+  function writeDeploymentByPath(string memory path, Types.Deployment memory d) internal {
+    string memory obj = "ccv_deployment";
+    vm.serializeString(obj, "alias", d.aliasName);
+    vm.serializeAddress(obj, "factory", d.factory);
+    vm.serializeAddress(obj, "resolver", d.resolver);
+    string memory out = vm.serializeAddress(obj, "verifier", d.verifier);
+    vm.writeJson(out, path);
+  }
+
   // --------------------------------------------------------------------------
   //  bytes4 parsing
   // --------------------------------------------------------------------------
-  /// @dev Parse a 4-byte hex string (e.g. "0x00010001") into bytes4, so the
+  /// @dev Parse a 4-byte hex string (e.g. "0x00010001") into bytes4 unambiguously.
+  ///      Uses parseJsonBytes (dynamic) + explicit big-endian reconstruction, so the
   ///      result does not depend on Foundry's fixed-bytes padding convention.
   function _parseBytes4(string memory json, string memory key) private pure returns (bytes4 out) {
     bytes memory raw = vm.parseJsonBytes(json, key);

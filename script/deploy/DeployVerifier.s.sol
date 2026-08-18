@@ -8,21 +8,20 @@ import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 
 /// @title DeployVerifier
-/// @notice Outline step 5. Deploys the CommitteeVerifier "normally" (plain CREATE,
-///         with constructor args). It is NOT deterministic and its address may
-///         differ per chain — that is fine: the verifier rotates behind the stable
-///         resolver, so only the resolver needs a fixed address.
+/// @notice Deploys the CommitteeVerifier (plain CREATE, with constructor
+///         args) and hands the owner + storageLocationsAdmin roles to their CONFIGURED
+///         holders (config/roles/<alias>.json). It is NOT deterministic and its address
+///         may differ per chain: fine, it rotates behind the stable resolver.
 ///
-/// @dev Constructor (grounded against @chainlink/contracts-ccip@2.0.0):
-///        constructor(
-///          DynamicConfig{address feeAggregator, address allowlistAdmin},
-///          string[] storageLocations,   // operator's aggregator endpoint(s)
-///          address rmn,                 // MUST be non-zero
-///          bytes4 versionTag            // MUST be non-zero, immutable
-///        )
-///      `storageLocations` may be set now or left empty and updated later via the
-///      UpdateStorageLocations script (storageLocationsAdmin role). The deployer
-///      becomes the initial storageLocationsAdmin; it is handed over separately.
+/// @dev Role handover rule (each role independently):
+///        - configured holder == deployer: keep it (the deployer owns/admins it and can
+///          run the config scripts directly — EOA / testing path).
+///        - configured holder is another EOA / a Safe: PROPOSE the 2-step transfer; that
+///          holder accepts before configuring (script/ownership/AcceptOwnership /
+///          AcceptStorageLocationsAdmin, or the b- handover batch).
+///
+/// @dev feeAggregator + allowlistAdmin come from roles and can be re-pointed later via
+///      SetDynamicConfig; storageLocations via UpdateStorageLocations.
 ///
 /// Usage:
 ///   OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
@@ -31,9 +30,14 @@ contract DeployVerifier is Script {
   function run(string calldata chainAlias) external returns (address verifier) {
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
     require(cc.rmn != address(0), "DeployVerifier: rmn must be non-zero");
     require(cc.versionTag != bytes4(0), "DeployVerifier: versionTag must be non-zero");
+    require(roles.verifier.owner != address(0), "DeployVerifier: verifier.owner role unset");
+    require(roles.verifier.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset");
+
+    address deployer = msg.sender;
 
     CommitteeVerifier.DynamicConfig memory dyn = CommitteeVerifier.DynamicConfig({
       feeAggregator: roles.verifier.feeAggregator,
@@ -44,13 +48,37 @@ contract DeployVerifier is Script {
     CommitteeVerifier v = new CommitteeVerifier(dyn, cc.storageLocations, cc.rmn, cc.versionTag);
     verifier = address(v);
 
-    console2.log("CommitteeVerifier deployed:", verifier);
+    console2.log("[DeployVerifier] chain:", chainAlias);
+    console2.log("  verifier deployed:", verifier);
     console2.log("  versionTag:", vm.toString(cc.versionTag));
     console2.log("  rmn:", cc.rmn);
 
-    // TODO(step 5): record `verifier` into config/deployments/<alias>.json.
-    // NEXT: wire the resolver (applyInbound/Outbound implementation updates) and run
-    //       the per-lane configure scripts. Owner + storageLocationsAdmin handover
-    //       happen last (script/ownership/).
+    // ---- owner handover ----
+    if (roles.verifier.owner == deployer) {
+      console2.log("  owner: deployer (configured verifier.owner == deployer)");
+    } else {
+      vm.broadcast();
+      v.transferOwnership(roles.verifier.owner);
+      console2.log("  owner PROPOSED to:", roles.verifier.owner);
+      console2.log("  (must acceptOwnership() before running owner-gated config scripts)");
+    }
+
+    // ---- storageLocationsAdmin handover ----
+    if (roles.verifier.storageLocationsAdmin == deployer) {
+      console2.log("  storageLocationsAdmin: deployer");
+    } else {
+      vm.broadcast();
+      v.transferStorageLocationsAdmin(roles.verifier.storageLocationsAdmin);
+      console2.log("  storageLocationsAdmin PROPOSED to:", roles.verifier.storageLocationsAdmin);
+      console2.log("  (must acceptStorageLocationsAdmin() before running UpdateStorageLocations)");
+    }
+
+    if (roles.verifier.feeAggregator == address(0)) {
+      console2.log("  WARN verifier feeAggregator is zero: fee withdrawals will revert until set");
+    }
+
+    dep.verifier = verifier;
+    ConfigLib.writeDeployment(dep);
+    console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }
 }
