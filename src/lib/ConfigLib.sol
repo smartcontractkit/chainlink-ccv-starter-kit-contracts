@@ -21,13 +21,18 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  chains
   // --------------------------------------------------------------------------
-  function readChain(string memory aliasName) internal view returns (Types.ChainConfig memory c) {
-    string memory json = vm.readFile(string.concat(CHAINS_DIR, aliasName, ".json"));
+  function readChain(string memory aliasName) internal view returns (Types.ChainConfig memory) {
+    return readChainByPath(string.concat(CHAINS_DIR, aliasName, ".json"));
+  }
+
+  function readChainByPath(string memory path) internal view returns (Types.ChainConfig memory c) {
+    string memory json = vm.readFile(path);
     c.aliasName = vm.parseJsonString(json, ".alias");
     c.chainId = vm.parseJsonUint(json, ".chainId");
     c.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")));
     c.rmn = vm.parseJsonAddress(json, ".rmn");
-    c.versionTag = bytes4(vm.parseJsonBytes32(json, ".versionTag"));
+    c.versionTag = _parseBytes4(json, ".versionTag");
+    c.finalityConfig = _parseBytes4(json, ".finalityConfig");
     c.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
     c.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
   }
@@ -100,6 +105,21 @@ library ConfigLib {
     d.factory = vm.parseJsonAddress(json, ".factory");
     d.resolver = vm.parseJsonAddress(json, ".resolver");
     d.verifier = vm.parseJsonAddress(json, ".verifier");
+  }
+
+  // --------------------------------------------------------------------------
+  //  bytes4 parsing
+  // --------------------------------------------------------------------------
+  /// @dev Parse a 4-byte hex string (e.g. "0x00010001") into bytes4, so the
+  ///      result does not depend on Foundry's fixed-bytes padding convention.
+  function _parseBytes4(string memory json, string memory key) private pure returns (bytes4 out) {
+    bytes memory raw = vm.parseJsonBytes(json, key);
+    require(raw.length == 4, "ConfigLib: expected a 4-byte hex value");
+    uint32 acc;
+    for (uint256 i; i < 4; ++i) {
+      acc = (acc << 8) | uint32(uint8(raw[i]));
+    }
+    out = bytes4(acc);
   }
 
   // --------------------------------------------------------------------------

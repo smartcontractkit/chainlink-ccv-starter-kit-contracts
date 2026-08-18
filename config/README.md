@@ -27,10 +27,19 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "chainSelector":    "16015286601757825753", // CCIP chain selector (string: exceeds JS safe int)
   "rmn":              "0x...",                 // Chainlink-provided RMN address. MUST be non-zero.
   "versionTag":       "0xAABBCCDD",            // bytes4, non-zero, immutable. Scheme: 2 bytes operator id + 2 bytes version.
+  "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
   "resolverSalt":     "0x0000...0001"          // CREATE2 salt for the resolver. MUST be identical on every chain.
 }
 ```
+
+> ⚠️ **`finalityConfig` is a PLACEHOLDER pending a decision.** It is the `bytes4`
+> ALLOWED finality (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`.
+> Encoding: `0x00000000` = wait for full finality (safest, production default); the
+> low 16 bits are a block depth (`0x00000001` = depth-1, the fast path Chainlink uses
+> for staging tests); bit 16 (`0x00010000`) is the `safe`-tag flag. The staging config
+> currently uses `0x00000001` so the fast-path test messages are permitted. TODO: revisit
+> before production (likely `0x00000000`).
 
 Notes:
 - `storageLocations` is a **cross-workstream input** from the off-chain/infra team
