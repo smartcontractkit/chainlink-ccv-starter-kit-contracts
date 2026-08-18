@@ -8,32 +8,52 @@ import {Types} from "../../src/lib/Types.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 
 /// @title ApplyInboundImplementationUpdates
-/// @notice Outline step 11 (resolver, per version tag). Maps each verifier version
-///         to the verifier that handles its INBOUND traffic.
-/// @dev Target call (grounded):
-///        VersionedVerifierResolver.applyInboundImplementationUpdates(InboundImplementationArgs[])
-///        InboundImplementationArgs = { bytes4 version; address verifier }
-///      This is the mapping keyed by `versionTag`. Rotating a verifier => add the
-///      new (version, verifier) mapping here, then re-point outbound.
-///      A zero verifier clears the mapping for that version.
+/// @notice Maps a verifier `versionTag`
+///         to the verifier that handles INBOUND traffic for that version. Per chain.
+///
+/// Usage:
+///   OUTPUT_MODE=SAFE forge script script/configure/ApplyInboundImplementationUpdates.s.sol \
+///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract ApplyInboundImplementationUpdates is BaseScript {
-  bytes4 internal constant SELECTOR = VersionedVerifierResolver.applyInboundImplementationUpdates.selector;
+  /// @notice Single source of truth for the applyInboundImplementationUpdates calldata.
+  function callsFor(address resolver, VersionedVerifierResolver.InboundImplementationArgs[] memory args)
+    public
+    pure
+    returns (Call[] memory calls)
+  {
+    calls = new Call[](1);
+    calls[0] = Call({
+      to: resolver,
+      value: 0,
+      data: abi.encodeWithSelector(VersionedVerifierResolver.applyInboundImplementationUpdates.selector, args)
+    });
+  }
+
+  /// @notice Build the single (version -> verifier) mapping for a chain.
+  function toInboundArgs(bytes4 version, address verifier)
+    public
+    pure
+    returns (VersionedVerifierResolver.InboundImplementationArgs[] memory args)
+  {
+    args = new VersionedVerifierResolver.InboundImplementationArgs[](1);
+    args[0] = VersionedVerifierResolver.InboundImplementationArgs({version: version, verifier: verifier});
+  }
 
   function run(string calldata chainAlias) external {
     _initOutput();
 
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    require(dep.resolver != address(0), string.concat("ApplyInboundImplementationUpdates: resolver not recorded for ", chainAlias));
+    require(dep.verifier != address(0), string.concat("ApplyInboundImplementationUpdates: verifier not recorded for ", chainAlias));
+    require(cc.versionTag != bytes4(0), "ApplyInboundImplementationUpdates: versionTag cannot be zero");
 
     console2.log("[ApplyInboundImplementationUpdates] chain:", chainAlias);
     console2.log("  target resolver:", dep.resolver);
-    console2.log("  version tag:", vm.toString(cc.versionTag));
+    console2.log("  version:", vm.toString(cc.versionTag));
     console2.log("  verifier:", dep.verifier);
 
-    // TODO(step 11): build InboundImplementationArgs{version: cc.versionTag, verifier: dep.verifier} and:
-    //   _stage(dep.resolver, abi.encodeCall(
-    //     VersionedVerifierResolver.applyInboundImplementationUpdates, (args)));
-
+    _stageMany(callsFor(dep.resolver, toInboundArgs(cc.versionTag, dep.verifier)));
     _flush("apply-inbound-implementations");
   }
 }
