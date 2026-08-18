@@ -84,8 +84,12 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  roles
   // --------------------------------------------------------------------------
-  function readRoles(string memory aliasName) internal view returns (Types.RolesConfig memory r) {
-    string memory json = vm.readFile(string.concat(ROLES_DIR, aliasName, ".json"));
+  function readRoles(string memory aliasName) internal view returns (Types.RolesConfig memory) {
+    return readRolesByPath(string.concat(ROLES_DIR, aliasName, ".json"));
+  }
+
+  function readRolesByPath(string memory path) internal view returns (Types.RolesConfig memory r) {
+    string memory json = vm.readFile(path);
     r.aliasName = vm.parseJsonString(json, ".alias");
     r.verifier.owner = vm.parseJsonAddress(json, ".verifier.owner");
     r.verifier.storageLocationsAdmin = vm.parseJsonAddress(json, ".verifier.storageLocationsAdmin");
