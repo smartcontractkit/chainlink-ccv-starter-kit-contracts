@@ -8,32 +8,43 @@ import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 
 /// @title UpdateStorageLocations
-/// @notice Outline step 12. Sets/updates the verifier's storage locations (the
-///         operator's aggregator endpoint URL). Separate, standalone update script.
-/// @dev Target call (grounded): CommitteeVerifier.updateStorageLocations(string[]).
-///      CALLER IS THE storageLocationsAdmin, NOT the owner. This is a distinct,
-///      two-step-transferable admin role from the contract owner.
-/// @dev storageLocations is a per-deployment cross-workstream input (the deployed
-///      aggregator hostname from the infra/off-chain team). It does not gate the
-///      acceptance-test flow — the CCIP indexer learns endpoints from its own
-///      config today — but it is the canonical on-chain record.
+/// @notice Sets/updates the verifier's storage locations (the
+///         operator's aggregator endpoint URL(s)). Standalone update script, per chain.
+///         CALLER MUST BE THE storageLocationsAdmin, NOT the owner (else reverts
+///         OnlyCallableByStorageLocationsAdmin).
+///
+/// Usage:
+///   OUTPUT_MODE=SAFE forge script script/configure/UpdateStorageLocations.s.sol \
+///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///   NOTE: in SAFE mode the batch MUST be signed by the storageLocationsAdmin Safe,
+///         NOT the owner Safe.
 contract UpdateStorageLocations is BaseScript {
-  bytes4 internal constant SELECTOR = CommitteeVerifier.updateStorageLocations.selector;
+  /// @notice Single source of truth for the updateStorageLocations calldata.
+  function callsFor(address verifier, string[] memory locations) public pure returns (Call[] memory calls) {
+    calls = new Call[](1);
+    calls[0] = Call({
+      to: verifier,
+      value: 0,
+      data: abi.encodeWithSelector(CommitteeVerifier.updateStorageLocations.selector, locations)
+    });
+  }
 
   function run(string calldata chainAlias) external {
     _initOutput();
 
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    require(dep.verifier != address(0), string.concat("UpdateStorageLocations: verifier not recorded for ", chainAlias));
 
     console2.log("[UpdateStorageLocations] chain:", chainAlias);
     console2.log("  target verifier:", dep.verifier);
     console2.log("  storageLocations count:", cc.storageLocations.length);
 
-    // NOTE: in SAFE mode this batch must be signed by the storageLocationsAdmin Safe.
-    // TODO(step 12): _stage(dep.verifier,
-    //   abi.encodeCall(CommitteeVerifier.updateStorageLocations, (cc.storageLocations)));
+    if (cc.storageLocations.length == 0) {
+      console2.log("  WARN storageLocations is empty (clears the on-chain record)");
+    }
 
+    _stageMany(callsFor(dep.verifier, cc.storageLocations));
     _flush("update-storage-locations");
   }
 }
