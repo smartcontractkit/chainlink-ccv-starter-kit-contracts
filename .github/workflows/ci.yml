@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Static checks: no compilation, so they finish in seconds and report
+  # independently of whether the code builds.
+  static:
+    name: Format & lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with forge-std submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # forge lint resolves imports, and remappings.txt points
+      # @chainlink/contracts-ccip/ at node_modules/ — without this it fails with a
+      # ParserError, not a lint finding. forge fmt does not need it.
+      - name: Install dependencies
+        run: npm ci
+
+      # Pinned, not "nightly": forge fmt and forge lint output can change between
+      # versions, which would turn this gate red without a code change.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Check formatting
+        run: forge fmt --check
+
+      # Runs even if formatting failed, so one push reports both problems.
+      # !cancelled() rather than always(): a cancelled run should stop, not lint.
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: forge lint
+
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with forge-std submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      # The ci profile inherits the deterministic settings and adds
+      # deny = "warnings", so a compiler warning fails the build.
+      - name: Build
+        env:
+          FOUNDRY_PROFILE: ci
+        run: forge build
+
+      # No `always()` here: if the build failed, the test failure says nothing new.
+      # Fork tests are excluded — they need RPC endpoints, so they belong in a
+      # scheduled workflow with secrets, not in the PR gate.
+      - name: Test
+        run: forge test -vvv --no-match-path 'test/**/*.fork.t.sol'

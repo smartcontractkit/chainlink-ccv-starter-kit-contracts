@@ -54,10 +54,12 @@ optimizer = true
 optimizer_runs = 200
 
 # ---------------------------------------------------------------------------
-# CI profile: same deterministic settings as default, warnings are hard errors.
+# CI profile: inherits every compiler setting from `default` so CI validates the
+# bytecode you actually deploy. Never override a compiler setting here (e.g.
+# via_ir = false to speed it up) — that makes the gate check bytecode nobody ships.
 # ---------------------------------------------------------------------------
 [profile.ci]
-deny_warnings = true
+deny = "warnings"
 
 [fmt]
 tab_width = 2
