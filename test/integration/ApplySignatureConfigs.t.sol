@@ -28,8 +28,8 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     uint256 count
   ) internal pure returns (address[] memory signers) {
     signers = new address[](count);
-    for (uint256 i; i < count; ++i) {
-      signers[i] = address(uint160(0x1000 + i)); // distinct, non-zero
+    for (uint160 i; i < count; ++i) {
+      signers[i] = address(0x1000 + i); // distinct, non-zero
     }
   }
 
