@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
-import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ApplyOutboundImplementationUpdates} from "../../script/configure/ApplyOutboundImplementationUpdates.s.sol";
+import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 
 /// @notice Exercises the ApplyOutboundImplementationUpdates builder against the real
@@ -19,26 +19,26 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
     script = new ApplyOutboundImplementationUpdates();
   }
 
-  function _singleArg(uint64 destSelector, address impl)
-    internal
-    pure
-    returns (VersionedVerifierResolver.OutboundImplementationArgs[] memory args)
-  {
+  function _singleArg(
+    uint64 destSelector,
+    address impl
+  ) internal pure returns (VersionedVerifierResolver.OutboundImplementationArgs[] memory args) {
     args = new VersionedVerifierResolver.OutboundImplementationArgs[](1);
     args[0] = VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: destSelector, verifier: impl});
   }
 
-  function _applyOutbound(VersionedVerifierResolver.OutboundImplementationArgs[] memory args)
-    internal
-    returns (bool ok)
-  {
+  function _applyOutbound(
+    VersionedVerifierResolver.OutboundImplementationArgs[] memory args
+  ) internal returns (bool ok) {
     BaseScript.Call[] memory calls = script.callsFor(address(resolver), args);
     assertEq(calls.length, 1, "one call expected");
     assertEq(calls[0].to, address(resolver), "target is resolver");
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
   }
 
-  function _outboundImpl(uint64 destSelector) internal view returns (address) {
+  function _outboundImpl(
+    uint64 destSelector
+  ) internal view returns (address) {
     return resolver.getOutboundImplementation(destSelector, "");
   }
 
@@ -50,8 +50,10 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
   function test_appliesMultipleDestinationsInOneCall() public {
     VersionedVerifierResolver.OutboundImplementationArgs[] memory args =
       new VersionedVerifierResolver.OutboundImplementationArgs[](2);
-    args[0] = VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: DEST_FUJI, verifier: address(verifier)});
-    args[1] = VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: DEST_AMOY, verifier: address(verifier)});
+    args[0] =
+      VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: DEST_FUJI, verifier: address(verifier)});
+    args[1] =
+      VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: DEST_AMOY, verifier: address(verifier)});
 
     assertTrue(_applyOutbound(args), "batch apply failed");
     assertEq(_outboundImpl(DEST_FUJI), address(verifier), "fuji mapped");

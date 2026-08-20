@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {SetAllowedFinalityConfig} from "../../script/configure/SetAllowedFinalityConfig.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {SetAllowedFinalityConfig} from "../../script/configure/SetAllowedFinalityConfig.s.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 
 /// @notice Exercises the SetAllowedFinalityConfig builder against the real audited
 ///         CommitteeVerifier (deployed by the fixture, owned by this test).
@@ -20,7 +20,9 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
     script = new SetAllowedFinalityConfig();
   }
 
-  function _applyFinality(bytes4 value) internal returns (bool ok) {
+  function _applyFinality(
+    bytes4 value
+  ) internal returns (bool ok) {
     BaseScript.Call[] memory calls = script.callsFor(address(verifier), value);
     assertEq(calls.length, 1, "one call expected");
     assertEq(calls[0].to, address(verifier), "target is verifier");

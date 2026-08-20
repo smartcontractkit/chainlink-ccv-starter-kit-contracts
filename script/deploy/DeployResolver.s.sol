@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
-import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
-import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
+import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
+import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title DeployResolver
 /// @notice Deploys the VersionedVerifierResolver via CREATE2 with a
@@ -30,7 +30,9 @@ import {Types} from "../../src/lib/Types.sol";
 ///   OUTPUT_MODE=EOA forge script script/deploy/DeployResolver.s.sol \
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
 contract DeployResolver is Script {
-  function run(string calldata chainAlias) external returns (address resolver) {
+  function run(
+    string calldata chainAlias
+  ) external returns (address resolver) {
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);

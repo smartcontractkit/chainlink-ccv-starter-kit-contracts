@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {Test} from "forge-std/Test.sol";
 
 /// @notice Unit tests for the deployment-record read/write helpers used by the deploy
 ///         scripts to persist addresses into config/deployments/<alias>.json.

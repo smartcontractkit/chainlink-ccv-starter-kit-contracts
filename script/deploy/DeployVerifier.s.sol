@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
-import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
+import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title DeployVerifier
 /// @notice Deploys the CommitteeVerifier (plain CREATE, with constructor
@@ -27,7 +27,9 @@ import {Types} from "../../src/lib/Types.sol";
 ///   OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
 contract DeployVerifier is Script {
-  function run(string calldata chainAlias) external returns (address verifier) {
+  function run(
+    string calldata chainAlias
+  ) external returns (address verifier) {
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);
@@ -35,13 +37,14 @@ contract DeployVerifier is Script {
     require(cc.rmn != address(0), "DeployVerifier: rmn must be non-zero");
     require(cc.versionTag != bytes4(0), "DeployVerifier: versionTag must be non-zero");
     require(roles.verifier.owner != address(0), "DeployVerifier: verifier.owner role unset");
-    require(roles.verifier.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset");
+    require(
+      roles.verifier.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset"
+    );
 
     address deployer = msg.sender;
 
     CommitteeVerifier.DynamicConfig memory dyn = CommitteeVerifier.DynamicConfig({
-      feeAggregator: roles.verifier.feeAggregator,
-      allowlistAdmin: roles.verifier.allowlistAdmin
+      feeAggregator: roles.verifier.feeAggregator, allowlistAdmin: roles.verifier.allowlistAdmin
     });
 
     vm.broadcast();

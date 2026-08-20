@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
 import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
-import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
+import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
+import {Test} from "forge-std/Test.sol";
 
 /// @title CommitteeVerifierSetup
 /// @notice Integration test FIXTURE, modelled on Chainlink's own `*Setup.t.sol`
@@ -36,8 +36,7 @@ abstract contract CommitteeVerifierSetup is Test {
     // 2) Resolver via CREATE2 (no constructor args). Transfer ownership to this test
     //    and accept it, so onlyOwner resolver calls can be exercised.
     bytes memory resolverCode = type(VersionedVerifierResolver).creationCode;
-    resolver =
-      VersionedVerifierResolver(factory.createAndTransferOwnership(resolverCode, RESOLVER_SALT, address(this)));
+    resolver = VersionedVerifierResolver(factory.createAndTransferOwnership(resolverCode, RESOLVER_SALT, address(this)));
     resolver.acceptOwnership();
 
     // 3) Verifier via plain CREATE with constructor args.

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title DriftCheck
 /// @notice Outline step 16. READ-ONLY comparison of declared roles + full config
@@ -24,7 +24,9 @@ import {Types} from "../../src/lib/Types.sol";
 contract DriftCheck is Script {
   error DriftDetected(uint256 count);
 
-  function run(string calldata chainAlias) external view {
+  function run(
+    string calldata chainAlias
+  ) external view {
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
@@ -49,7 +51,11 @@ contract DriftCheck is Script {
     console2.log("[DriftCheck] clean:", chainAlias);
   }
 
-  function _checkOwner(string memory label, address target, address expected) internal view returns (uint256) {
+  function _checkOwner(
+    string memory label,
+    address target,
+    address expected
+  ) internal view returns (uint256) {
     if (target == address(0)) return 0;
     (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSignature("owner()"));
     require(ok && ret.length == 32, "DriftCheck: owner() call failed (RPC or wrong address)");

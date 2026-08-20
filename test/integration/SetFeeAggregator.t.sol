@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {SetFeeAggregator} from "../../script/configure/SetFeeAggregator.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {SetFeeAggregator} from "../../script/configure/SetFeeAggregator.s.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 
 /// @notice Exercises the resolver SetFeeAggregator builder against the real audited
 ///         VersionedVerifierResolver (deployed by the fixture, owned by this test).
@@ -19,7 +19,9 @@ contract SetFeeAggregatorTest is CommitteeVerifierSetup {
     script = new SetFeeAggregator();
   }
 
-  function _applyFeeAggregator(address feeAggregator) internal returns (bool ok) {
+  function _applyFeeAggregator(
+    address feeAggregator
+  ) internal returns (bool ok) {
     BaseScript.Call[] memory calls = script.callsFor(address(resolver), feeAggregator);
     assertEq(calls.length, 1, "one call expected");
     assertEq(calls[0].to, address(resolver), "target is resolver");

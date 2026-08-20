@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title SetAllowedFinalityConfig
 /// @notice Sets the allowed finality config on the CommitteeVerifier.
@@ -26,7 +26,10 @@ contract SetAllowedFinalityConfig is BaseScript {
   bytes4 internal constant WAIT_FOR_FINALITY = bytes4(0);
 
   /// @notice Single source of truth for the setAllowedFinalityConfig calldata.
-  function callsFor(address verifier, bytes4 allowedFinality) public pure returns (Call[] memory calls) {
+  function callsFor(
+    address verifier,
+    bytes4 allowedFinality
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
       to: verifier,
@@ -35,12 +38,16 @@ contract SetAllowedFinalityConfig is BaseScript {
     });
   }
 
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.verifier != address(0), string.concat("SetAllowedFinalityConfig: verifier not recorded for ", chainAlias));
+    require(
+      dep.verifier != address(0), string.concat("SetAllowedFinalityConfig: verifier not recorded for ", chainAlias)
+    );
 
     console2.log("[SetAllowedFinalityConfig] chain:", chainAlias);
     console2.log("  target verifier:", dep.verifier);

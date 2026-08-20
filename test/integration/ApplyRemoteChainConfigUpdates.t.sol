@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {ApplyRemoteChainConfigUpdates} from "../../script/configure/ApplyRemoteChainConfigUpdates.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {ApplyRemoteChainConfigUpdates} from "../../script/configure/ApplyRemoteChainConfigUpdates.s.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
 import {IRouter} from "@chainlink/contracts-ccip/contracts/interfaces/IRouter.sol";
 
@@ -23,11 +23,10 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
     script = new ApplyRemoteChainConfigUpdates();
   }
 
-  function _buildRemoteChainConfigArgs(address router, uint32 gasForVerification)
-    internal
-    pure
-    returns (BaseVerifier.RemoteChainConfigArgs[] memory args)
-  {
+  function _buildRemoteChainConfigArgs(
+    address router,
+    uint32 gasForVerification
+  ) internal pure returns (BaseVerifier.RemoteChainConfigArgs[] memory args) {
     args = new BaseVerifier.RemoteChainConfigArgs[](1);
     args[0] = BaseVerifier.RemoteChainConfigArgs({
       router: IRouter(router),
@@ -39,7 +38,10 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
     });
   }
 
-  function _applyRemoteChainConfig(address router, uint32 gasForVerification) internal returns (bool ok) {
+  function _applyRemoteChainConfig(
+    address router,
+    uint32 gasForVerification
+  ) internal returns (bool ok) {
     BaseScript.Call[] memory calls =
       script.callsFor(address(verifier), _buildRemoteChainConfigArgs(router, gasForVerification));
     assertEq(calls.length, 1, "one call expected");

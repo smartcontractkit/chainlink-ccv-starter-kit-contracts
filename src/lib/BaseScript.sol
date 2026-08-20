@@ -45,7 +45,10 @@ abstract contract BaseScript is Script {
   /// @notice Explicit-mode variant that bypasses env vars. Prefer this in tests
   ///         (env-driven selection mutates process-global state and is order- and
   ///         parallelism-sensitive) and in callers that already know the mode.
-  function _initOutput(OutputMode mode, string memory safe) internal {
+  function _initOutput(
+    OutputMode mode,
+    string memory safe
+  ) internal {
     outputMode = mode;
     safeAddress = safe;
     delete _staged;
@@ -53,11 +56,18 @@ abstract contract BaseScript is Script {
   }
 
   /// @notice Stage a privileged call (value 0). EOA => broadcast now; SAFE => buffer.
-  function _stage(address to, bytes memory data) internal {
+  function _stage(
+    address to,
+    bytes memory data
+  ) internal {
     _stage(to, 0, data);
   }
 
-  function _stage(address to, uint256 value, bytes memory data) internal {
+  function _stage(
+    address to,
+    uint256 value,
+    bytes memory data
+  ) internal {
     if (outputMode == OutputMode.EOA) {
       vm.broadcast();
       (bool ok, bytes memory ret) = to.call{value: value}(data);
@@ -69,12 +79,16 @@ abstract contract BaseScript is Script {
 
   /// @notice Stage a pre-built Call (as returned by the per-operation `callsFor`
   ///         builders on the individual scripts).
-  function _stage(Call memory c) internal {
+  function _stage(
+    Call memory c
+  ) internal {
     _stage(c.to, c.value, c.data);
   }
 
   /// @notice Stage a batch of pre-built Calls, preserving order.
-  function _stageMany(Call[] memory calls) internal {
+  function _stageMany(
+    Call[] memory calls
+  ) internal {
     for (uint256 i; i < calls.length; ++i) {
       _stage(calls[i]);
     }
@@ -84,7 +98,9 @@ abstract contract BaseScript is Script {
   ///         batch. `name` should carry the execution order prefix so signers
   ///         cannot reorder multi-step ceremonies, e.g. "a-transfer-owner".
   ///         No-op in EOA mode.
-  function _flush(string memory name) internal {
+  function _flush(
+    string memory name
+  ) internal {
     if (outputMode != OutputMode.SAFE) return;
     vm.createDir("out/safe", true); // idempotent; survives a fresh clone
     string memory file = string.concat("out/safe/", name, "-", vm.toString(block.chainid), ".json");
@@ -101,7 +117,9 @@ abstract contract BaseScript is Script {
   // ---------------------------------------------------------------------------
   //  Safe Transaction Builder JSON (v1.0 schema)
   // ---------------------------------------------------------------------------
-  function _buildSafeJson(string memory name) private view returns (string memory) {
+  function _buildSafeJson(
+    string memory name
+  ) private view returns (string memory) {
     string memory txs = "";
     for (uint256 i; i < _staged.length; ++i) {
       Call memory c = _staged[i];
@@ -133,11 +151,16 @@ abstract contract BaseScript is Script {
   // ---------------------------------------------------------------------------
   //  helpers
   // ---------------------------------------------------------------------------
-  function _eq(string memory a, string memory b) internal pure returns (bool) {
+  function _eq(
+    string memory a,
+    string memory b
+  ) internal pure returns (bool) {
     return keccak256(bytes(a)) == keccak256(bytes(b));
   }
 
-  function _bubbleRevert(bytes memory ret) private pure {
+  function _bubbleRevert(
+    bytes memory ret
+  ) private pure {
     if (ret.length > 0) {
       // solhint-disable-next-line no-inline-assembly
       assembly {

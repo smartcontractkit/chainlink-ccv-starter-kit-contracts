@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Vm} from "forge-std/Vm.sol";
 import {Types} from "./Types.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 /// @title ConfigLib
 /// @notice Loads config-as-data JSON from `config/` into typed structs.
@@ -21,11 +21,15 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  chains
   // --------------------------------------------------------------------------
-  function readChain(string memory aliasName) internal view returns (Types.ChainConfig memory) {
+  function readChain(
+    string memory aliasName
+  ) internal view returns (Types.ChainConfig memory) {
     return readChainByPath(string.concat(CHAINS_DIR, aliasName, ".json"));
   }
 
-  function readChainByPath(string memory path) internal view returns (Types.ChainConfig memory c) {
+  function readChainByPath(
+    string memory path
+  ) internal view returns (Types.ChainConfig memory c) {
     string memory json = vm.readFile(path);
     c.aliasName = vm.parseJsonString(json, ".alias");
     c.chainId = vm.parseJsonUint(json, ".chainId");
@@ -58,7 +62,9 @@ library ConfigLib {
     }
   }
 
-  function readLaneByPath(string memory path) internal view returns (Types.LaneConfig memory l) {
+  function readLaneByPath(
+    string memory path
+  ) internal view returns (Types.LaneConfig memory l) {
     string memory json = vm.readFile(path);
     l.name = vm.parseJsonString(json, ".name");
 
@@ -84,19 +90,25 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  roles
   // --------------------------------------------------------------------------
-  function readRoles(string memory aliasName) internal view returns (Types.RolesConfig memory) {
+  function readRoles(
+    string memory aliasName
+  ) internal view returns (Types.RolesConfig memory) {
     return readRolesByPath(string.concat(ROLES_DIR, aliasName, ".json"));
   }
 
   /// @notice Read roles, or a zeroed struct if the file does not exist. Lets optional
   ///         steps (e.g. factory ownership handover) proceed without a roles file.
-  function readRolesOrEmpty(string memory aliasName) internal view returns (Types.RolesConfig memory r) {
+  function readRolesOrEmpty(
+    string memory aliasName
+  ) internal view returns (Types.RolesConfig memory r) {
     string memory path = string.concat(ROLES_DIR, aliasName, ".json");
     if (vm.exists(path)) return readRolesByPath(path);
     r.aliasName = aliasName;
   }
 
-  function readRolesByPath(string memory path) internal view returns (Types.RolesConfig memory r) {
+  function readRolesByPath(
+    string memory path
+  ) internal view returns (Types.RolesConfig memory r) {
     string memory json = vm.readFile(path);
     r.aliasName = vm.parseJsonString(json, ".alias");
     r.verifier.owner = vm.parseJsonAddress(json, ".verifier.owner");
@@ -111,15 +123,21 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  deployments (recorded addresses; written by the deploy scripts)
   // --------------------------------------------------------------------------
-  function deploymentPath(string memory aliasName) internal pure returns (string memory) {
+  function deploymentPath(
+    string memory aliasName
+  ) internal pure returns (string memory) {
     return string.concat(DEPLOYMENTS_DIR, aliasName, ".json");
   }
 
-  function readDeployment(string memory aliasName) internal view returns (Types.Deployment memory) {
+  function readDeployment(
+    string memory aliasName
+  ) internal view returns (Types.Deployment memory) {
     return readDeploymentByPath(deploymentPath(aliasName));
   }
 
-  function readDeploymentByPath(string memory path) internal view returns (Types.Deployment memory d) {
+  function readDeploymentByPath(
+    string memory path
+  ) internal view returns (Types.Deployment memory d) {
     string memory json = vm.readFile(path);
     d.aliasName = vm.parseJsonString(json, ".alias");
     d.factory = vm.parseJsonAddress(json, ".factory");
@@ -129,20 +147,27 @@ library ConfigLib {
 
   /// @notice Read the deployment record, or a zeroed struct (with alias set) if the
   ///         file does not exist yet. Lets deploy scripts merge one address at a time.
-  function readDeploymentOrEmpty(string memory aliasName) internal view returns (Types.Deployment memory d) {
+  function readDeploymentOrEmpty(
+    string memory aliasName
+  ) internal view returns (Types.Deployment memory d) {
     string memory path = deploymentPath(aliasName);
     if (vm.exists(path)) return readDeploymentByPath(path);
     d.aliasName = aliasName;
   }
 
   /// @notice Persist a deployment record to config/deployments/<alias>.json.
-  function writeDeployment(Types.Deployment memory d) internal {
+  function writeDeployment(
+    Types.Deployment memory d
+  ) internal {
     vm.createDir(DEPLOYMENTS_DIR, true); // idempotent
     writeDeploymentByPath(deploymentPath(d.aliasName), d);
   }
 
   /// @notice Persist a deployment record to an explicit path (used by tests).
-  function writeDeploymentByPath(string memory path, Types.Deployment memory d) internal {
+  function writeDeploymentByPath(
+    string memory path,
+    Types.Deployment memory d
+  ) internal {
     string memory obj = "ccv_deployment";
     vm.serializeString(obj, "alias", d.aliasName);
     vm.serializeAddress(obj, "factory", d.factory);
@@ -157,7 +182,10 @@ library ConfigLib {
   /// @dev Parse a 4-byte hex string (e.g. "0x00010001") into bytes4 unambiguously.
   ///      Uses parseJsonBytes (dynamic) + explicit big-endian reconstruction, so the
   ///      result does not depend on Foundry's fixed-bytes padding convention.
-  function _parseBytes4(string memory json, string memory key) private pure returns (bytes4 out) {
+  function _parseBytes4(
+    string memory json,
+    string memory key
+  ) private pure returns (bytes4 out) {
     bytes memory raw = vm.parseJsonBytes(json, key);
     require(raw.length == 4, "ConfigLib: expected a 4-byte hex value");
     uint32 acc;
@@ -170,7 +198,10 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  small string helpers
   // --------------------------------------------------------------------------
-  function _hasSuffix(string memory s, string memory suffix) private pure returns (bool) {
+  function _hasSuffix(
+    string memory s,
+    string memory suffix
+  ) private pure returns (bool) {
     bytes memory b = bytes(s);
     bytes memory suf = bytes(suffix);
     if (suf.length > b.length) return false;
@@ -180,7 +211,10 @@ library ConfigLib {
     return true;
   }
 
-  function _contains(string memory s, string memory needle) private pure returns (bool) {
+  function _contains(
+    string memory s,
+    string memory needle
+  ) private pure returns (bool) {
     bytes memory b = bytes(s);
     bytes memory n = bytes(needle);
     if (n.length == 0 || n.length > b.length) return n.length == 0;

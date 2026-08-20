@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {SignatureQuorumValidator} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
+import {
+  SignatureQuorumValidator
+} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title ApplySignatureConfigs
 /// @notice Sets the signer set + threshold per source chain on the
@@ -18,7 +20,9 @@ import {SignatureQuorumValidator} from "@chainlink/contracts-ccip/contracts/ccvs
 contract ApplySignatureConfigs is BaseScript {
   /// @notice Which deployment a lane's signature config targets. TODO: Single point to flip
   ///         if the confirmed direction is source-side instead of dest-side.
-  function _targetAlias(Types.LaneConfig memory lane) internal pure returns (string memory) {
+  function _targetAlias(
+    Types.LaneConfig memory lane
+  ) internal pure returns (string memory) {
     return lane.dest.aliasName;
   }
 
@@ -40,16 +44,12 @@ contract ApplySignatureConfigs is BaseScript {
   }
 
   /// @notice Translate a lane's config-as-data into the Chainlink arg struct.
-  function toSignatureConfig(Types.LaneConfig memory lane)
-    public
-    pure
-    returns (SignatureQuorumValidator.SignatureConfig[] memory configs)
-  {
+  function toSignatureConfig(
+    Types.LaneConfig memory lane
+  ) public pure returns (SignatureQuorumValidator.SignatureConfig[] memory configs) {
     configs = new SignatureQuorumValidator.SignatureConfig[](1);
     configs[0] = SignatureQuorumValidator.SignatureConfig({
-      sourceChainSelector: lane.source.chainSelector,
-      threshold: lane.sig.threshold,
-      signers: lane.sig.signers
+      sourceChainSelector: lane.source.chainSelector, threshold: lane.sig.threshold, signers: lane.sig.signers
     });
   }
 
@@ -63,7 +63,9 @@ contract ApplySignatureConfigs is BaseScript {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanes[i]);
       string memory targetAlias = _targetAlias(lane);
       Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
-      require(dep.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias));
+      require(
+        dep.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias)
+      );
 
       _assertValidConfig(lane);
 
@@ -81,7 +83,9 @@ contract ApplySignatureConfigs is BaseScript {
   // ---------------------------------------------------------------------------
   //  validation (mirror the contract's hard rules; warn on committee policy)
   // ---------------------------------------------------------------------------
-  function _assertValidConfig(Types.LaneConfig memory lane) internal pure {
+  function _assertValidConfig(
+    Types.LaneConfig memory lane
+  ) internal pure {
     address[] memory signers = lane.sig.signers;
     uint8 threshold = lane.sig.threshold;
     uint256 n = signers.length;

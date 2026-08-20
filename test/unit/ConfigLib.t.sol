@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {Test} from "forge-std/Test.sol";
 
 /// @notice Unit tests for the config-as-data loader. Uses the shipped example files
 ///         directly (path-based) so it does not depend on operator-specific configs.
@@ -41,14 +41,19 @@ contract ConfigLibTest is Test {
   //       add readChain / readRoles round-trip tests here. (readChain/readRoles are
   //       alias-based; point them at your real deployment aliases.)
 
-  function _endsWithJson(string memory s) private pure returns (bool) {
+  function _endsWithJson(
+    string memory s
+  ) private pure returns (bool) {
     bytes memory b = bytes(s);
     if (b.length < 5) return false;
-    return b[b.length - 5] == "." && b[b.length - 4] == "j" && b[b.length - 3] == "s"
-      && b[b.length - 2] == "o" && b[b.length - 1] == "n";
+    return b[b.length - 5] == "." && b[b.length - 4] == "j" && b[b.length - 3] == "s" && b[b.length - 2] == "o"
+      && b[b.length - 1] == "n";
   }
 
-  function _contains(string memory s, string memory needle) private pure returns (bool) {
+  function _contains(
+    string memory s,
+    string memory needle
+  ) private pure returns (bool) {
     bytes memory b = bytes(s);
     bytes memory n = bytes(needle);
     if (n.length == 0 || n.length > b.length) return false;

@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {Test} from "forge-std/Test.sol";
 
 /// @dev Concrete harness exposing BaseScript's internal dual-output API to tests.
 ///      Uses the explicit-mode initializer so tests never depend on process-global
 ///      env state (which is order- and parallelism-sensitive).
 contract Harness is BaseScript {
-  function initSafe(string calldata safe) external {
+  function initSafe(
+    string calldata safe
+  ) external {
     _initOutput(OutputMode.SAFE, safe);
   }
 
@@ -20,11 +22,16 @@ contract Harness is BaseScript {
     return outputMode;
   }
 
-  function stage(address to, bytes calldata data) external {
+  function stage(
+    address to,
+    bytes calldata data
+  ) external {
     _stage(to, data);
   }
 
-  function flush(string calldata name) external {
+  function flush(
+    string calldata name
+  ) external {
     _flush(name);
   }
 

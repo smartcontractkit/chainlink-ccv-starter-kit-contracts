@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
-import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
+import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title BootstrapFactory
 /// @notice Deploys the CREATE2Factory as the FIRST transaction of a
@@ -35,7 +35,9 @@ import {Types} from "../../src/lib/Types.sol";
 ///   OUTPUT_MODE=EOA forge script script/deploy/BootstrapFactory.s.sol \
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
 contract BootstrapFactory is Script {
-  function run(string calldata chainAlias) external returns (address factory) {
+  function run(
+    string calldata chainAlias
+  ) external returns (address factory) {
     address deployer = msg.sender;
     require(vm.getNonce(deployer) == 0, "BootstrapFactory: deployer nonce != 0 (address parity broken)");
 

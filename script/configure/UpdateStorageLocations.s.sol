@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title UpdateStorageLocations
 /// @notice Sets/updates the verifier's storage locations (the
@@ -20,16 +20,19 @@ import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/Commit
 ///         NOT the owner Safe.
 contract UpdateStorageLocations is BaseScript {
   /// @notice Single source of truth for the updateStorageLocations calldata.
-  function callsFor(address verifier, string[] memory locations) public pure returns (Call[] memory calls) {
+  function callsFor(
+    address verifier,
+    string[] memory locations
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: verifier,
-      value: 0,
-      data: abi.encodeWithSelector(CommitteeVerifier.updateStorageLocations.selector, locations)
+      to: verifier, value: 0, data: abi.encodeWithSelector(CommitteeVerifier.updateStorageLocations.selector, locations)
     });
   }
 
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);

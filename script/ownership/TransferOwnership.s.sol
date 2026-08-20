@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title TransferOwnership
 /// @notice Outline step 13 (propose leg). Two-step ownable: the CURRENT owner
@@ -20,13 +20,18 @@ import {Types} from "../../src/lib/Types.sol";
 ///   OUTPUT_MODE=SAFE SAFE_ADDRESS=0x... forge script script/ownership/TransferOwnership.s.sol \
 ///     --sig "run(string,string)" sepolia verifier
 contract TransferOwnership is BaseScript {
- 
-  function callsFor(address to, address newOwner) public pure returns (Call[] memory calls) {
+  function callsFor(
+    address to,
+    address newOwner
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({to: to, value: 0, data: abi.encodeWithSignature("transferOwnership(address)", newOwner)});
   }
 
-  function run(string calldata chainAlias, string calldata target) external {
+  function run(
+    string calldata chainAlias,
+    string calldata target
+  ) external {
     _initOutput();
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
@@ -44,11 +49,11 @@ contract TransferOwnership is BaseScript {
     _flush(string.concat("a-transfer-owner-", target));
   }
 
-  function _target(Types.Deployment memory dep, Types.RolesConfig memory roles, string calldata target)
-    private
-    pure
-    returns (address to, address newOwner)
-  {
+  function _target(
+    Types.Deployment memory dep,
+    Types.RolesConfig memory roles,
+    string calldata target
+  ) private pure returns (address to, address newOwner) {
     if (_eq(target, "verifier")) return (dep.verifier, roles.verifier.owner);
     if (_eq(target, "resolver")) return (dep.resolver, roles.resolver.owner);
     revert("TransferOwnership: target must be 'verifier' or 'resolver'");

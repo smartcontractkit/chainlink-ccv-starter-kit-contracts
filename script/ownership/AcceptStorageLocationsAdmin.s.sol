@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title AcceptStorageLocationsAdmin
 /// @notice Outline step 13 (accept leg for the storageLocationsAdmin role). Called
@@ -13,12 +13,16 @@ import {Types} from "../../src/lib/Types.sol";
 contract AcceptStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the accept-storageLocationsAdmin calldata.
   ///         Reused by Handover.s.sol so any change here propagates to the ceremony.
-  function callsFor(address verifier) public pure returns (Call[] memory calls) {
+  function callsFor(
+    address verifier
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({to: verifier, value: 0, data: abi.encodeWithSignature("acceptStorageLocationsAdmin()")});
   }
 
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title SetFeeAggregator
 /// @notice Sets the resolver's fee aggregator.
@@ -15,7 +15,10 @@ import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccv
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract SetFeeAggregator is BaseScript {
   /// @notice Single source of truth for the resolver setFeeAggregator calldata.
-  function callsFor(address resolver, address feeAggregator) public pure returns (Call[] memory calls) {
+  function callsFor(
+    address resolver,
+    address feeAggregator
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
       to: resolver,
@@ -24,7 +27,9 @@ contract SetFeeAggregator is BaseScript {
     });
   }
 
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {TransferOwnership} from "./TransferOwnership.s.sol";
 import {AcceptOwnership} from "./AcceptOwnership.s.sol";
-import {TransferStorageLocationsAdmin} from "./TransferStorageLocationsAdmin.s.sol";
 import {AcceptStorageLocationsAdmin} from "./AcceptStorageLocationsAdmin.s.sol";
+import {TransferOwnership} from "./TransferOwnership.s.sol";
+import {TransferStorageLocationsAdmin} from "./TransferStorageLocationsAdmin.s.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title Handover
 /// @notice Outline step 13 orchestration. Emits the full handover as THREE ordered,
@@ -45,7 +45,9 @@ import {AcceptStorageLocationsAdmin} from "./AcceptStorageLocationsAdmin.s.sol";
 ///   OUTPUT_MODE=SAFE SAFE_ADDRESS=0x<currentOwnerSafe> \
 ///     forge script script/ownership/Handover.s.sol --sig "run(string)" sepolia
 contract Handover is BaseScript {
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);

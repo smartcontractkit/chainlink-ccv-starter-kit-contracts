@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {ApplyAllowlistUpdates} from "../../script/configure/ApplyAllowlistUpdates.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {ApplyAllowlistUpdates} from "../../script/configure/ApplyAllowlistUpdates.s.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
 
 /// @notice Exercises the ApplyAllowlistUpdates builder against the real audited
@@ -22,11 +22,11 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     script = new ApplyAllowlistUpdates();
   }
 
-  function _buildAllowlistConfigArgs(bool enabled, address[] memory added, address[] memory removed)
-    internal
-    pure
-    returns (BaseVerifier.AllowlistConfigArgs[] memory args)
-  {
+  function _buildAllowlistConfigArgs(
+    bool enabled,
+    address[] memory added,
+    address[] memory removed
+  ) internal pure returns (BaseVerifier.AllowlistConfigArgs[] memory args) {
     args = new BaseVerifier.AllowlistConfigArgs[](1);
     args[0] = BaseVerifier.AllowlistConfigArgs({
       destChainSelector: DEST,
@@ -36,11 +36,13 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     });
   }
 
-  function _applyAllowlistUpdate(bool enabled, address[] memory added, address[] memory removed)
-    internal
-    returns (bool ok)
-  {
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), _buildAllowlistConfigArgs(enabled, added, removed));
+  function _applyAllowlistUpdate(
+    bool enabled,
+    address[] memory added,
+    address[] memory removed
+  ) internal returns (bool ok) {
+    BaseScript.Call[] memory calls =
+      script.callsFor(address(verifier), _buildAllowlistConfigArgs(enabled, added, removed));
     assertEq(calls.length, 1, "one call expected");
     assertEq(calls[0].to, address(verifier), "target is verifier");
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
@@ -50,13 +52,18 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     (, senders) = verifier.getRemoteChainConfig(DEST);
   }
 
-  function _pair(address a, address b) internal pure returns (address[] memory arr) {
+  function _pair(
+    address a,
+    address b
+  ) internal pure returns (address[] memory arr) {
     arr = new address[](2);
     arr[0] = a;
     arr[1] = b;
   }
 
-  function _single(address a) internal pure returns (address[] memory arr) {
+  function _single(
+    address a
+  ) internal pure returns (address[] memory arr) {
     arr = new address[](1);
     arr[0] = a;
   }

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {SetDynamicConfig} from "../../script/configure/SetDynamicConfig.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {SetDynamicConfig} from "../../script/configure/SetDynamicConfig.s.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 
 /// @notice Exercises the SetDynamicConfig builder against the real audited
@@ -21,7 +21,10 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
     script = new SetDynamicConfig();
   }
 
-  function _applyDynamicConfig(address feeAggregator, address allowlistAdmin) internal returns (bool ok) {
+  function _applyDynamicConfig(
+    address feeAggregator,
+    address allowlistAdmin
+  ) internal returns (bool ok) {
     CommitteeVerifier.DynamicConfig memory dyn =
       CommitteeVerifier.DynamicConfig({feeAggregator: feeAggregator, allowlistAdmin: allowlistAdmin});
     BaseScript.Call[] memory calls = script.callsFor(address(verifier), dyn);

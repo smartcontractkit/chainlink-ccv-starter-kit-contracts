@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title SweepFees
 /// @notice Outline step 15. Sweeps accrued fee-token balances from BOTH the verifier
@@ -17,7 +17,9 @@ import {Types} from "../../src/lib/Types.sol";
 /// @dev Because withdrawFeeTokens is permissionless it works from an EOA directly,
 ///      but is routed through _stage so a Safe batch can be produced too.
 contract SweepFees is BaseScript {
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);

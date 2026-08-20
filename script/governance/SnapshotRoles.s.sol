@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title SnapshotRoles
 /// @notice Outline step 16. Bootstraps the roles-as-data file for a chain FROM LIVE
@@ -17,7 +17,9 @@ import {Types} from "../../src/lib/Types.sol";
 /// Usage:
 ///   forge script script/governance/SnapshotRoles.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract SnapshotRoles is Script {
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     require(dep.verifier != address(0) && dep.resolver != address(0), "SnapshotRoles: contracts not deployed");
 
@@ -44,7 +46,9 @@ contract SnapshotRoles is Script {
     vm.writeJson(out, string.concat("out/governance/", chainAlias, ".snapshot.local.json"));
   }
 
-  function _owner(address target) internal view returns (address o) {
+  function _owner(
+    address target
+  ) internal view returns (address o) {
     (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSignature("owner()"));
     if (ok && ret.length == 32) o = abi.decode(ret, (address));
   }

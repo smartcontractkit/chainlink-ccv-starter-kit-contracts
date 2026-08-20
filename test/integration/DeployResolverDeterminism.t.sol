@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Test} from "forge-std/Test.sol";
 import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
+import {Test} from "forge-std/Test.sol";
 
 /// @notice Validates the CREATE2 determinism logic DeployResolver relies on: the
 ///         precomputed address equals the deployed address, redeploying the same

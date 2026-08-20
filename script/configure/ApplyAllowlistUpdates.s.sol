@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title ApplyAllowlistUpdates
 /// @notice Sender allowlist per destination on the CommitteeVerifier.
@@ -26,31 +26,28 @@ import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/
 contract ApplyAllowlistUpdates is BaseScript {
   /// @notice Which deployment a lane's allowlist config targets. TODO Single point to flip
   ///         if the confirmed direction is dest-side instead of source-side.
-  function _targetAlias(Types.LaneConfig memory lane) internal pure returns (string memory) {
+  function _targetAlias(
+    Types.LaneConfig memory lane
+  ) internal pure returns (string memory) {
     return lane.source.aliasName;
   }
 
   /// @notice Single source of truth for the applyAllowlistUpdates calldata.
-  function callsFor(address verifier, BaseVerifier.AllowlistConfigArgs[] memory args)
-    public
-    pure
-    returns (Call[] memory calls)
-  {
+  function callsFor(
+    address verifier,
+    BaseVerifier.AllowlistConfigArgs[] memory args
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: verifier,
-      value: 0,
-      data: abi.encodeWithSelector(CommitteeVerifier.applyAllowlistUpdates.selector, args)
+      to: verifier, value: 0, data: abi.encodeWithSelector(CommitteeVerifier.applyAllowlistUpdates.selector, args)
     });
   }
 
   /// @notice Translate a lane's config-as-data into the Chainlink arg struct, keyed by
   ///         the lane's destination selector.
-  function toAllowlistConfigArgs(Types.LaneConfig memory lane)
-    public
-    pure
-    returns (BaseVerifier.AllowlistConfigArgs[] memory args)
-  {
+  function toAllowlistConfigArgs(
+    Types.LaneConfig memory lane
+  ) public pure returns (BaseVerifier.AllowlistConfigArgs[] memory args) {
     args = new BaseVerifier.AllowlistConfigArgs[](1);
     args[0] = BaseVerifier.AllowlistConfigArgs({
       destChainSelector: lane.dest.chainSelector,
@@ -71,8 +68,7 @@ contract ApplyAllowlistUpdates is BaseScript {
       string memory targetAlias = _targetAlias(lane);
       Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
       require(
-        dep.verifier != address(0),
-        string.concat("ApplyAllowlistUpdates: verifier not recorded for ", targetAlias)
+        dep.verifier != address(0), string.concat("ApplyAllowlistUpdates: verifier not recorded for ", targetAlias)
       );
 
       _assertValidConfig(lane);
@@ -92,7 +88,9 @@ contract ApplyAllowlistUpdates is BaseScript {
   // ---------------------------------------------------------------------------
   //  validation (mirror the contract's hard rules)
   // ---------------------------------------------------------------------------
-  function _assertValidConfig(Types.LaneConfig memory lane) internal pure {
+  function _assertValidConfig(
+    Types.LaneConfig memory lane
+  ) internal pure {
     require(lane.dest.chainSelector != 0, "ApplyAllowlistUpdates: destChainSelector cannot be zero");
 
     Types.AllowlistConfig memory al = lane.allowlist;

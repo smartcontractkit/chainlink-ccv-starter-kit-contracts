@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {Script} from "forge-std/Script.sol";
-import {console2} from "forge-std/console2.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title BalanceReport
 /// @notice Outline step 15. Read-only report of accrued fee-token balances held by
@@ -15,7 +15,9 @@ import {Types} from "../../src/lib/Types.sol";
 /// Usage:
 ///   forge script script/fees/BalanceReport.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract BalanceReport is Script {
-  function run(string calldata chainAlias) external view {
+  function run(
+    string calldata chainAlias
+  ) external view {
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
 
     console2.log("[BalanceReport] chain:", chainAlias);

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {ApplySignatureConfigs} from "../../script/configure/ApplySignatureConfigs.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {ApplySignatureConfigs} from "../../script/configure/ApplySignatureConfigs.s.sol";
-import {SignatureQuorumValidator} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+import {
+  SignatureQuorumValidator
+} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
 
 /// @notice Exercises the ApplySignatureConfigs builder against the real audited
 ///         CommitteeVerifier (deployed by the fixture). The fixture makes this test
@@ -22,24 +24,28 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     script = new ApplySignatureConfigs();
   }
 
-  function _generateSigners(uint256 count) internal pure returns (address[] memory signers) {
+  function _generateSigners(
+    uint256 count
+  ) internal pure returns (address[] memory signers) {
     signers = new address[](count);
     for (uint256 i; i < count; ++i) {
       signers[i] = address(uint160(0x1000 + i)); // distinct, non-zero
     }
   }
 
-  function _buildSignatureConfig(uint8 threshold, address[] memory signers)
-    internal
-    pure
-    returns (SignatureQuorumValidator.SignatureConfig[] memory configs)
-  {
+  function _buildSignatureConfig(
+    uint8 threshold,
+    address[] memory signers
+  ) internal pure returns (SignatureQuorumValidator.SignatureConfig[] memory configs) {
     configs = new SignatureQuorumValidator.SignatureConfig[](1);
     configs[0] =
       SignatureQuorumValidator.SignatureConfig({sourceChainSelector: SRC, threshold: threshold, signers: signers});
   }
 
-  function _applySignatureConfig(uint8 threshold, address[] memory signers) internal returns (bool ok) {
+  function _applySignatureConfig(
+    uint8 threshold,
+    address[] memory signers
+  ) internal returns (bool ok) {
     BaseScript.Call[] memory calls =
       script.callsFor(address(verifier), new uint64[](0), _buildSignatureConfig(threshold, signers));
     assertEq(calls.length, 1, "one call expected");
@@ -78,8 +84,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_toSignatureConfig_translatesExampleLane() public view {
     // The shipped example lane is 7-of-10; verify the config->struct translation.
-    Types.LaneConfig memory lane =
-      ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
+    Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
     SignatureQuorumValidator.SignatureConfig[] memory cfgs = script.toSignatureConfig(lane);
 
     assertEq(cfgs.length, 1);

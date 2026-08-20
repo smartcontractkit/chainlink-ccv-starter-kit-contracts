@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
-import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {UpdateStorageLocations} from "../../script/configure/UpdateStorageLocations.s.sol";
+import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 
 /// @notice Exercises the UpdateStorageLocations builder against the real audited
 ///         CommitteeVerifier. The fixture makes this test the storageLocationsAdmin
@@ -16,20 +16,27 @@ contract UpdateStorageLocationsTest is CommitteeVerifierSetup {
     script = new UpdateStorageLocations();
   }
 
-  function _updateStorageLocations(string[] memory locations) internal returns (bool ok) {
+  function _updateStorageLocations(
+    string[] memory locations
+  ) internal returns (bool ok) {
     BaseScript.Call[] memory calls = script.callsFor(address(verifier), locations);
     assertEq(calls.length, 1, "one call expected");
     assertEq(calls[0].to, address(verifier), "target is verifier");
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == storageLocationsAdmin (this test)
   }
 
-  function _twoLocations(string memory a, string memory b) internal pure returns (string[] memory arr) {
+  function _twoLocations(
+    string memory a,
+    string memory b
+  ) internal pure returns (string[] memory arr) {
     arr = new string[](2);
     arr[0] = a;
     arr[1] = b;
   }
 
-  function _oneLocation(string memory a) internal pure returns (string[] memory arr) {
+  function _oneLocation(
+    string memory a
+  ) internal pure returns (string[] memory arr) {
     arr = new string[](1);
     arr[0] = a;
   }

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {console2} from "forge-std/console2.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
+import {console2} from "forge-std/console2.sol";
 
 /// @title SetDynamicConfig
 /// @notice Sets the CommitteeVerifier DynamicConfig
@@ -16,32 +16,28 @@ import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/Commit
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract SetDynamicConfig is BaseScript {
   /// @notice Single source of truth for the setDynamicConfig calldata.
-  function callsFor(address verifier, CommitteeVerifier.DynamicConfig memory dynamicConfig)
-    public
-    pure
-    returns (Call[] memory calls)
-  {
+  function callsFor(
+    address verifier,
+    CommitteeVerifier.DynamicConfig memory dynamicConfig
+  ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: verifier,
-      value: 0,
-      data: abi.encodeWithSelector(CommitteeVerifier.setDynamicConfig.selector, dynamicConfig)
+      to: verifier, value: 0, data: abi.encodeWithSelector(CommitteeVerifier.setDynamicConfig.selector, dynamicConfig)
     });
   }
 
   /// @notice Translate roles-as-data into the verifier DynamicConfig struct.
-  function toDynamicConfig(Types.RolesConfig memory roles)
-    public
-    pure
-    returns (CommitteeVerifier.DynamicConfig memory)
-  {
+  function toDynamicConfig(
+    Types.RolesConfig memory roles
+  ) public pure returns (CommitteeVerifier.DynamicConfig memory) {
     return CommitteeVerifier.DynamicConfig({
-      feeAggregator: roles.verifier.feeAggregator,
-      allowlistAdmin: roles.verifier.allowlistAdmin
+      feeAggregator: roles.verifier.feeAggregator, allowlistAdmin: roles.verifier.allowlistAdmin
     });
   }
 
-  function run(string calldata chainAlias) external {
+  function run(
+    string calldata chainAlias
+  ) external {
     _initOutput();
 
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
