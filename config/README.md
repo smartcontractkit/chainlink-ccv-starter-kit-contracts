@@ -29,9 +29,36 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "versionTag":       "0xAABBCCDD",            // bytes4, non-zero, immutable. Scheme: 2 bytes operator id + 2 bytes version.
   "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
+  "feeTokens":        ["0x..."],               // fee tokens to report on / sweep. Empty => fee scripts no-op.
   "resolverSalt":     "0x0000...0001"          // CREATE2 salt for the resolver. MUST be identical on every chain.
 }
 ```
+
+> `feeTokens` drives `BalanceReport` (reads `balanceOf` for the verifier and resolver)
+> and `SweepFees` (passes the list to `withdrawFeeTokens`). The key is **optional by
+> design**: fee sweeping is opt-in per chain, so a chain whose list is not decided yet still
+> loads for every other script — an absent or empty list makes both fee scripts a logged
+> no-op rather than an error. Nothing on-chain registers fee tokens: the set that can
+> actually accrue is governed by CCIP's `FeeQuoter`, so this list is a hand-maintained
+> mirror. The list is *not* filtered by current balance —
+> `SweepFees` builds Safe batches that execute later, and filtering on today's balance
+> would silently drop fees accruing in between. `SKIP_ZERO_BALANCES=1` optionally skips a
+> WHOLE contract whose every listed token reads zero at build time (saves a no-op tx); the
+> list inside the call is never shrunk. Off by default: an unreadable balance counts as
+> zero, so the flag can silently miss a sweep.
+>
+> **Lean append-only; prune deliberately.** Read this field as "every token that could
+> hold a balance here", not "tokens Chainlink supports today" — de-supporting a token does
+> not zero a balance already sitting on the verifier, and `withdrawFeeTokens` is its only
+> exit. Removing an entry is reversible (re-add it and sweep), but any balance arriving
+> after removal sits unswept and invisible until someone remembers to. Prune a token only
+> once nothing more can arrive: the FeeQuoter no longer supports it, both contracts read
+> zero in `BalanceReport`, and no in-flight messages could still pay fees in it. Until
+> then a stale entry costs one `balanceOf` per sweep and is skipped silently at zero.
+>
+> ⚠️ Every entry must be a real ERC20 **with code**. `balanceOf` on a codeless address
+> reverts the whole `withdrawFeeTokens` call, so one typo blocks every future sweep for that
+> chain. `BalanceReport` flags such an entry as `UNREADABLE`.
 
 > ⚠️ **`finalityConfig` is a PLACEHOLDER pending a decision.** It is the `bytes4`
 > ALLOWED finality (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`.
