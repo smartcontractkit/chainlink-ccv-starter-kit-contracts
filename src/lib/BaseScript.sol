@@ -119,7 +119,8 @@ abstract contract BaseScript is Script {
     if (outputMode != OutputMode.SAFE) return;
     // One directory per chain. `block.chainid` is deliberately not used: SAFE mode is
     // meant to run key-free without --rpc-url, where it is 31337 for every chain.
-    string memory dir = bytes(outputScope).length == 0 ? "out/safe" : string.concat("out/safe/", outputScope);
+    require(bytes(outputScope).length != 0, "BaseScript: SAFE output needs a chain alias");
+    string memory dir = string.concat("out/safe/", outputScope);
     vm.createDir(dir, true); // idempotent; survives a fresh clone
     string memory file = string.concat(dir, "/", name, ".json");
     vm.writeFile(file, _buildSafeJson(name));
