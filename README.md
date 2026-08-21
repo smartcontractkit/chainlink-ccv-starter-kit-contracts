@@ -26,7 +26,7 @@ config/          config-as-data (per chain / per lane / per role / deployments)
 script/
   deploy/        BootstrapFactory (EOA-only), DeployResolver (CREATE2), DeployVerifier
   configure/     one script per privileged call, looped over lanes/chains
-  ownership/     2-step transfers + the 3-ceremony Handover
+  ownership/     per-target 2-step transfers (owners + storageLocationsAdmin)
   fees/          SweepFees + BalanceReport (both contracts, zero-aggregator guard)
   governance/    SnapshotRoles, DriftCheck (+ drift-check.sh with distinct exit codes)
 src/lib/         ConfigLib (loader), BaseScript (EOA/Safe switch + Safe-JSON emitter), Types
@@ -81,24 +81,31 @@ of broadcasting — same script, different mode:
 ```bash
 export OUTPUT_MODE=SAFE
 export SAFE_ADDRESS=0x<the executing Safe>
-forge script script/ownership/Handover.s.sol --sig "run(string)" sepolia
-# -> writes out/safe/sepolia/a-handover-propose.json,
-#             out/safe/sepolia/b-handover-accept.json,
-#             out/safe/sepolia/c-handover-finalize.json
+forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)" sepolia verifier
+# -> writes out/safe/sepolia/a-transfer-owner-verifier.json
 ```
 
-Multi-step ceremonies are split into **ordered** batch files (`a-`, `b-`, `c-`, one
-directory per chain alias)
-so a signer can't execute steps out of order and permanently lock a contract. Handover
-order is **grant-new-before-revoke-old**; revoke the old holder only after onchain
-acceptance is confirmed.
+Multi-step ceremonies are split into **ordered** batch files (`a-` then `b-`, one
+directory per chain alias) so a signer can't execute steps out of order and permanently
+lock a contract. Handover order is **grant-new-before-revoke-old**; revoke the old
+holder only after onchain acceptance is confirmed.
 
-## Handover (three two-step ceremonies)
+## Handover (per-target two-step ceremonies)
 
-1. `CommitteeVerifier` owner (transfer + accept)
-2. `VersionedVerifierResolver` owner (transfer + accept)
-3. `CommitteeVerifier` `storageLocationsAdmin` (transfer + accept) — a **separate**
-   admin role from the owner.
+Each role moves via its own `a-`/`b-` pair, one batch per target, and **each party
+prepares its own leg** in whichever mode fits its wallet: a Safe generates the batch
+with its own `SAFE_ADDRESS`; an EOA runs the same script in EOA mode with
+`--broadcast`. The current holder executes the `a-` (propose) leg; the incoming
+holder executes the `b-` (accept) leg — or simply calls `acceptOwnership()` from
+their own tooling, since the propose leg already made them the pending holder.
+
+1. Owners — `TransferOwnership` / `AcceptOwnership`, target `verifier`, `resolver`
+   or `factory`.
+2. `storageLocationsAdmin` — `TransferStorageLocationsAdmin` /
+   `AcceptStorageLocationsAdmin`; a **separate** admin role from the owner.
+3. Transitional `DynamicConfig` roles (allowlistAdmin / feeAggregator) are not
+   two-step: re-point them via `SetDynamicConfig` only AFTER acceptance is confirmed
+   on-chain.
 
 ## Operational notes
 

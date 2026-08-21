@@ -7,10 +7,19 @@ import {Types} from "../../src/lib/Types.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title AcceptOwnership
-/// @notice Outline step 13 (accept leg). Called BY the new owner to complete a
-///         two-step ownership transfer. In SAFE mode this batch must be executed
-///         by the incoming owner Safe.
-/// @dev Generic over target ("verifier" | "resolver").
+/// @notice Called BY the pending owner to complete a two-step ownership transfer.
+///         Each party prepares its own leg: this script is run by the INCOMING holder
+///         with their own SAFE_ADDRESS (or key), never generated on their behalf by
+///         the proposer.
+/// @dev Generic over target ("verifier" | "resolver" | "factory"). The factory leg
+///      completes the transfer BootstrapFactory proposes; until it runs, the deployer
+///      key keeps the factory (and with it the CREATE2 allowlist).
+/// @dev Needs no roles file: acceptance is authorised by msg.sender being the pending
+///      holder, not by an address in config.
+///
+/// Usage:
+///   OUTPUT_MODE=SAFE SAFE_ADDRESS=0x<incomingOwnerSafe> forge script script/ownership/AcceptOwnership.s.sol \
+///     --sig "run(string,string)" sepolia verifier
 contract AcceptOwnership is BaseScript {
   function callsFor(
     address to
@@ -26,8 +35,8 @@ contract AcceptOwnership is BaseScript {
     _initOutput(chainAlias);
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    address to = _eq(target, "verifier") ? dep.verifier : _eq(target, "resolver") ? dep.resolver : address(0);
-    require(to != address(0), "AcceptOwnership: target must be 'verifier' or 'resolver' and deployed");
+    address to = ConfigLib.targetAddress(dep, target);
+    require(to != address(0), string.concat("AcceptOwnership: ", target, " not recorded for ", chainAlias));
 
     console2.log("[AcceptOwnership]", target, "->", to);
 

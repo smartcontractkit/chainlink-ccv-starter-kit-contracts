@@ -149,6 +149,44 @@ library ConfigLib {
   }
 
   // --------------------------------------------------------------------------
+  //  target resolution ("verifier" | "resolver" | "factory")
+  // --------------------------------------------------------------------------
+  /// @notice Maps a target name to its address in the deployment record.
+  function targetAddress(
+    Types.Deployment memory dep,
+    string memory target
+  ) internal pure returns (address) {
+    if (_eqStr(target, "verifier")) return dep.verifier;
+    if (_eqStr(target, "resolver")) return dep.resolver;
+    if (_eqStr(target, "factory")) return dep.factory;
+    revert(_unknownTarget(target));
+  }
+
+  /// @notice Maps a target name to the owner declared for it in `config/roles`.
+  function targetOwner(
+    Types.RolesConfig memory roles,
+    string memory target
+  ) internal pure returns (address) {
+    if (_eqStr(target, "verifier")) return roles.verifier.owner;
+    if (_eqStr(target, "resolver")) return roles.resolver.owner;
+    if (_eqStr(target, "factory")) return roles.factoryOwner;
+    revert(_unknownTarget(target));
+  }
+
+  function _unknownTarget(
+    string memory target
+  ) private pure returns (string memory) {
+    return string.concat("ConfigLib: unknown target '", target, "' (expected verifier|resolver|factory)");
+  }
+
+  function _eqStr(
+    string memory a,
+    string memory b
+  ) private pure returns (bool) {
+    return keccak256(bytes(a)) == keccak256(bytes(b));
+  }
+
+  // --------------------------------------------------------------------------
   //  deployments (recorded addresses; written by the deploy scripts)
   // --------------------------------------------------------------------------
   function deploymentPath(

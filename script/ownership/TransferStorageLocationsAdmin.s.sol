@@ -14,7 +14,6 @@ import {console2} from "forge-std/console2.sol";
 /// @dev Target call (grounded): CommitteeVerifier.transferStorageLocationsAdmin(address).
 contract TransferStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the transfer-storageLocationsAdmin calldata.
-  ///         Reused by Handover.s.sol so any change here propagates to the ceremony.
   function callsFor(
     address verifier,
     address newAdmin
