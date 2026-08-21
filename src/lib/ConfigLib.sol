@@ -50,6 +50,11 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   /// @notice Returns the file paths of every real lane config (skips `_template`
   ///         and `*.example.json`). Feed each path to `readLaneByPath`.
+  /// @dev Lanes are enumerated, not looked up by alias: a lane is keyed by its own name.
+  ///      Callers wanting "lanes touching chain X" filter on `lane.source`/`lane.dest`.
+  /// @dev Sorted before returning. `vm.readDir` order is filesystem-dependent, and the
+  ///      lane-iterating scripts stage every lane into ONE Safe batch, so unsorted paths
+  ///      make the generated JSON byte-differ between machines and defeat batch diffing.
   function listLanes() internal view returns (string[] memory paths) {
     Vm.DirEntry[] memory entries = vm.readDir(LANES_DIR);
     string[] memory buf = new string[](entries.length);
@@ -60,9 +65,28 @@ library ConfigLib {
         buf[n++] = p;
       }
     }
+
     paths = new string[](n);
     for (uint256 i; i < n; ++i) {
       paths[i] = buf[i];
+    }
+
+    sortPaths(paths);
+  }
+
+  /// @notice Sorts byte-wise lexicographically, in place. Insertion sort: the input is a
+  ///         directory listing, so n is small.
+  function sortPaths(
+    string[] memory paths
+  ) internal pure {
+    for (uint256 i = 1; i < paths.length; ++i) {
+      string memory key = paths[i];
+      uint256 j = i;
+      while (j > 0 && _lt(key, paths[j - 1])) {
+        paths[j] = paths[j - 1];
+        --j;
+      }
+      paths[j] = key;
     }
   }
 
@@ -213,6 +237,20 @@ library ConfigLib {
       if (b[b.length - suf.length + i] != suf[i]) return false;
     }
     return true;
+  }
+
+  /// @dev Byte-wise lexicographic `a < b`, for a deterministic `listLanes` order.
+  function _lt(
+    string memory a,
+    string memory b
+  ) private pure returns (bool) {
+    bytes memory x = bytes(a);
+    bytes memory y = bytes(b);
+    uint256 len = x.length < y.length ? x.length : y.length;
+    for (uint256 i; i < len; ++i) {
+      if (x[i] != y[i]) return uint8(x[i]) < uint8(y[i]);
+    }
+    return x.length < y.length;
   }
 
   function _contains(
