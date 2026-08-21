@@ -7,6 +7,9 @@ pragma solidity 0.8.26;
 ///      config layer has no compile dependency on the contracts. The configure/
 ///      scripts translate these into the exact Chainlink argument structs
 ///      (e.g. SignatureQuorumValidator.SignatureConfig) at the call site.
+/// @dev Adding a field here also means adding a comparison in `DriftCheck` and a case in
+///      `DriftCheck.t.sol`. Nothing enforces that, so an uncompared field silently makes
+///      the drift check incomplete.
 library Types {
   // ----------------------------- config/chains ------------------------------
   struct ChainConfig {
