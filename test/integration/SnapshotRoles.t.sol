@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.26;
+
+import {DriftCheck} from "../../script/governance/DriftCheck.s.sol";
+import {SnapshotRoles} from "../../script/governance/SnapshotRoles.s.sol";
+import {ConfigLib} from "../../src/lib/ConfigLib.sol";
+import {Types} from "../../src/lib/Types.sol";
+import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
+
+/// @title SnapshotRolesTest
+/// @notice Outline step 16. Verifies the snapshot reads every live role and that what
+///         it writes is loadable by `ConfigLib` as a real roles file — the property
+///         that makes "review, then copy into config/roles/" a safe promotion path.
+contract SnapshotRolesTest is CommitteeVerifierSetup {
+  SnapshotRoles internal script;
+
+  string internal constant ALIAS = "snapshot_test_chain";
+  address internal constant RESOLVER_FEE_AGGREGATOR = address(0xFEE2);
+
+  function setUp() public virtual override {
+    super.setUp();
+    script = new SnapshotRoles();
+    resolver.setFeeAggregator(RESOLVER_FEE_AGGREGATOR);
+  }
+
+  function test_snapshot_readsEveryLiveRole() public view {
+    Types.RolesConfig memory roles = script.snapshot(_deployment());
+
+    assertEq(roles.aliasName, ALIAS, "alias carried through");
+    assertEq(roles.verifier.owner, address(this), "verifier owner");
+    assertEq(roles.verifier.storageLocationsAdmin, address(this), "storageLocationsAdmin (constructor: deployer)");
+    assertEq(roles.verifier.allowlistAdmin, address(this), "allowlistAdmin from DynamicConfig");
+    assertEq(roles.verifier.feeAggregator, FEE_AGGREGATOR, "feeAggregator from DynamicConfig");
+    assertEq(roles.resolver.owner, address(this), "resolver owner");
+    assertEq(roles.resolver.feeAggregator, RESOLVER_FEE_AGGREGATOR, "resolver feeAggregator");
+    assertEq(roles.factoryOwner, address(this), "factory owner");
+  }
+
+  /// @dev The verifier and resolver aggregators are distinct storage on distinct
+  ///      contracts; the snapshot must not conflate them.
+  function test_snapshot_keepsFeeAggregatorsDistinct() public view {
+    Types.RolesConfig memory roles = script.snapshot(_deployment());
+    assertTrue(roles.verifier.feeAggregator != roles.resolver.feeAggregator, "aggregators read independently");
+  }
+
+  function test_snapshot_absentFactory_leavesOwnerZero() public view {
+    Types.Deployment memory dep = _deployment();
+    dep.factory = address(0);
+    assertEq(script.snapshot(dep).factoryOwner, address(0), "no factory recorded => zero, not a revert");
+  }
+
+  /// @dev The promotion path is `cp out/governance/<alias>-<block>.roles.local.json config/roles/<alias>.json`,
+  ///      so what we write must parse under the SAME loader that reads config/roles.
+  ///      This is the test that would catch a schema drift between the two.
+  function test_writeSnapshot_roundTripsThroughConfigLib() public {
+    Types.RolesConfig memory snapped = script.snapshot(_deployment());
+    string memory path = script.writeSnapshot(ALIAS, snapped);
+
+    Types.RolesConfig memory reloaded = ConfigLib.readRolesByPath(path);
+
+    assertEq(reloaded.aliasName, snapped.aliasName, "alias");
+    assertEq(reloaded.verifier.owner, snapped.verifier.owner, "verifier owner");
+    assertEq(reloaded.verifier.storageLocationsAdmin, snapped.verifier.storageLocationsAdmin, "storageLocationsAdmin");
+    assertEq(reloaded.verifier.allowlistAdmin, snapped.verifier.allowlistAdmin, "allowlistAdmin");
+    assertEq(reloaded.verifier.feeAggregator, snapped.verifier.feeAggregator, "verifier feeAggregator");
+    assertEq(reloaded.resolver.owner, snapped.resolver.owner, "resolver owner");
+    assertEq(reloaded.resolver.feeAggregator, snapped.resolver.feeAggregator, "resolver feeAggregator");
+    assertEq(reloaded.factoryOwner, snapped.factoryOwner, "factory owner");
+  }
+
+  /// @dev The two governance scripts must agree on the same role surface: a snapshot
+  ///      taken from a chain, promoted as-is, must make `DriftCheck` report clean.
+  ///      If one script grows a field the other ignores, this fails.
+  function test_snapshotThenDriftCheck_isClean() public {
+    Types.RolesConfig memory snapped = script.snapshot(_deployment());
+    string memory path = script.writeSnapshot(ALIAS, snapped);
+    Types.RolesConfig memory promoted = ConfigLib.readRolesByPath(path);
+
+    DriftCheck drift = new DriftCheck();
+    assertEq(drift.checkRoles(_deployment(), promoted), 0, "a fresh snapshot must never drift against its source");
+  }
+
+  function _deployment() internal view returns (Types.Deployment memory dep) {
+    dep.aliasName = ALIAS;
+    dep.factory = address(factory);
+    dep.resolver = address(resolver);
+    dep.verifier = address(verifier);
+  }
+}

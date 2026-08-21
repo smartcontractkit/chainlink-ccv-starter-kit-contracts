@@ -3,16 +3,35 @@ pragma solidity 0.8.26;
 
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
+import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
+import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title SnapshotRoles
-/// @notice Outline step 16. Bootstraps the roles-as-data file for a chain FROM LIVE
+/// @notice Bootstraps the roles-as-data file for a chain FROM LIVE
 ///         on-chain state, so an operator can capture the current reality and then
 ///         edit toward the desired intent.
-/// @dev Reads the deployment addresses, queries the on-chain getters, and writes
-///      config/roles/<alias>.json. Owner reads are implemented (Ownable2Step
-///      `owner()`); the remaining getters are marked TODO.
+/// @dev Writes to `out/governance/<alias>-<block>.roles.local.json` in the EXACT
+///      `config/roles/<alias>.json` schema, so promotion is a copy. It deliberately
+///      does NOT write into `config/` directly: that file records *intent*, and
+///      overwriting it with current reality would erase the very difference
+///      `DriftCheck` exists to find. (`foundry.toml` enforces this independently:
+///      `config/` is mounted read-only except `config/deployments`.)
+/// @dev The whole `out/governance/` tree is gitignored as a directory rule: a snapshot
+///      holds live owner / fee-aggregator addresses, which the config-privacy policy
+///      forbids committing, and a directory rule cannot be defeated by a rename.
+/// @dev `<block>` in the filename — snapshots accumulate instead of clobbering, so the
+///          record of who controlled what, when, survives. Keying on the observed block
+///          rather than wall-clock makes it idempotent: re-running against the same block
+///          rewrites an identical file, while any state change lands beside its
+///          predecessor and stays diffable.
+/// @dev Read-only on-chain: no broadcasting. Run without --broadcast.
+/// @dev There is no `pendingOwner()` getter on these contracts, so a half-finished
+///      two-step ownership handover cannot be captured. The verifier's pending
+///      storage-locations admin IS readable and is reported to the console (it has no
+///      home in the roles schema, which records settled state only).
 ///
 /// Usage:
 ///   forge script script/governance/SnapshotRoles.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
@@ -23,33 +42,90 @@ contract SnapshotRoles is Script {
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     require(dep.verifier != address(0) && dep.resolver != address(0), "SnapshotRoles: contracts not deployed");
 
-    address verifierOwner = _owner(dep.verifier);
-    address resolverOwner = _owner(dep.resolver);
+    Types.RolesConfig memory roles = snapshot(dep);
 
     console2.log("[SnapshotRoles] chain:", chainAlias);
-    console2.log("  verifier owner:", verifierOwner);
-    console2.log("  resolver owner:", resolverOwner);
+    console2.log("  verifier owner:                ", roles.verifier.owner);
+    console2.log("  verifier storageLocationsAdmin:", roles.verifier.storageLocationsAdmin);
+    console2.log("  verifier allowlistAdmin:       ", roles.verifier.allowlistAdmin);
+    console2.log("  verifier feeAggregator:        ", roles.verifier.feeAggregator);
+    console2.log("  resolver owner:                ", roles.resolver.owner);
+    console2.log("  resolver feeAggregator:        ", roles.resolver.feeAggregator);
+    if (dep.factory != address(0)) {
+      console2.log("  factory owner:                 ", roles.factoryOwner);
+    } else {
+      console2.log("  factory owner:                  (no factory recorded for this chain)");
+    }
 
-    // TODO(step 16): read the remaining live roles and write the JSON:
-    //   - verifier storageLocationsAdmin (needs a public getter; add one or infer from events)
-    //   - verifier DynamicConfig {feeAggregator, allowlistAdmin} (getDynamicConfig)
-    //   - resolver feeAggregator getter
-    //   - factory owner
-    // Then serialize with vm.serializeAddress(...) / vm.writeJson(...) to
-    //   config/roles/<alias>.json (or a .snapshot.json for review before promotion).
+    address pendingAdmin = CommitteeVerifier(dep.verifier).getPendingStorageLocationsAdmin();
+    if (pendingAdmin != address(0)) {
+      console2.log("  NOTE pending storageLocationsAdmin (handover in flight):", pendingAdmin);
+    }
 
-    // Placeholder write so the pattern is in place:
-    vm.createDir("out/governance", true); // idempotent; survives a fresh clone
-    string memory obj = "roles";
-    vm.serializeAddress(obj, "verifierOwner", verifierOwner);
-    string memory out = vm.serializeAddress(obj, "resolverOwner", resolverOwner);
-    vm.writeJson(out, string.concat("out/governance/", chainAlias, ".snapshot.local.json"));
+    string memory path = writeSnapshot(chainAlias, roles);
+    console2.log("[SnapshotRoles] written:", path);
+    console2.log(
+      string.concat("[SnapshotRoles] review, then promote: cp ", path, " config/roles/", chainAlias, ".json")
+    );
   }
 
-  function _owner(
-    address target
-  ) internal view returns (address o) {
-    (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSignature("owner()"));
-    if (ok && ret.length == 32) o = abi.decode(ret, (address));
+  /// @notice THE test seam. Reads every live role for a deployment.
+  /// @dev Typed calls, not raw staticcalls: a missing getter or an undeployed address
+  ///      must abort the snapshot rather than silently record `address(0)` as if it
+  ///      were the real owner. Writing a zeroed roles file would be worse than failing.
+  function snapshot(
+    Types.Deployment memory dep
+  ) public view returns (Types.RolesConfig memory roles) {
+    roles.aliasName = dep.aliasName;
+
+    CommitteeVerifier verifier = CommitteeVerifier(dep.verifier);
+    roles.verifier.owner = verifier.owner();
+    roles.verifier.storageLocationsAdmin = verifier.getStorageLocationsAdmin();
+
+    CommitteeVerifier.DynamicConfig memory dyn = verifier.getDynamicConfig();
+    roles.verifier.allowlistAdmin = dyn.allowlistAdmin;
+    roles.verifier.feeAggregator = dyn.feeAggregator;
+
+    VersionedVerifierResolver resolver = VersionedVerifierResolver(dep.resolver);
+    roles.resolver.owner = resolver.owner();
+    roles.resolver.feeAggregator = resolver.getFeeAggregator();
+
+    // Optional: not every chain records a factory (only the CREATE2 bootstrap chain
+    // needs one long-term), so an absent factory is a zero, not a failure.
+    if (dep.factory != address(0)) {
+      roles.factoryOwner = CREATE2Factory(dep.factory).owner();
+    }
+  }
+
+  /// @notice Serialises a roles snapshot in the `config/roles` schema.
+  /// @return path The file written.
+  function writeSnapshot(
+    string memory chainAlias,
+    Types.RolesConfig memory roles
+  ) public returns (string memory path) {
+    string memory verifierObj = "verifier";
+    vm.serializeAddress(verifierObj, "owner", roles.verifier.owner);
+    vm.serializeAddress(verifierObj, "storageLocationsAdmin", roles.verifier.storageLocationsAdmin);
+    vm.serializeAddress(verifierObj, "allowlistAdmin", roles.verifier.allowlistAdmin);
+    string memory verifierJson = vm.serializeAddress(verifierObj, "feeAggregator", roles.verifier.feeAggregator);
+
+    string memory resolverObj = "resolver";
+    vm.serializeAddress(resolverObj, "owner", roles.resolver.owner);
+    string memory resolverJson = vm.serializeAddress(resolverObj, "feeAggregator", roles.resolver.feeAggregator);
+
+    string memory factoryObj = "factory";
+    string memory factoryJson = vm.serializeAddress(factoryObj, "owner", roles.factoryOwner);
+
+    string memory root = "roles";
+    vm.serializeString(root, "alias", chainAlias);
+    vm.serializeString(root, "verifier", verifierJson);
+    vm.serializeString(root, "resolver", resolverJson);
+    string memory out = vm.serializeString(root, "factory", factoryJson);
+
+    vm.createDir("out/governance", true); // idempotent; survives a fresh clone
+    // out/governance/ is gitignored wholesale (live role addresses); the block number
+    // keeps successive snapshots from clobbering each other.
+    path = string.concat("out/governance/", chainAlias, "-", vm.toString(block.number), ".roles.local.json");
+    vm.writeJson(out, path);
   }
 }

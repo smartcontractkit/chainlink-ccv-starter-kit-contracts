@@ -32,5 +32,9 @@ config/**/*.json
 # Test-only Safe batches. Directory rule, not a filename glob: everything else under
 # out/safe/ is a committed release artifact, so a renamed test file must not slip in.
 out/safe/test/
+# Governance output is always run-local (snapshots hold LIVE role addresses) and is never
+# committed — snapshots are promoted into config/roles/ instead. Ignore the whole tree so
+# protection cannot be defeated by a rename.
+out/governance/
 # NOTE: real generated Safe batches under out/safe/ are intentionally NOT ignored;
 # they are release artifacts reviewed and committed per deployment.
