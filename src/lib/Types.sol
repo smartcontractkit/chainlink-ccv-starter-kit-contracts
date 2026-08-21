@@ -17,6 +17,7 @@ library Types {
     bytes4 versionTag; // non-zero, immutable
     bytes4 finalityConfig; // FinalityCodec bytes4; 0x00000000 = full finality. TODO PLACEHOLDER value (TBD).
     string[] storageLocations; // operator's own aggregator endpoint(s)
+    address[] feeTokens; // fee tokens to report on / sweep. Empty = no-op for fee scripts.
     bytes32 resolverSalt; // identical on every chain
   }
 

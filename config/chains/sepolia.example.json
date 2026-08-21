@@ -5,6 +5,9 @@
   "rmn": "0x0000000000000000000000000000000000000000",
   "versionTag": "0x00010001",
   "finalityConfig": "0x00000001",
-  "storageLocations": ["https://aggregator.operator.example/ccv"],
+  "storageLocations": [
+    "https://aggregator.operator.example/ccv"
+  ],
+  "feeTokens": [],
   "resolverSalt": "0x0000000000000000000000000000000000000000000000000000000000000001"
 }

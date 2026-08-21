@@ -38,6 +38,10 @@ library ConfigLib {
     c.versionTag = _parseBytes4(json, ".versionTag");
     c.finalityConfig = _parseBytes4(json, ".finalityConfig");
     c.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
+    // Optional by design: fee sweeping is opt-in per chain, and the token list mirrors a
+    // Chainlink-governed set (see config/README.md). A chain whose list is not decided yet
+    // must still load for every other script, so absent => empty => fee scripts no-op.
+    c.feeTokens = vm.keyExistsJson(json, ".feeTokens") ? vm.parseJsonAddressArray(json, ".feeTokens") : new address[](0);
     c.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
   }
 

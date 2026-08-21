@@ -6,5 +6,6 @@
   "versionTag": "0x00000000",
   "finalityConfig": "0x00000000",
   "storageLocations": [],
+  "feeTokens": [],
   "resolverSalt": "0x0000000000000000000000000000000000000000000000000000000000000000"
 }
