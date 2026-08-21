@@ -30,7 +30,7 @@ script/
   fees/          SweepFees + BalanceReport (both contracts, zero-aggregator guard)
   governance/    SnapshotRoles, DriftCheck (+ drift-check.sh with distinct exit codes)
 src/lib/         ConfigLib (loader), BaseScript (EOA/Safe switch + Safe-JSON emitter), Types
-out/safe/        generated Safe Transaction Builder JSON (ordered a-/b-/c-)
+out/safe/        generated Safe Transaction Builder JSON, one subdir per chain alias
 test/            unit + integration (fork) tests
 ```
 
@@ -82,12 +82,13 @@ of broadcasting — same script, different mode:
 export OUTPUT_MODE=SAFE
 export SAFE_ADDRESS=0x<the executing Safe>
 forge script script/ownership/Handover.s.sol --sig "run(string)" sepolia
-# -> writes out/safe/a-handover-propose-<chainid>.json,
-#             out/safe/b-handover-accept-<chainid>.json,
-#             out/safe/c-handover-finalize-<chainid>.json
+# -> writes out/safe/sepolia/a-handover-propose.json,
+#             out/safe/sepolia/b-handover-accept.json,
+#             out/safe/sepolia/c-handover-finalize.json
 ```
 
-Multi-step ceremonies are split into **ordered** batch files (`a-`, `b-`, `c-` + chain id)
+Multi-step ceremonies are split into **ordered** batch files (`a-`, `b-`, `c-`, one
+directory per chain alias)
 so a signer can't execute steps out of order and permanently lock a contract. Handover
 order is **grant-new-before-revoke-old**; revoke the old holder only after onchain
 acceptance is confirmed.

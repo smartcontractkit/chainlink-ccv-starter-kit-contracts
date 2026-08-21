@@ -17,9 +17,9 @@ import {console2} from "forge-std/console2.sol";
 ///      pause. There is no inbound halt. Setting a zero router here is legitimate and
 ///      only emits an informational WARN.
 ///
-/// Usage:
+/// Usage (chainAlias is the lane's SOURCE chain — outbound gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyRemoteChainConfigUpdates.s.sol \
-///     --rpc-url $SEPOLIA_RPC_URL   # (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
+///     --sig "run(string)" sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $SEPOLIA_RPC_URL --broadcast --aws)
 contract ApplyRemoteChainConfigUpdates is BaseScript {
   /// @notice Which deployment a lane's remote-chain config targets. TODO Single point to
   ///         flip if the confirmed direction is dest-side instead of source-side.

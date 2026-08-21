@@ -19,9 +19,9 @@ import {console2} from "forge-std/console2.sol";
 ///        - Added senders must be non-zero, else InvalidAllowListRequest.
 ///        - Removals always apply (no-op if the sender wasn't present).
 ///
-/// Usage:
+/// Usage (chainAlias is the lane's SOURCE chain — sender gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyAllowlistUpdates.s.sol \
-///     --rpc-url $SEPOLIA_RPC_URL   # (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
+///     --sig "run(string)" sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $SEPOLIA_RPC_URL --broadcast --aws)
 ///   NOTE: in SAFE mode the batch must be signed by the owner OR allowlistAdmin Safe.
 contract ApplyAllowlistUpdates is BaseScript {
   /// @notice Which deployment a lane's allowlist config targets. TODO Single point to flip

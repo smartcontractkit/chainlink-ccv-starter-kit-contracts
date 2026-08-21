@@ -14,9 +14,9 @@ import {console2} from "forge-std/console2.sol";
 ///         CommitteeVerifier.
 /// @dev This is a FULL-SET REPLACEMENT: the contract clears the
 ///      existing signer set for that source and re-adds `signers`.
-/// Usage:
+/// Usage (chainAlias is the lane's DESTINATION chain — signatures are verified there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplySignatureConfigs.s.sol \
-///     --rpc-url $SEPOLIA_RPC_URL   # (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
+///     --sig "run(string)" base_sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast --aws)
 contract ApplySignatureConfigs is BaseScript {
   /// @notice Which deployment a lane's signature config targets. TODO: Single point to flip
   ///         if the confirmed direction is source-side instead of dest-side.
