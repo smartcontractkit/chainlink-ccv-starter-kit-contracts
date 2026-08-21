@@ -33,7 +33,7 @@ contract UpdateStorageLocations is BaseScript {
   function run(
     string calldata chainAlias
   ) external {
-    _initOutput();
+    _initOutput(chainAlias);
 
     Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);

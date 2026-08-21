@@ -23,7 +23,7 @@ contract AcceptOwnership is BaseScript {
     string calldata chainAlias,
     string calldata target
   ) external {
-    _initOutput();
+    _initOutput(chainAlias);
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     address to = _eq(target, "verifier") ? dep.verifier : _eq(target, "resolver") ? dep.resolver : address(0);

@@ -38,7 +38,7 @@ contract SetDynamicConfig is BaseScript {
   function run(
     string calldata chainAlias
   ) external {
-    _initOutput();
+    _initOutput(chainAlias);
 
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);

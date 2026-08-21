@@ -7,8 +7,7 @@ import {Types} from "../../src/lib/Types.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title AcceptStorageLocationsAdmin
-/// @notice Outline step 13 (accept leg for the storageLocationsAdmin role). Called
-///         BY the incoming admin to complete the two-step transfer.
+/// @notice Called BY the incoming admin to complete the two-step transfer.
 /// @dev Target call (grounded): CommitteeVerifier.acceptStorageLocationsAdmin().
 contract AcceptStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the accept-storageLocationsAdmin calldata.
@@ -23,7 +22,7 @@ contract AcceptStorageLocationsAdmin is BaseScript {
   function run(
     string calldata chainAlias
   ) external {
-    _initOutput();
+    _initOutput(chainAlias);
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     require(dep.verifier != address(0), "target verifier unset");

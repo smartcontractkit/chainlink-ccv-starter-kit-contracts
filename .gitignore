@@ -29,9 +29,8 @@ config/**/*.json
 # -----------------------------------------------------------------------------
 # Generated outputs
 # -----------------------------------------------------------------------------
-# Test-only Safe batch produced by test/unit/SafeOutput.t.sol on the test chain.
-out/safe/test-batch-*.json
-# Run-local governance snapshots / drift reports.
-out/governance/*.local.json
+# Test-only Safe batches. Directory rule, not a filename glob: everything else under
+# out/safe/ is a committed release artifact, so a renamed test file must not slip in.
+out/safe/test/
 # NOTE: real generated Safe batches under out/safe/ are intentionally NOT ignored;
 # they are release artifacts reviewed and committed per deployment.

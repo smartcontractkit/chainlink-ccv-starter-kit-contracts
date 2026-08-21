@@ -57,19 +57,20 @@ contract ApplyAllowlistUpdates is BaseScript {
     });
   }
 
-  function run() external {
-    _initOutput();
+  function run(
+    string calldata chainAlias
+  ) external {
+    _initOutput(chainAlias);
 
-    string[] memory lanes = ConfigLib.listLanes();
-    require(lanes.length > 0, "ApplyAllowlistUpdates: no lane configs found in config/lanes/");
+    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    require(dep.verifier != address(0), string.concat("ApplyAllowlistUpdates: verifier not recorded for ", chainAlias));
 
-    for (uint256 i; i < lanes.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanes[i]);
-      string memory targetAlias = _targetAlias(lane);
-      Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
-      require(
-        dep.verifier != address(0), string.concat("ApplyAllowlistUpdates: verifier not recorded for ", targetAlias)
-      );
+    string[] memory lanePaths = ConfigLib.listLanes();
+    uint256 staged;
+
+    for (uint256 i; i < lanePaths.length; ++i) {
+      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
+      if (!_eq(lane.source.aliasName, chainAlias)) continue;
 
       _assertValidConfig(lane);
 
@@ -80,9 +81,11 @@ contract ApplyAllowlistUpdates is BaseScript {
       console2.log("    added:", lane.allowlist.added.length, "removed:", lane.allowlist.removed.length);
 
       _stageMany(callsFor(dep.verifier, toAllowlistConfigArgs(lane)));
+      ++staged;
     }
 
-    _flush("c-apply-allowlist-updates");
+    require(staged > 0, string.concat("ApplyAllowlistUpdates: no lanes with source ", chainAlias));
+    _flush(string.concat("c-apply-allowlist-updates-", chainAlias));
   }
 
   // ---------------------------------------------------------------------------
@@ -92,6 +95,13 @@ contract ApplyAllowlistUpdates is BaseScript {
     Types.LaneConfig memory lane
   ) internal pure {
     require(lane.dest.chainSelector != 0, "ApplyAllowlistUpdates: destChainSelector cannot be zero");
+    // Both fields write s_remoteChainConfigs[destSelector].allowlistEnabled on THIS
+    // chain's verifier, so a disagreement within one lane file makes the result depend
+    // on which script ran last.
+    require(
+      lane.allowlist.allowlistEnabled == lane.remote.allowlistEnabled,
+      "ApplyAllowlistUpdates: allowlist.allowlistEnabled != remoteChainConfig.allowlistEnabled"
+    );
 
     Types.AllowlistConfig memory al = lane.allowlist;
     if (al.added.length > 0) {

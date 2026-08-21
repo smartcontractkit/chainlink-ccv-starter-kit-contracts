@@ -32,14 +32,20 @@ abstract contract BaseScript is Script {
   }
 
   OutputMode internal outputMode;
+  /// @dev Chain alias this run targets; becomes the out/safe/ subdirectory.
+  string internal outputScope;
   string internal safeAddress; // optional: the executing Safe, recorded in batch meta
   Call[] private _staged;
 
   /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE / SAFE_ADDRESS.
-  function _initOutput() internal {
+  /// @param chainAlias The chain this run targets. A Safe batch executes on ONE chain, so
+  ///        this scopes the output directory; without it two chains overwrite each other.
+  function _initOutput(
+    string memory chainAlias
+  ) internal {
     string memory m = vm.envOr("OUTPUT_MODE", string("EOA"));
     OutputMode mode = (_eq(m, "SAFE") || _eq(m, "safe")) ? OutputMode.SAFE : OutputMode.EOA;
-    _initOutput(mode, vm.envOr("SAFE_ADDRESS", string("")));
+    _initOutput(mode, vm.envOr("SAFE_ADDRESS", string("")), chainAlias);
   }
 
   /// @notice Explicit-mode variant that bypasses env vars. Prefer this in tests
@@ -49,8 +55,17 @@ abstract contract BaseScript is Script {
     OutputMode mode,
     string memory safe
   ) internal {
+    _initOutput(mode, safe, "");
+  }
+
+  function _initOutput(
+    OutputMode mode,
+    string memory safe,
+    string memory chainAlias
+  ) internal {
     outputMode = mode;
     safeAddress = safe;
+    outputScope = chainAlias;
     delete _staged;
     console2.log("[BaseScript] output mode:", outputMode == OutputMode.SAFE ? "SAFE" : "EOA");
   }
@@ -102,8 +117,11 @@ abstract contract BaseScript is Script {
     string memory name
   ) internal {
     if (outputMode != OutputMode.SAFE) return;
-    vm.createDir("out/safe", true); // idempotent; survives a fresh clone
-    string memory file = string.concat("out/safe/", name, "-", vm.toString(block.chainid), ".json");
+    // One directory per chain. `block.chainid` is deliberately not used: SAFE mode is
+    // meant to run key-free without --rpc-url, where it is 31337 for every chain.
+    string memory dir = bytes(outputScope).length == 0 ? "out/safe" : string.concat("out/safe/", outputScope);
+    vm.createDir(dir, true); // idempotent; survives a fresh clone
+    string memory file = string.concat(dir, "/", name, ".json");
     vm.writeFile(file, _buildSafeJson(name));
     console2.log("[BaseScript] Safe batch written:", file);
     console2.log("[BaseScript]   transactions:", _staged.length);

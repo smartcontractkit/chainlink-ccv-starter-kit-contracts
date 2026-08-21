@@ -53,31 +53,48 @@ contract ApplySignatureConfigs is BaseScript {
     });
   }
 
-  function run() external {
-    _initOutput();
+  /// @notice Resolves one lane to the calls `run()` stages. Requires a deployment record
+  ///         for the target chain.
+  /// @return calls One applySignatureConfigs call.
+  /// @return targetAlias The chain the calls are addressed to (dest side).
+  function laneCalls(
+    Types.LaneConfig memory lane
+  ) public view returns (Call[] memory calls, string memory targetAlias) {
+    targetAlias = _targetAlias(lane);
+    Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
+    require(dep.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias));
 
-    string[] memory lanes = ConfigLib.listLanes();
-    require(lanes.length > 0, "ApplySignatureConfigs: no lane configs found in config/lanes/");
+    _assertValidConfig(lane);
 
-    for (uint256 i; i < lanes.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanes[i]);
-      string memory targetAlias = _targetAlias(lane);
-      Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
-      require(
-        dep.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias)
-      );
+    return (callsFor(dep.verifier, new uint64[](0), toSignatureConfig(lane)), targetAlias);
+  }
 
-      _assertValidConfig(lane);
+  function run(
+    string calldata chainAlias
+  ) external {
+    _initOutput(chainAlias);
+
+    string[] memory lanePaths = ConfigLib.listLanes();
+    uint256 staged;
+
+    for (uint256 i; i < lanePaths.length; ++i) {
+      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
+      if (!_eq(_targetAlias(lane), chainAlias)) continue;
+
+      (Call[] memory calls, string memory targetAlias) = laneCalls(lane);
 
       console2.log("[ApplySignatureConfigs] lane:", lane.name);
-      console2.log("  target verifier:", dep.verifier);
+      console2.log("  target chain:", targetAlias);
+      console2.log("  target verifier:", calls[0].to);
       console2.log("  source selector:", lane.source.chainSelector);
       console2.log("  threshold / signers:", lane.sig.threshold, lane.sig.signers.length);
 
-      _stageMany(callsFor(dep.verifier, new uint64[](0), toSignatureConfig(lane)));
+      _stageMany(calls);
+      ++staged;
     }
 
-    _flush("a-apply-signature-configs");
+    require(staged > 0, string.concat("ApplySignatureConfigs: no lanes with destination ", chainAlias));
+    _flush(string.concat("a-apply-signature-configs-", chainAlias));
   }
 
   // ---------------------------------------------------------------------------

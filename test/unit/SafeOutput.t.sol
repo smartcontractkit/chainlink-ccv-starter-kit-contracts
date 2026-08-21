@@ -8,10 +8,12 @@ import {Test} from "forge-std/Test.sol";
 ///      Uses the explicit-mode initializer so tests never depend on process-global
 ///      env state (which is order- and parallelism-sensitive).
 contract Harness is BaseScript {
+  /// @dev Scoped to "test" so the batch lands in out/safe/test/, which .gitignore
+  ///      excludes as a directory. Everything else under out/safe/ is committed.
   function initSafe(
     string calldata safe
   ) external {
-    _initOutput(OutputMode.SAFE, safe);
+    _initOutput(OutputMode.SAFE, safe, "test");
   }
 
   function initEoa() external {
@@ -56,7 +58,7 @@ contract SafeOutputTest is Test {
     // Buffer is cleared after flush.
     assertEq(h.count(), 0);
 
-    string memory path = string.concat("out/safe/test-batch-", vm.toString(block.chainid), ".json");
+    string memory path = "out/safe/test/test-batch.json";
     string memory json = vm.readFile(path);
 
     assertEq(vm.parseJsonString(json, ".version"), "1.0");

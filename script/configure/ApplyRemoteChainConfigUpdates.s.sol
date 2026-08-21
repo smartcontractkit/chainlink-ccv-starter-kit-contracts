@@ -58,20 +58,22 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     });
   }
 
-  function run() external {
-    _initOutput();
+  function run(
+    string calldata chainAlias
+  ) external {
+    _initOutput(chainAlias);
 
-    string[] memory lanes = ConfigLib.listLanes();
-    require(lanes.length > 0, "ApplyRemoteChainConfigUpdates: no lane configs found in config/lanes/");
+    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    require(
+      dep.verifier != address(0), string.concat("ApplyRemoteChainConfigUpdates: verifier not recorded for ", chainAlias)
+    );
 
-    for (uint256 i; i < lanes.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanes[i]);
-      string memory targetAlias = _targetAlias(lane);
-      Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
-      require(
-        dep.verifier != address(0),
-        string.concat("ApplyRemoteChainConfigUpdates: verifier not recorded for ", targetAlias)
-      );
+    string[] memory lanePaths = ConfigLib.listLanes();
+    uint256 staged;
+
+    for (uint256 i; i < lanePaths.length; ++i) {
+      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
+      if (!_eq(_targetAlias(lane), chainAlias)) continue;
 
       _assertValidConfig(lane);
 
@@ -81,9 +83,11 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
       console2.log("  router:", lane.remote.router);
 
       _stageMany(callsFor(dep.verifier, toRemoteChainConfigArgs(lane)));
+      ++staged;
     }
 
-    _flush("b-apply-remote-chain-config");
+    require(staged > 0, string.concat("ApplyRemoteChainConfigUpdates: no lanes with source ", chainAlias));
+    _flush(string.concat("b-apply-remote-chain-config-", chainAlias));
   }
 
   // ---------------------------------------------------------------------------
@@ -94,6 +98,11 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
   ) internal pure {
     require(lane.dest.chainSelector != 0, "ApplyRemoteChainConfigUpdates: remoteChainSelector cannot be zero");
     require(lane.remote.gasForVerification != 0, "ApplyRemoteChainConfigUpdates: gasForVerification cannot be zero");
+    // Same slot is written by ApplyAllowlistUpdates; see the note there.
+    require(
+      lane.remote.allowlistEnabled == lane.allowlist.allowlistEnabled,
+      "ApplyRemoteChainConfigUpdates: remoteChainConfig.allowlistEnabled != allowlist.allowlistEnabled"
+    );
 
     if (lane.remote.router == address(0)) {
       console2.log("  WARN router == 0: OUTBOUND PAUSED for this destination (emergency lever)");

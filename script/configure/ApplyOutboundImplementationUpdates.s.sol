@@ -32,7 +32,7 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
   function run(
     string calldata chainAlias
   ) external {
-    _initOutput();
+    _initOutput(chainAlias);
 
     Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
     require(
