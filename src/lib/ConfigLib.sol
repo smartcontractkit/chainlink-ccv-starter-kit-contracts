@@ -64,10 +64,29 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  lanes
   // --------------------------------------------------------------------------
+  function lanePath(
+    string memory laneName
+  ) internal pure returns (string memory) {
+    return string.concat(LANES_DIR, laneName, ".json");
+  }
+
+  /// @notice Loads one lane by name.
+  /// @dev The filename and the `name` field must agree. A mismatch is a config error, not
+  ///      a lookup miss, so it fails with that reason rather than "no such lane".
+  function readLane(
+    string memory laneName
+  ) internal view returns (Types.LaneConfig memory lane) {
+    lane = readLaneByPath(lanePath(laneName));
+    require(
+      _stringsEqual(lane.name, laneName),
+      string.concat("ConfigLib: ", lanePath(laneName), " declares name '", lane.name, "'")
+    );
+  }
+
   /// @notice Returns the file paths of every real lane config (skips `_template`
   ///         and `*.example.json`). Feed each path to `readLaneByPath`.
-  /// @dev Lanes are enumerated, not looked up by alias: a lane is keyed by its own name.
-  ///      Callers wanting "lanes touching chain X" filter on `lane.source`/`lane.dest`.
+  /// @dev For callers that need "every lane touching chain X" — they filter on
+  ///      `lane.source`/`lane.dest`. To fetch a single known lane, use `readLane`.
   /// @dev Sorted before returning. `vm.readDir` order is filesystem-dependent, and the
   ///      lane-iterating scripts stage every lane into ONE Safe batch, so unsorted paths
   ///      make the generated JSON byte-differ between machines and defeat batch diffing.
