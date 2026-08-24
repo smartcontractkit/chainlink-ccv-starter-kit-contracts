@@ -98,7 +98,7 @@ contract ApplySignatureConfigs is BaseScript {
     }
 
     require(staged > 0, string.concat("ApplySignatureConfigs: no lanes with destination ", chainAlias));
-    _flush(string.concat("a-apply-signature-configs-", chainAlias));
+    _flush(string.concat("apply-signature-configs-", chainAlias));
   }
 
   // ---------------------------------------------------------------------------

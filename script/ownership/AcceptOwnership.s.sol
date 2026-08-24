@@ -41,6 +41,6 @@ contract AcceptOwnership is BaseScript {
     console2.log("[AcceptOwnership]", target, "->", to);
 
     _stageMany(callsFor(to));
-    _flush(string.concat("b-accept-owner-", target));
+    _flush(string.concat("accept-owner-", target));
   }
 }

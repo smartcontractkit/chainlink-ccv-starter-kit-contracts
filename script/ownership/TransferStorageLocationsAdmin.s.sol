@@ -38,6 +38,6 @@ contract TransferStorageLocationsAdmin is BaseScript {
     console2.log("  newAdmin:", roles.verifier.storageLocationsAdmin);
 
     _stageMany(callsFor(deployment.verifier, roles.verifier.storageLocationsAdmin));
-    _flush("a-transfer-storage-locations-admin");
+    _flush("transfer-storage-locations-admin");
   }
 }

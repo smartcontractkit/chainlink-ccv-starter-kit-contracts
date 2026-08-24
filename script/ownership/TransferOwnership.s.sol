@@ -46,6 +46,6 @@ contract TransferOwnership is BaseScript {
     console2.log("  newOwner:", newOwner);
 
     _stageMany(callsFor(to, newOwner));
-    _flush(string.concat("a-transfer-owner-", target));
+    _flush(string.concat("transfer-owner-", target));
   }
 }

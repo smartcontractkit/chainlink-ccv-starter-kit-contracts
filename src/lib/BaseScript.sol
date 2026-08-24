@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {ConfigLib} from "./ConfigLib.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -33,7 +34,7 @@ abstract contract BaseScript is Script {
 
   OutputMode internal outputMode;
   /// @dev Chain alias this run targets; becomes the out/safe/ subdirectory.
-  string internal outputScope;
+  string internal outputChainAlias;
   string internal safeAddress; // optional: the executing Safe, recorded in batch meta
   Call[] private _staged;
 
@@ -66,7 +67,7 @@ abstract contract BaseScript is Script {
   ) internal {
     outputMode = mode;
     safeAddress = safe;
-    outputScope = chainAlias;
+    outputChainAlias = chainAlias;
     delete _staged;
     console2.log("[BaseScript] output mode:", outputMode == OutputMode.SAFE ? "SAFE" : "EOA");
   }
@@ -111,8 +112,7 @@ abstract contract BaseScript is Script {
   }
 
   /// @notice In SAFE mode, write the buffered calls to a Safe Transaction Builder
-  ///         batch. `name` should carry the execution order prefix so signers
-  ///         cannot reorder multi-step ceremonies, e.g. "a-transfer-owner".
+  ///         batch. One file per batch: the Builder imports one at a time.
   ///         No-op in EOA mode.
   function _flush(
     string memory name
@@ -120,8 +120,8 @@ abstract contract BaseScript is Script {
     if (outputMode != OutputMode.SAFE) return;
     // One directory per chain. `block.chainid` is deliberately not used: SAFE mode is
     // meant to run key-free without --rpc-url, where it is 31337 for every chain.
-    require(bytes(outputScope).length != 0, "BaseScript: SAFE output needs a chain alias");
-    string memory dir = string.concat("out/safe/", outputScope);
+    require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
+    string memory dir = string.concat("out/safe/", outputChainAlias);
     vm.createDir(dir, true); // idempotent; survives a fresh clone
     string memory file = string.concat(dir, "/", name, ".json");
     vm.writeFile(file, _buildSafeJson(name));
@@ -162,10 +162,17 @@ abstract contract BaseScript is Script {
       meta = string.concat(meta, ',"createdFromSafeAddress":"', safeAddress, '"');
     }
     meta = string.concat(meta, "}");
-
     return string.concat(
-      '{"version":"1.0","chainId":"', vm.toString(block.chainid), '",', meta, ',"transactions":[', txs, "]}"
+      '{"version":"1.0","chainId":"', vm.toString(_outputChainId()), '",', meta, ',"transactions":[', txs, "]}"
     );
+  }
+
+  /// @dev Safe validates chainId on import. `block.chainid` is 31337 whenever SAFE mode
+  ///      runs without --rpc-url — the intended key-free path — so the id comes from the
+  ///      chain config. Falls back only for a scope with no chain file (e.g. tests).
+  function _outputChainId() private view returns (uint256 chainId) {
+    chainId = ConfigLib.readChainOrEmpty(outputChainAlias).chainId;
+    if (chainId == 0) chainId = block.chainid;
   }
 
   // ---------------------------------------------------------------------------

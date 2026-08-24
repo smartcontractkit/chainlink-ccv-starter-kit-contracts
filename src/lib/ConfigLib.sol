@@ -21,10 +21,25 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  chains
   // --------------------------------------------------------------------------
+  function chainPath(
+    string memory aliasName
+  ) internal pure returns (string memory) {
+    return string.concat(CHAINS_DIR, aliasName, ".json");
+  }
+
   function readChain(
     string memory aliasName
   ) internal view returns (Types.ChainConfig memory) {
-    return readChainByPath(string.concat(CHAINS_DIR, aliasName, ".json"));
+    return readChainByPath(chainPath(aliasName));
+  }
+
+  /// @notice Chain config if the file exists, else an empty struct (`chainId == 0`).
+  /// @dev For callers that must tolerate an alias with no chain file, e.g. a test scope.
+  function readChainOrEmpty(
+    string memory aliasName
+  ) internal view returns (Types.ChainConfig memory chainConfig) {
+    string memory path = chainPath(aliasName);
+    if (vm.exists(path)) return readChainByPath(path);
   }
 
   function readChainByPath(

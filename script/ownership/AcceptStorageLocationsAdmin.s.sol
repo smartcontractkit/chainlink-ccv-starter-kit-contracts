@@ -29,6 +29,6 @@ contract AcceptStorageLocationsAdmin is BaseScript {
     console2.log("[AcceptStorageLocationsAdmin] verifier:", deployment.verifier);
 
     _stageMany(callsFor(deployment.verifier));
-    _flush("b-accept-storage-locations-admin");
+    _flush("accept-storage-locations-admin");
   }
 }

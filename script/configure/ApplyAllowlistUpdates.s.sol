@@ -87,7 +87,7 @@ contract ApplyAllowlistUpdates is BaseScript {
     }
 
     require(staged > 0, string.concat("ApplyAllowlistUpdates: no lanes with source ", chainAlias));
-    _flush(string.concat("c-apply-allowlist-updates-", chainAlias));
+    _flush(string.concat("apply-allowlist-updates-", chainAlias));
   }
 
   // ---------------------------------------------------------------------------

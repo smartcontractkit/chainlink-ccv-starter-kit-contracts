@@ -88,7 +88,7 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     }
 
     require(staged > 0, string.concat("ApplyRemoteChainConfigUpdates: no lanes with source ", chainAlias));
-    _flush(string.concat("b-apply-remote-chain-config-", chainAlias));
+    _flush(string.concat("apply-remote-chain-config-", chainAlias));
   }
 
   // ---------------------------------------------------------------------------
