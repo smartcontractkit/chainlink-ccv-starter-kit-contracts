@@ -51,7 +51,7 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     args[0] = BaseVerifier.RemoteChainConfigArgs({
       router: IRouter(lane.remote.router),
       remoteChainSelector: lane.dest.chainSelector,
-      allowlistEnabled: lane.remote.allowlistEnabled,
+      allowlistEnabled: lane.allowlist.allowlistEnabled,
       feeUSDCents: lane.remote.feeUSDCents,
       gasForVerification: lane.remote.gasForVerification,
       payloadSizeBytes: lane.remote.payloadSizeBytes
@@ -99,12 +99,6 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
   ) internal pure {
     require(lane.dest.chainSelector != 0, "ApplyRemoteChainConfigUpdates: remoteChainSelector cannot be zero");
     require(lane.remote.gasForVerification != 0, "ApplyRemoteChainConfigUpdates: gasForVerification cannot be zero");
-    // Same slot is written by ApplyAllowlistUpdates; see the note there.
-    require(
-      lane.remote.allowlistEnabled == lane.allowlist.allowlistEnabled,
-      "ApplyRemoteChainConfigUpdates: remoteChainConfig.allowlistEnabled != allowlist.allowlistEnabled"
-    );
-
     if (lane.remote.router == address(0)) {
       console2.log("  WARN router == 0: OUTBOUND PAUSED for this destination (emergency lever)");
     }

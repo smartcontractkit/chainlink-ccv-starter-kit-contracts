@@ -106,7 +106,6 @@ library ConfigLib {
     lane.signatureConfig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
 
     lane.remote.router = vm.parseJsonAddress(json, ".remoteChainConfig.router");
-    lane.remote.allowlistEnabled = vm.parseJsonBool(json, ".remoteChainConfig.allowlistEnabled");
     lane.remote.feeUSDCents = uint16(vm.parseJsonUint(json, ".remoteChainConfig.feeUSDCents"));
     lane.remote.gasForVerification = uint32(vm.parseJsonUint(json, ".remoteChainConfig.gasForVerification"));
     lane.remote.payloadSizeBytes = uint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"));

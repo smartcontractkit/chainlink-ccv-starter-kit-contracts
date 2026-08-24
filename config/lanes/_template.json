@@ -8,7 +8,6 @@
   },
   "remoteChainConfig": {
     "router": "0x0000000000000000000000000000000000000000",
-    "allowlistEnabled": false,
     "feeUSDCents": 0,
     "gasForVerification": 0,
     "payloadSizeBytes": 0

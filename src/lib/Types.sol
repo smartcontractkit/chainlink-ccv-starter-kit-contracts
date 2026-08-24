@@ -37,7 +37,6 @@ library Types {
 
   struct RemoteChainConfig {
     address router; // router == address(0) is the outbound emergency lever
-    bool allowlistEnabled;
     uint16 feeUSDCents;
     uint32 gasForVerification;
     uint16 payloadSizeBytes;

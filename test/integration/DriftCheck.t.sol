@@ -233,7 +233,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   function test_drift_remoteChainConfig_everyField() public view {
     Types.LaneConfig[] memory lanes = _lanes();
     lanes[0].remote.router = address(0xBAD);
-    lanes[0].remote.allowlistEnabled = true;
+    lanes[0].allowlist.allowlistEnabled = true;
     lanes[0].remote.feeUSDCents = FEE_USD_CENTS + 1;
     lanes[0].remote.gasForVerification = GAS_FOR_VERIFICATION + 1;
     lanes[0].remote.payloadSizeBytes = PAYLOAD_SIZE_BYTES + 1;
@@ -373,7 +373,6 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     lane.dest = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SEL});
     lane.remote = Types.RemoteChainConfig({
       router: ROUTER,
-      allowlistEnabled: false,
       feeUSDCents: FEE_USD_CENTS,
       gasForVerification: GAS_FOR_VERIFICATION,
       payloadSizeBytes: PAYLOAD_SIZE_BYTES

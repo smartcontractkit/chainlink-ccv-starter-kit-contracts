@@ -100,7 +100,6 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
   //    router = 0x0 is the ONLY emergency lever (outbound pause) — see README.
   "remoteChainConfig": {
     "router":             "0x...",
-    "allowlistEnabled":   false,
     "feeUSDCents":        0,
     "gasForVerification": 200000,
     "payloadSizeBytes":   0

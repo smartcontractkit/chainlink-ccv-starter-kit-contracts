@@ -97,14 +97,6 @@ contract ApplyAllowlistUpdates is BaseScript {
     Types.LaneConfig memory lane
   ) internal pure {
     require(lane.dest.chainSelector != 0, "ApplyAllowlistUpdates: destChainSelector cannot be zero");
-    // Both fields write s_remoteChainConfigs[destSelector].allowlistEnabled on THIS
-    // chain's verifier, so a disagreement within one lane file makes the result depend
-    // on which script ran last.
-    require(
-      lane.allowlist.allowlistEnabled == lane.remote.allowlistEnabled,
-      "ApplyAllowlistUpdates: allowlist.allowlistEnabled != remoteChainConfig.allowlistEnabled"
-    );
-
     Types.AllowlistConfig memory allowlist = lane.allowlist;
     if (allowlist.added.length > 0) {
       require(allowlist.allowlistEnabled, "ApplyAllowlistUpdates: adding senders requires allowlistEnabled=true");

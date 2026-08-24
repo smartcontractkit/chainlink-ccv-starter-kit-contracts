@@ -204,7 +204,7 @@ contract DriftCheck is Script {
         string memory lanePrefix = string.concat("lane ", lane.name, " ");
         drift += _diffAddress(string.concat(lanePrefix, "router"), lane.remote.router, address(remote.router));
         drift += _diffBool(
-          string.concat(lanePrefix, "allowlistEnabled"), lane.remote.allowlistEnabled, remote.allowlistEnabled
+          string.concat(lanePrefix, "allowlistEnabled"), lane.allowlist.allowlistEnabled, remote.allowlistEnabled
         );
         drift += _diffUint(string.concat(lanePrefix, "feeUSDCents"), lane.remote.feeUSDCents, remote.feeUSDCents);
         drift += _diffUint(
