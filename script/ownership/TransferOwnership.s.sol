@@ -16,7 +16,7 @@ import {console2} from "forge-std/console2.sol";
 ///      The accept leg is prepared and executed by the incoming holder, not here.
 ///
 /// Usage:
-///   OUTPUT_MODE=SAFE SAFE_ADDRESS=0x... forge script script/ownership/TransferOwnership.s.sol \
+///   OUTPUT_MODE=SAFE forge script script/ownership/TransferOwnership.s.sol \
 ///     --sig "run(string,string)" sepolia verifier
 contract TransferOwnership is BaseScript {
   function callsFor(

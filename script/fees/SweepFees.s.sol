@@ -111,6 +111,9 @@ contract SweepFees is BaseScript {
       return;
     }
 
+    _assertReachable(deployment.verifier, "verifier");
+    _assertReachable(deployment.resolver, "resolver");
+
     (address vAgg, address rAgg) = readAggregators(deployment.verifier, deployment.resolver);
 
     // Warn on drift between chain state and the intended holder in config/roles.
@@ -178,5 +181,21 @@ contract SweepFees is BaseScript {
     } else {
       console2.log(string.concat("  sweeping ", label, " -> aggregator:"), aggregator);
     }
+  }
+
+  /// @dev A recorded address with no code means the wrong RPC (or none), not an empty
+  ///      balance. Without this the reads below silently yield zero and the sweep looks
+  ///      like a clean no-op. Unrecorded (zero) targets are a real state, so they pass.
+  function _assertReachable(
+    address target,
+    string memory label
+  ) private view {
+    if (target == address(0)) return;
+    require(
+      target.code.length != 0,
+      string.concat(
+        "SweepFees: no code at recorded ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?"
+      )
+    );
   }
 }

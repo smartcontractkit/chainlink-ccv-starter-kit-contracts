@@ -35,10 +35,9 @@ abstract contract BaseScript is Script {
   OutputMode internal outputMode;
   /// @dev Chain alias this run targets; becomes the out/safe/ subdirectory.
   string internal outputChainAlias;
-  string internal safeAddress; // optional: the executing Safe, recorded in batch meta
   Call[] private _staged;
 
-  /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE / SAFE_ADDRESS.
+  /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE.
   /// @param chainAlias The chain this run targets. A Safe batch executes on ONE chain, so
   ///        this scopes the output directory; without it two chains overwrite each other.
   function _initOutput(
@@ -47,7 +46,7 @@ abstract contract BaseScript is Script {
     string memory modeName = vm.envOr("OUTPUT_MODE", string("EOA"));
     OutputMode mode =
       (_stringsEqual(modeName, "SAFE") || _stringsEqual(modeName, "safe")) ? OutputMode.SAFE : OutputMode.EOA;
-    _initOutput(mode, vm.envOr("SAFE_ADDRESS", string("")), chainAlias);
+    _initOutput(mode, chainAlias);
   }
 
   /// @notice Explicit-mode variant that bypasses env vars. Prefer this in tests
@@ -55,18 +54,9 @@ abstract contract BaseScript is Script {
   ///         parallelism-sensitive) and in callers that already know the mode.
   function _initOutput(
     OutputMode mode,
-    string memory safe
-  ) internal {
-    _initOutput(mode, safe, "");
-  }
-
-  function _initOutput(
-    OutputMode mode,
-    string memory safe,
     string memory chainAlias
   ) internal {
     outputMode = mode;
-    safeAddress = safe;
     outputChainAlias = chainAlias;
     delete _staged;
     console2.log("[BaseScript] output mode:", outputMode == OutputMode.SAFE ? "SAFE" : "EOA");
@@ -118,8 +108,8 @@ abstract contract BaseScript is Script {
     string memory name
   ) internal {
     if (outputMode != OutputMode.SAFE) return;
-    // One directory per chain. `block.chainid` is deliberately not used: SAFE mode is
-    // meant to run key-free without --rpc-url, where it is 31337 for every chain.
+    // One directory per chain. `block.chainid` is deliberately not used: SAFE mode can
+    // run without --rpc-url, where it is 31337 for every chain.
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
     string memory dir = string.concat("out/safe/", outputChainAlias);
     vm.createDir(dir, true); // idempotent; survives a fresh clone
@@ -158,9 +148,6 @@ abstract contract BaseScript is Script {
     string memory meta = string.concat(
       '"meta":{"name":"', name, '","description":"CCV Starter Kit generated batch","txBuilderVersion":"1.16.5"'
     );
-    if (bytes(safeAddress).length > 0) {
-      meta = string.concat(meta, ',"createdFromSafeAddress":"', safeAddress, '"');
-    }
     meta = string.concat(meta, "}");
     return string.concat(
       '{"version":"1.0","chainId":"', vm.toString(_outputChainId()), '",', meta, ',"transactions":[', txs, "]}"

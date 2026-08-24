@@ -95,6 +95,9 @@ contract BalanceReport is Script {
     console2.log("  verifier:", deployment.verifier);
     console2.log("  resolver:", deployment.resolver);
 
+    _assertReachable(deployment.verifier, "verifier");
+    _assertReachable(deployment.resolver, "resolver");
+
     // ---- fee aggregators (the sweep destinations) ----
     (address vAgg, address rAgg, bool vOk, bool rOk) = readAggregators(deployment.verifier, deployment.resolver);
 
@@ -143,5 +146,21 @@ contract BalanceReport is Script {
         console2.log("    resolver balance: UNREADABLE (not an ERC20 at this address?)");
       }
     }
+  }
+
+  /// @dev A recorded address with no code means the wrong RPC (or none), not an empty
+  ///      balance. Without this the reads below silently yield zero and the sweep looks
+  ///      like a clean no-op. Unrecorded (zero) targets are a real state, so they pass.
+  function _assertReachable(
+    address target,
+    string memory label
+  ) private view {
+    if (target == address(0)) return;
+    require(
+      target.code.length != 0,
+      string.concat(
+        "BalanceReport: no code at recorded ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?"
+      )
+    );
   }
 }

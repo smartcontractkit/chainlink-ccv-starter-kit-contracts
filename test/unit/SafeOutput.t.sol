@@ -10,10 +10,8 @@ import {Test} from "forge-std/Test.sol";
 contract Harness is BaseScript {
   /// @dev Scoped to "test" so the batch lands in out/safe/test/, which .gitignore
   ///      excludes as a directory. Everything else under out/safe/ is committed.
-  function initSafe(
-    string calldata safe
-  ) external {
-    _initOutput(OutputMode.SAFE, safe, "test");
+  function initSafe() external {
+    _initOutput(OutputMode.SAFE, "test");
   }
 
   function initEoa() external {
@@ -47,7 +45,7 @@ contract Harness is BaseScript {
 contract SafeOutputTest is Test {
   function test_safeMode_buffersAndEmitsValidBatch() public {
     Harness h = new Harness();
-    h.initSafe("0x00000000000000000000000000000000000000A5");
+    h.initSafe();
     assertEq(uint256(h.mode()), uint256(BaseScript.OutputMode.SAFE));
 
     address target = address(0xABCD);
