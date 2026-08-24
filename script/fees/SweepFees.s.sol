@@ -52,8 +52,10 @@ contract SweepFees is BaseScript {
     address resolver
   ) public view returns (address verifierAggregator, address resolverAggregator) {
     if (verifier.code.length != 0) {
-      try CommitteeVerifier(verifier).getDynamicConfig() returns (CommitteeVerifier.DynamicConfig memory dyn) {
-        verifierAggregator = dyn.feeAggregator;
+      try CommitteeVerifier(verifier).getDynamicConfig() returns (
+        CommitteeVerifier.DynamicConfig memory dynamicConfig
+      ) {
+        verifierAggregator = dynamicConfig.feeAggregator;
       } catch {}
     }
     if (resolver.code.length != 0) {
@@ -70,25 +72,25 @@ contract SweepFees is BaseScript {
   /// @return verifierSkip Why the verifier was skipped (None when staged).
   /// @return resolverSkip Why the resolver was skipped (None when staged).
   function sweepCalls(
-    Types.Deployment memory dep,
-    Types.ChainConfig memory cc,
+    Types.Deployment memory deployment,
+    Types.ChainConfig memory chainConfig,
     bool skipZeroBalances
   ) public view returns (Call[] memory calls, SkipReason verifierSkip, SkipReason resolverSkip) {
     // No fee tokens configured => nothing to sweep anywhere.
-    if (cc.feeTokens.length == 0) {
+    if (chainConfig.feeTokens.length == 0) {
       return (new Call[](0), SkipReason.NoBalance, SkipReason.NoBalance);
     }
 
-    (address vAgg, address rAgg) = readAggregators(dep.verifier, dep.resolver);
+    (address vAgg, address rAgg) = readAggregators(deployment.verifier, deployment.resolver);
 
-    verifierSkip = _skipReason(dep.verifier, vAgg, cc.feeTokens, skipZeroBalances);
-    resolverSkip = _skipReason(dep.resolver, rAgg, cc.feeTokens, skipZeroBalances);
+    verifierSkip = _skipReason(deployment.verifier, vAgg, chainConfig.feeTokens, skipZeroBalances);
+    resolverSkip = _skipReason(deployment.resolver, rAgg, chainConfig.feeTokens, skipZeroBalances);
 
-    uint256 n = (verifierSkip == SkipReason.None ? 1 : 0) + (resolverSkip == SkipReason.None ? 1 : 0);
-    calls = new Call[](n);
+    uint256 sweepableCount = (verifierSkip == SkipReason.None ? 1 : 0) + (resolverSkip == SkipReason.None ? 1 : 0);
+    calls = new Call[](sweepableCount);
     uint256 i;
-    if (verifierSkip == SkipReason.None) calls[i++] = callsFor(dep.verifier, cc.feeTokens);
-    if (resolverSkip == SkipReason.None) calls[i++] = callsFor(dep.resolver, cc.feeTokens);
+    if (verifierSkip == SkipReason.None) calls[i++] = callsFor(deployment.verifier, chainConfig.feeTokens);
+    if (resolverSkip == SkipReason.None) calls[i++] = callsFor(deployment.resolver, chainConfig.feeTokens);
   }
 
   function run(
@@ -96,20 +98,20 @@ contract SweepFees is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     bool skipZeroBalances = vm.envOr("SKIP_ZERO_BALANCES", false);
 
     console2.log("[SweepFees] chain:", chainAlias);
-    console2.log("  fee tokens configured:", cc.feeTokens.length);
+    console2.log("  fee tokens configured:", chainConfig.feeTokens.length);
 
-    if (cc.feeTokens.length == 0) {
+    if (chainConfig.feeTokens.length == 0) {
       console2.log("  no feeTokens in config/chains/<alias>.json; nothing to sweep (no-op)");
       return;
     }
 
-    (address vAgg, address rAgg) = readAggregators(dep.verifier, dep.resolver);
+    (address vAgg, address rAgg) = readAggregators(deployment.verifier, deployment.resolver);
 
     // Warn on drift between chain state and the intended holder in config/roles.
     if (roles.verifier.feeAggregator != address(0) && vAgg != roles.verifier.feeAggregator) {
@@ -121,7 +123,8 @@ contract SweepFees is BaseScript {
       console2.log("        config/roles expects:", roles.resolver.feeAggregator);
     }
 
-    (Call[] memory calls, SkipReason verifierSkip, SkipReason resolverSkip) = sweepCalls(dep, cc, skipZeroBalances);
+    (Call[] memory calls, SkipReason verifierSkip, SkipReason resolverSkip) =
+      sweepCalls(deployment, chainConfig, skipZeroBalances);
 
     _logOutcome("verifier", verifierSkip, vAgg);
     _logOutcome("resolver", resolverSkip, rAgg);

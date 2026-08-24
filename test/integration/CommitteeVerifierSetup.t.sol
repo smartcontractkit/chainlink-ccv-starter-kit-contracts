@@ -42,9 +42,9 @@ abstract contract CommitteeVerifierSetup is Test {
     // 3) Verifier via plain CREATE with constructor args.
     string[] memory storageLocations = new string[](1);
     storageLocations[0] = "https://aggregator.example/ccv";
-    CommitteeVerifier.DynamicConfig memory dyn =
+    CommitteeVerifier.DynamicConfig memory dynamicConfig =
       CommitteeVerifier.DynamicConfig({feeAggregator: FEE_AGGREGATOR, allowlistAdmin: address(this)});
-    verifier = new CommitteeVerifier(dyn, storageLocations, RMN, VERSION_TAG);
+    verifier = new CommitteeVerifier(dynamicConfig, storageLocations, RMN, VERSION_TAG);
   }
 
   /// @notice Sanity check that the fixture wired up as expected.

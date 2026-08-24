@@ -43,21 +43,22 @@ contract SetAllowedFinalityConfig is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     require(
-      dep.verifier != address(0), string.concat("SetAllowedFinalityConfig: verifier not recorded for ", chainAlias)
+      deployment.verifier != address(0),
+      string.concat("SetAllowedFinalityConfig: verifier not recorded for ", chainAlias)
     );
 
     console2.log("[SetAllowedFinalityConfig] chain:", chainAlias);
-    console2.log("  target verifier:", dep.verifier);
-    console2.log("  finalityConfig:", vm.toString(cc.finalityConfig));
+    console2.log("  target verifier:", deployment.verifier);
+    console2.log("  finalityConfig:", vm.toString(chainConfig.finalityConfig));
 
-    if (cc.finalityConfig != WAIT_FOR_FINALITY) {
+    if (chainConfig.finalityConfig != WAIT_FOR_FINALITY) {
       console2.log("  WARN not full finality (fast-path/safe finality allowed) - confirm intended for this env");
     }
 
-    _stageMany(callsFor(dep.verifier, cc.finalityConfig));
+    _stageMany(callsFor(deployment.verifier, chainConfig.finalityConfig));
     _flush("set-allowed-finality-config");
   }
 }

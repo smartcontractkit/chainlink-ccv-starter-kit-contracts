@@ -43,8 +43,9 @@ abstract contract BaseScript is Script {
   function _initOutput(
     string memory chainAlias
   ) internal {
-    string memory m = vm.envOr("OUTPUT_MODE", string("EOA"));
-    OutputMode mode = (_eq(m, "SAFE") || _eq(m, "safe")) ? OutputMode.SAFE : OutputMode.EOA;
+    string memory modeName = vm.envOr("OUTPUT_MODE", string("EOA"));
+    OutputMode mode =
+      (_stringsEqual(modeName, "SAFE") || _stringsEqual(modeName, "safe")) ? OutputMode.SAFE : OutputMode.EOA;
     _initOutput(mode, vm.envOr("SAFE_ADDRESS", string("")), chainAlias);
   }
 
@@ -85,8 +86,8 @@ abstract contract BaseScript is Script {
   ) internal {
     if (outputMode == OutputMode.EOA) {
       vm.broadcast();
-      (bool ok, bytes memory ret) = to.call{value: value}(data);
-      if (!ok) _bubbleRevert(ret);
+      (bool ok, bytes memory returnData) = to.call{value: value}(data);
+      if (!ok) _bubbleRevert(returnData);
     } else {
       _staged.push(Call({to: to, value: value, data: data}));
     }
@@ -95,9 +96,9 @@ abstract contract BaseScript is Script {
   /// @notice Stage a pre-built Call (as returned by the per-operation `callsFor`
   ///         builders on the individual scripts).
   function _stage(
-    Call memory c
+    Call memory call
   ) internal {
-    _stage(c.to, c.value, c.data);
+    _stage(call.to, call.value, call.data);
   }
 
   /// @notice Stage a batch of pre-built Calls, preserving order.
@@ -141,14 +142,14 @@ abstract contract BaseScript is Script {
   ) private view returns (string memory) {
     string memory txs = "";
     for (uint256 i; i < _staged.length; ++i) {
-      Call memory c = _staged[i];
+      Call memory stagedCall = _staged[i];
       string memory one = string.concat(
         '{"to":"',
-        vm.toString(c.to),
+        vm.toString(stagedCall.to),
         '","value":"',
-        vm.toString(c.value),
+        vm.toString(stagedCall.value),
         '","data":"',
-        vm.toString(c.data),
+        vm.toString(stagedCall.data),
         '","contractMethod":null,"contractInputsValues":null}'
       );
       txs = i == 0 ? one : string.concat(txs, ",", one);
@@ -170,20 +171,20 @@ abstract contract BaseScript is Script {
   // ---------------------------------------------------------------------------
   //  helpers
   // ---------------------------------------------------------------------------
-  function _eq(
-    string memory a,
-    string memory b
+  function _stringsEqual(
+    string memory left,
+    string memory right
   ) internal pure returns (bool) {
-    return keccak256(bytes(a)) == keccak256(bytes(b));
+    return keccak256(bytes(left)) == keccak256(bytes(right));
   }
 
   function _bubbleRevert(
-    bytes memory ret
+    bytes memory returnData
   ) private pure {
-    if (ret.length > 0) {
+    if (returnData.length > 0) {
       // solhint-disable-next-line no-inline-assembly
       assembly {
-        revert(add(ret, 0x20), mload(ret))
+        revert(add(returnData, 0x20), mload(returnData))
       }
     }
     revert("BaseScript: staged call reverted");

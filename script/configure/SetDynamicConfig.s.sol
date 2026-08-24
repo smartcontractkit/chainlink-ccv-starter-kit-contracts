@@ -41,11 +41,13 @@ contract SetDynamicConfig is BaseScript {
     _initOutput(chainAlias);
 
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.verifier != address(0), string.concat("SetDynamicConfig: verifier not recorded for ", chainAlias));
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    require(
+      deployment.verifier != address(0), string.concat("SetDynamicConfig: verifier not recorded for ", chainAlias)
+    );
 
     console2.log("[SetDynamicConfig] chain:", chainAlias);
-    console2.log("  target verifier:", dep.verifier);
+    console2.log("  target verifier:", deployment.verifier);
     console2.log("  feeAggregator:", roles.verifier.feeAggregator);
     console2.log("  allowlistAdmin:", roles.verifier.allowlistAdmin);
 
@@ -53,7 +55,7 @@ contract SetDynamicConfig is BaseScript {
       console2.log("  WARN verifier feeAggregator is zero: fee withdrawals will revert until set");
     }
 
-    _stageMany(callsFor(dep.verifier, toDynamicConfig(roles)));
+    _stageMany(callsFor(deployment.verifier, toDynamicConfig(roles)));
     _flush("set-dynamic-config");
   }
 }

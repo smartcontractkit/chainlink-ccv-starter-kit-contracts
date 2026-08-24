@@ -53,7 +53,7 @@ library Types {
     string name;
     LaneEndpoint source;
     LaneEndpoint dest;
-    SignatureConfig sig;
+    SignatureConfig signatureConfig;
     RemoteChainConfig remote;
     AllowlistConfig allowlist;
   }

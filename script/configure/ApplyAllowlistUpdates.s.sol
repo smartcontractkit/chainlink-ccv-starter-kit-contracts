@@ -62,25 +62,27 @@ contract ApplyAllowlistUpdates is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.verifier != address(0), string.concat("ApplyAllowlistUpdates: verifier not recorded for ", chainAlias));
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    require(
+      deployment.verifier != address(0), string.concat("ApplyAllowlistUpdates: verifier not recorded for ", chainAlias)
+    );
 
     string[] memory lanePaths = ConfigLib.listLanes();
     uint256 staged;
 
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_eq(lane.source.aliasName, chainAlias)) continue;
-
+      console2.log("[ApplyAllowlistUpdates] lane src alias:", lane.source.aliasName);
+      if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       _assertValidConfig(lane);
 
       console2.log("[ApplyAllowlistUpdates] lane:", lane.name);
-      console2.log("  target verifier:", dep.verifier);
+      console2.log("  target verifier:", deployment.verifier);
       console2.log("  dest selector:", lane.dest.chainSelector);
       console2.log("  enabled / added / removed:", lane.allowlist.allowlistEnabled);
       console2.log("    added:", lane.allowlist.added.length, "removed:", lane.allowlist.removed.length);
 
-      _stageMany(callsFor(dep.verifier, toAllowlistConfigArgs(lane)));
+      _stageMany(callsFor(deployment.verifier, toAllowlistConfigArgs(lane)));
       ++staged;
     }
 
@@ -103,11 +105,11 @@ contract ApplyAllowlistUpdates is BaseScript {
       "ApplyAllowlistUpdates: allowlist.allowlistEnabled != remoteChainConfig.allowlistEnabled"
     );
 
-    Types.AllowlistConfig memory al = lane.allowlist;
-    if (al.added.length > 0) {
-      require(al.allowlistEnabled, "ApplyAllowlistUpdates: adding senders requires allowlistEnabled=true");
-      for (uint256 i; i < al.added.length; ++i) {
-        require(al.added[i] != address(0), "ApplyAllowlistUpdates: zero-address sender in adds");
+    Types.AllowlistConfig memory allowlist = lane.allowlist;
+    if (allowlist.added.length > 0) {
+      require(allowlist.allowlistEnabled, "ApplyAllowlistUpdates: adding senders requires allowlistEnabled=true");
+      for (uint256 i; i < allowlist.added.length; ++i) {
+        require(allowlist.added[i] != address(0), "ApplyAllowlistUpdates: zero-address sender in adds");
       }
     }
   }

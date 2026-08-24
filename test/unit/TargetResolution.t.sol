@@ -18,10 +18,10 @@ contract TargetResolutionTest is Test {
   address internal constant FACTORY = address(0xD3);
 
   function test_targetAddress_resolvesEachTarget() public pure {
-    Types.Deployment memory dep = _dep();
-    assertEq(ConfigLib.targetAddress(dep, "verifier"), VERIFIER, "verifier");
-    assertEq(ConfigLib.targetAddress(dep, "resolver"), RESOLVER, "resolver");
-    assertEq(ConfigLib.targetAddress(dep, "factory"), FACTORY, "factory");
+    Types.Deployment memory deployment = _dep();
+    assertEq(ConfigLib.targetAddress(deployment, "verifier"), VERIFIER, "verifier");
+    assertEq(ConfigLib.targetAddress(deployment, "resolver"), RESOLVER, "resolver");
+    assertEq(ConfigLib.targetAddress(deployment, "factory"), FACTORY, "factory");
   }
 
   function test_targetOwner_resolvesEachTarget() public pure {
@@ -65,11 +65,11 @@ contract TargetResolutionTest is Test {
     return ConfigLib.targetOwner(_roles(), target);
   }
 
-  function _dep() internal pure returns (Types.Deployment memory dep) {
-    dep.aliasName = "local";
-    dep.factory = FACTORY;
-    dep.resolver = RESOLVER;
-    dep.verifier = VERIFIER;
+  function _dep() internal pure returns (Types.Deployment memory deployment) {
+    deployment.aliasName = "local";
+    deployment.factory = FACTORY;
+    deployment.resolver = RESOLVER;
+    deployment.verifier = VERIFIER;
   }
 
   function _roles() internal pure returns (Types.RolesConfig memory roles) {

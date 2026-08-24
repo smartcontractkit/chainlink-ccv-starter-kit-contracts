@@ -29,20 +29,21 @@ library ConfigLib {
 
   function readChainByPath(
     string memory path
-  ) internal view returns (Types.ChainConfig memory c) {
+  ) internal view returns (Types.ChainConfig memory chainConfig) {
     string memory json = vm.readFile(path);
-    c.aliasName = vm.parseJsonString(json, ".alias");
-    c.chainId = vm.parseJsonUint(json, ".chainId");
-    c.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")));
-    c.rmn = vm.parseJsonAddress(json, ".rmn");
-    c.versionTag = _parseBytes4(json, ".versionTag");
-    c.finalityConfig = _parseBytes4(json, ".finalityConfig");
-    c.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
+    chainConfig.aliasName = vm.parseJsonString(json, ".alias");
+    chainConfig.chainId = vm.parseJsonUint(json, ".chainId");
+    chainConfig.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")));
+    chainConfig.rmn = vm.parseJsonAddress(json, ".rmn");
+    chainConfig.versionTag = _parseBytes4(json, ".versionTag");
+    chainConfig.finalityConfig = _parseBytes4(json, ".finalityConfig");
+    chainConfig.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
     // Optional by design: fee sweeping is opt-in per chain, and the token list mirrors a
     // Chainlink-governed set (see config/README.md). A chain whose list is not decided yet
     // must still load for every other script, so absent => empty => fee scripts no-op.
-    c.feeTokens = vm.keyExistsJson(json, ".feeTokens") ? vm.parseJsonAddressArray(json, ".feeTokens") : new address[](0);
-    c.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
+    chainConfig.feeTokens =
+      vm.keyExistsJson(json, ".feeTokens") ? vm.parseJsonAddressArray(json, ".feeTokens") : new address[](0);
+    chainConfig.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
   }
 
   // --------------------------------------------------------------------------
@@ -82,7 +83,7 @@ library ConfigLib {
     for (uint256 i = 1; i < paths.length; ++i) {
       string memory key = paths[i];
       uint256 j = i;
-      while (j > 0 && _lt(key, paths[j - 1])) {
+      while (j > 0 && _stringLessThan(key, paths[j - 1])) {
         paths[j] = paths[j - 1];
         --j;
       }
@@ -92,27 +93,27 @@ library ConfigLib {
 
   function readLaneByPath(
     string memory path
-  ) internal view returns (Types.LaneConfig memory l) {
+  ) internal view returns (Types.LaneConfig memory lane) {
     string memory json = vm.readFile(path);
-    l.name = vm.parseJsonString(json, ".name");
+    lane.name = vm.parseJsonString(json, ".name");
 
-    l.source.aliasName = vm.parseJsonString(json, ".source.alias");
-    l.source.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".source.chainSelector")));
-    l.dest.aliasName = vm.parseJsonString(json, ".dest.alias");
-    l.dest.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")));
+    lane.source.aliasName = vm.parseJsonString(json, ".source.alias");
+    lane.source.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".source.chainSelector")));
+    lane.dest.aliasName = vm.parseJsonString(json, ".dest.alias");
+    lane.dest.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")));
 
-    l.sig.threshold = uint8(vm.parseJsonUint(json, ".signatureConfig.threshold"));
-    l.sig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
+    lane.signatureConfig.threshold = uint8(vm.parseJsonUint(json, ".signatureConfig.threshold"));
+    lane.signatureConfig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
 
-    l.remote.router = vm.parseJsonAddress(json, ".remoteChainConfig.router");
-    l.remote.allowlistEnabled = vm.parseJsonBool(json, ".remoteChainConfig.allowlistEnabled");
-    l.remote.feeUSDCents = uint16(vm.parseJsonUint(json, ".remoteChainConfig.feeUSDCents"));
-    l.remote.gasForVerification = uint32(vm.parseJsonUint(json, ".remoteChainConfig.gasForVerification"));
-    l.remote.payloadSizeBytes = uint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"));
+    lane.remote.router = vm.parseJsonAddress(json, ".remoteChainConfig.router");
+    lane.remote.allowlistEnabled = vm.parseJsonBool(json, ".remoteChainConfig.allowlistEnabled");
+    lane.remote.feeUSDCents = uint16(vm.parseJsonUint(json, ".remoteChainConfig.feeUSDCents"));
+    lane.remote.gasForVerification = uint32(vm.parseJsonUint(json, ".remoteChainConfig.gasForVerification"));
+    lane.remote.payloadSizeBytes = uint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"));
 
-    l.allowlist.allowlistEnabled = vm.parseJsonBool(json, ".allowlist.allowlistEnabled");
-    l.allowlist.added = vm.parseJsonAddressArray(json, ".allowlist.addedAllowlistedSenders");
-    l.allowlist.removed = vm.parseJsonAddressArray(json, ".allowlist.removedAllowlistedSenders");
+    lane.allowlist.allowlistEnabled = vm.parseJsonBool(json, ".allowlist.allowlistEnabled");
+    lane.allowlist.added = vm.parseJsonAddressArray(json, ".allowlist.addedAllowlistedSenders");
+    lane.allowlist.removed = vm.parseJsonAddressArray(json, ".allowlist.removedAllowlistedSenders");
   }
 
   // --------------------------------------------------------------------------
@@ -128,24 +129,24 @@ library ConfigLib {
   ///         steps (e.g. factory ownership handover) proceed without a roles file.
   function readRolesOrEmpty(
     string memory aliasName
-  ) internal view returns (Types.RolesConfig memory r) {
+  ) internal view returns (Types.RolesConfig memory roles) {
     string memory path = string.concat(ROLES_DIR, aliasName, ".json");
     if (vm.exists(path)) return readRolesByPath(path);
-    r.aliasName = aliasName;
+    roles.aliasName = aliasName;
   }
 
   function readRolesByPath(
     string memory path
-  ) internal view returns (Types.RolesConfig memory r) {
+  ) internal view returns (Types.RolesConfig memory roles) {
     string memory json = vm.readFile(path);
-    r.aliasName = vm.parseJsonString(json, ".alias");
-    r.verifier.owner = vm.parseJsonAddress(json, ".verifier.owner");
-    r.verifier.storageLocationsAdmin = vm.parseJsonAddress(json, ".verifier.storageLocationsAdmin");
-    r.verifier.allowlistAdmin = vm.parseJsonAddress(json, ".verifier.allowlistAdmin");
-    r.verifier.feeAggregator = vm.parseJsonAddress(json, ".verifier.feeAggregator");
-    r.resolver.owner = vm.parseJsonAddress(json, ".resolver.owner");
-    r.resolver.feeAggregator = vm.parseJsonAddress(json, ".resolver.feeAggregator");
-    r.factoryOwner = vm.parseJsonAddress(json, ".factory.owner");
+    roles.aliasName = vm.parseJsonString(json, ".alias");
+    roles.verifier.owner = vm.parseJsonAddress(json, ".verifier.owner");
+    roles.verifier.storageLocationsAdmin = vm.parseJsonAddress(json, ".verifier.storageLocationsAdmin");
+    roles.verifier.allowlistAdmin = vm.parseJsonAddress(json, ".verifier.allowlistAdmin");
+    roles.verifier.feeAggregator = vm.parseJsonAddress(json, ".verifier.feeAggregator");
+    roles.resolver.owner = vm.parseJsonAddress(json, ".resolver.owner");
+    roles.resolver.feeAggregator = vm.parseJsonAddress(json, ".resolver.feeAggregator");
+    roles.factoryOwner = vm.parseJsonAddress(json, ".factory.owner");
   }
 
   // --------------------------------------------------------------------------
@@ -153,12 +154,12 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   /// @notice Maps a target name to its address in the deployment record.
   function targetAddress(
-    Types.Deployment memory dep,
+    Types.Deployment memory deployment,
     string memory target
   ) internal pure returns (address) {
-    if (_eqStr(target, "verifier")) return dep.verifier;
-    if (_eqStr(target, "resolver")) return dep.resolver;
-    if (_eqStr(target, "factory")) return dep.factory;
+    if (_stringsEqual(target, "verifier")) return deployment.verifier;
+    if (_stringsEqual(target, "resolver")) return deployment.resolver;
+    if (_stringsEqual(target, "factory")) return deployment.factory;
     revert(_unknownTarget(target));
   }
 
@@ -167,9 +168,9 @@ library ConfigLib {
     Types.RolesConfig memory roles,
     string memory target
   ) internal pure returns (address) {
-    if (_eqStr(target, "verifier")) return roles.verifier.owner;
-    if (_eqStr(target, "resolver")) return roles.resolver.owner;
-    if (_eqStr(target, "factory")) return roles.factoryOwner;
+    if (_stringsEqual(target, "verifier")) return roles.verifier.owner;
+    if (_stringsEqual(target, "resolver")) return roles.resolver.owner;
+    if (_stringsEqual(target, "factory")) return roles.factoryOwner;
     revert(_unknownTarget(target));
   }
 
@@ -179,11 +180,11 @@ library ConfigLib {
     return string.concat("ConfigLib: unknown target '", target, "' (expected verifier|resolver|factory)");
   }
 
-  function _eqStr(
-    string memory a,
-    string memory b
+  function _stringsEqual(
+    string memory left,
+    string memory right
   ) private pure returns (bool) {
-    return keccak256(bytes(a)) == keccak256(bytes(b));
+    return keccak256(bytes(left)) == keccak256(bytes(right));
   }
 
   // --------------------------------------------------------------------------
@@ -203,43 +204,43 @@ library ConfigLib {
 
   function readDeploymentByPath(
     string memory path
-  ) internal view returns (Types.Deployment memory d) {
+  ) internal view returns (Types.Deployment memory deployment) {
     string memory json = vm.readFile(path);
-    d.aliasName = vm.parseJsonString(json, ".alias");
-    d.factory = vm.parseJsonAddress(json, ".factory");
-    d.resolver = vm.parseJsonAddress(json, ".resolver");
-    d.verifier = vm.parseJsonAddress(json, ".verifier");
+    deployment.aliasName = vm.parseJsonString(json, ".alias");
+    deployment.factory = vm.parseJsonAddress(json, ".factory");
+    deployment.resolver = vm.parseJsonAddress(json, ".resolver");
+    deployment.verifier = vm.parseJsonAddress(json, ".verifier");
   }
 
   /// @notice Read the deployment record, or a zeroed struct (with alias set) if the
   ///         file does not exist yet. Lets deploy scripts merge one address at a time.
   function readDeploymentOrEmpty(
     string memory aliasName
-  ) internal view returns (Types.Deployment memory d) {
+  ) internal view returns (Types.Deployment memory deployment) {
     string memory path = deploymentPath(aliasName);
     if (vm.exists(path)) return readDeploymentByPath(path);
-    d.aliasName = aliasName;
+    deployment.aliasName = aliasName;
   }
 
   /// @notice Persist a deployment record to config/deployments/<alias>.json.
   function writeDeployment(
-    Types.Deployment memory d
+    Types.Deployment memory deployment
   ) internal {
     vm.createDir(DEPLOYMENTS_DIR, true); // idempotent
-    writeDeploymentByPath(deploymentPath(d.aliasName), d);
+    writeDeploymentByPath(deploymentPath(deployment.aliasName), deployment);
   }
 
   /// @notice Persist a deployment record to an explicit path (used by tests).
   function writeDeploymentByPath(
     string memory path,
-    Types.Deployment memory d
+    Types.Deployment memory deployment
   ) internal {
-    string memory obj = "ccv_deployment";
-    vm.serializeString(obj, "alias", d.aliasName);
-    vm.serializeAddress(obj, "factory", d.factory);
-    vm.serializeAddress(obj, "resolver", d.resolver);
-    string memory out = vm.serializeAddress(obj, "verifier", d.verifier);
-    vm.writeJson(out, path);
+    string memory objectKey = "ccv_deployment";
+    vm.serializeString(objectKey, "alias", deployment.aliasName);
+    vm.serializeAddress(objectKey, "factory", deployment.factory);
+    vm.serializeAddress(objectKey, "resolver", deployment.resolver);
+    string memory json = vm.serializeAddress(objectKey, "verifier", deployment.verifier);
+    vm.writeJson(json, path);
   }
 
   // --------------------------------------------------------------------------
@@ -251,62 +252,62 @@ library ConfigLib {
   function _parseBytes4(
     string memory json,
     string memory key
-  ) private pure returns (bytes4 out) {
+  ) private pure returns (bytes4 result) {
     bytes memory raw = vm.parseJsonBytes(json, key);
     require(raw.length == 4, "ConfigLib: expected a 4-byte hex value");
-    uint32 acc;
+    uint32 accumulated;
     for (uint256 i; i < 4; ++i) {
-      acc = (acc << 8) | uint32(uint8(raw[i]));
+      accumulated = (accumulated << 8) | uint32(uint8(raw[i]));
     }
-    out = bytes4(acc);
+    result = bytes4(accumulated);
   }
 
   // --------------------------------------------------------------------------
   //  small string helpers
   // --------------------------------------------------------------------------
   function _hasSuffix(
-    string memory s,
+    string memory text,
     string memory suffix
   ) private pure returns (bool) {
-    bytes memory b = bytes(s);
-    bytes memory suf = bytes(suffix);
-    if (suf.length > b.length) return false;
-    for (uint256 i; i < suf.length; ++i) {
-      if (b[b.length - suf.length + i] != suf[i]) return false;
+    bytes memory textBytes = bytes(text);
+    bytes memory suffixBytes = bytes(suffix);
+    if (suffixBytes.length > textBytes.length) return false;
+    for (uint256 i; i < suffixBytes.length; ++i) {
+      if (textBytes[textBytes.length - suffixBytes.length + i] != suffixBytes[i]) return false;
     }
     return true;
   }
 
-  /// @dev Byte-wise lexicographic `a < b`, for a deterministic `listLanes` order.
-  function _lt(
-    string memory a,
-    string memory b
+  /// @dev Byte-wise lexicographic `left < right`, for a deterministic `listLanes` order.
+  function _stringLessThan(
+    string memory left,
+    string memory right
   ) private pure returns (bool) {
-    bytes memory x = bytes(a);
-    bytes memory y = bytes(b);
-    uint256 len = x.length < y.length ? x.length : y.length;
-    for (uint256 i; i < len; ++i) {
-      if (x[i] != y[i]) return uint8(x[i]) < uint8(y[i]);
+    bytes memory leftBytes = bytes(left);
+    bytes memory rightBytes = bytes(right);
+    uint256 shortest = leftBytes.length < rightBytes.length ? leftBytes.length : rightBytes.length;
+    for (uint256 i; i < shortest; ++i) {
+      if (leftBytes[i] != rightBytes[i]) return uint8(leftBytes[i]) < uint8(rightBytes[i]);
     }
-    return x.length < y.length;
+    return leftBytes.length < rightBytes.length;
   }
 
   function _contains(
-    string memory s,
+    string memory text,
     string memory needle
   ) private pure returns (bool) {
-    bytes memory b = bytes(s);
-    bytes memory n = bytes(needle);
-    if (n.length == 0 || n.length > b.length) return n.length == 0;
-    for (uint256 i; i <= b.length - n.length; ++i) {
-      bool ok = true;
-      for (uint256 j; j < n.length; ++j) {
-        if (b[i + j] != n[j]) {
-          ok = false;
+    bytes memory textBytes = bytes(text);
+    bytes memory needleBytes = bytes(needle);
+    if (needleBytes.length == 0 || needleBytes.length > textBytes.length) return needleBytes.length == 0;
+    for (uint256 i; i <= textBytes.length - needleBytes.length; ++i) {
+      bool matched = true;
+      for (uint256 j; j < needleBytes.length; ++j) {
+        if (textBytes[i + j] != needleBytes[j]) {
+          matched = false;
           break;
         }
       }
-      if (ok) return true;
+      if (matched) return true;
     }
     return false;
   }

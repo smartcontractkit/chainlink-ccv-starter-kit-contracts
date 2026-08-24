@@ -229,11 +229,11 @@ contract OwnershipTest is CommitteeVerifierSetup {
   string internal constant ALIAS_REJECT = "test_ownership_reject";
   string internal constant ALIAS_FACTORY = "test_ownership_factory";
 
-  function _deployment() internal view returns (Types.Deployment memory dep) {
-    dep.aliasName = ALIAS;
-    dep.factory = address(factory);
-    dep.resolver = address(resolver);
-    dep.verifier = address(verifier);
+  function _deployment() internal view returns (Types.Deployment memory deployment) {
+    deployment.aliasName = ALIAS;
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifier = address(verifier);
   }
 
   function _roles() internal pure returns (Types.RolesConfig memory roles) {

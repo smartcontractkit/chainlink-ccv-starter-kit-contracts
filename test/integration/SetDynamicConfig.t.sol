@@ -25,9 +25,9 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
     address feeAggregator,
     address allowlistAdmin
   ) internal returns (bool ok) {
-    CommitteeVerifier.DynamicConfig memory dyn =
+    CommitteeVerifier.DynamicConfig memory dynamicConfig =
       CommitteeVerifier.DynamicConfig({feeAggregator: feeAggregator, allowlistAdmin: allowlistAdmin});
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), dyn);
+    BaseScript.Call[] memory calls = script.callsFor(address(verifier), dynamicConfig);
     assertEq(calls.length, 1, "one call expected");
     assertEq(calls[0].to, address(verifier), "target is verifier");
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
@@ -36,15 +36,15 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
   function test_callsFor_setsDynamicConfig() public {
     assertTrue(_applyDynamicConfig(FEE_AGG, ALLOWLIST_ADMIN), "apply failed");
 
-    CommitteeVerifier.DynamicConfig memory dyn = verifier.getDynamicConfig();
-    assertEq(dyn.feeAggregator, FEE_AGG, "feeAggregator");
-    assertEq(dyn.allowlistAdmin, ALLOWLIST_ADMIN, "allowlistAdmin");
+    CommitteeVerifier.DynamicConfig memory dynamicConfig = verifier.getDynamicConfig();
+    assertEq(dynamicConfig.feeAggregator, FEE_AGG, "feeAggregator");
+    assertEq(dynamicConfig.allowlistAdmin, ALLOWLIST_ADMIN, "allowlistAdmin");
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    CommitteeVerifier.DynamicConfig memory dyn =
+    CommitteeVerifier.DynamicConfig memory dynamicConfig =
       CommitteeVerifier.DynamicConfig({feeAggregator: FEE_AGG, allowlistAdmin: ALLOWLIST_ADMIN});
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), dyn);
+    BaseScript.Call[] memory calls = script.callsFor(address(verifier), dynamicConfig);
     vm.prank(address(0xBAD));
     (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
     assertFalse(ok, "non-owner should not set dynamic config");
@@ -52,8 +52,10 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
 
   function test_toDynamicConfig_fromExampleRoles() public view {
     Types.RolesConfig memory roles = ConfigLib.readRolesByPath("config/roles/sepolia.example.json");
-    CommitteeVerifier.DynamicConfig memory dyn = script.toDynamicConfig(roles);
-    assertEq(dyn.feeAggregator, address(0x2000000000000000000000000000000000000004), "fee agg from roles");
-    assertEq(dyn.allowlistAdmin, address(0x2000000000000000000000000000000000000003), "allowlist admin from roles");
+    CommitteeVerifier.DynamicConfig memory dynamicConfig = script.toDynamicConfig(roles);
+    assertEq(dynamicConfig.feeAggregator, address(0x2000000000000000000000000000000000000004), "fee agg from roles");
+    assertEq(
+      dynamicConfig.allowlistAdmin, address(0x2000000000000000000000000000000000000003), "allowlist admin from roles"
+    );
   }
 }

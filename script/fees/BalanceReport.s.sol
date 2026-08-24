@@ -39,8 +39,10 @@ contract BalanceReport is Script {
     address resolver
   ) public view returns (address verifierAggregator, address resolverAggregator, bool verifierOk, bool resolverOk) {
     if (verifier.code.length != 0) {
-      try CommitteeVerifier(verifier).getDynamicConfig() returns (CommitteeVerifier.DynamicConfig memory dyn) {
-        verifierAggregator = dyn.feeAggregator;
+      try CommitteeVerifier(verifier).getDynamicConfig() returns (
+        CommitteeVerifier.DynamicConfig memory dynamicConfig
+      ) {
+        verifierAggregator = dynamicConfig.feeAggregator;
         verifierOk = true;
       } catch {
         verifierOk = false;
@@ -86,15 +88,15 @@ contract BalanceReport is Script {
   function run(
     string calldata chainAlias
   ) external view {
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
 
     console2.log("[BalanceReport] chain:", chainAlias);
-    console2.log("  verifier:", dep.verifier);
-    console2.log("  resolver:", dep.resolver);
+    console2.log("  verifier:", deployment.verifier);
+    console2.log("  resolver:", deployment.resolver);
 
     // ---- fee aggregators (the sweep destinations) ----
-    (address vAgg, address rAgg, bool vOk, bool rOk) = readAggregators(dep.verifier, dep.resolver);
+    (address vAgg, address rAgg, bool vOk, bool rOk) = readAggregators(deployment.verifier, deployment.resolver);
 
     if (!vOk) {
       console2.log("  WARN verifier feeAggregator unreadable (not deployed on this chain?)");
@@ -122,12 +124,12 @@ contract BalanceReport is Script {
     }
 
     // ---- balances ----
-    if (cc.feeTokens.length == 0) {
+    if (chainConfig.feeTokens.length == 0) {
       console2.log("  no feeTokens configured for this chain; add them to config/chains/<alias>.json");
       return;
     }
 
-    TokenBalance[] memory balances = readBalances(dep.verifier, dep.resolver, cc.feeTokens);
+    TokenBalance[] memory balances = readBalances(deployment.verifier, deployment.resolver, chainConfig.feeTokens);
     for (uint256 i; i < balances.length; ++i) {
       console2.log("  token:", balances[i].token);
       if (balances[i].verifierReadOk) {

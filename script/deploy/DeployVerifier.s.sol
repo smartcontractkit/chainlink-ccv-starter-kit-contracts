@@ -30,12 +30,12 @@ contract DeployVerifier is Script {
   function run(
     string calldata chainAlias
   ) external returns (address verifier) {
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
-    require(cc.rmn != address(0), "DeployVerifier: rmn must be non-zero");
-    require(cc.versionTag != bytes4(0), "DeployVerifier: versionTag must be non-zero");
+    require(chainConfig.rmn != address(0), "DeployVerifier: rmn must be non-zero");
+    require(chainConfig.versionTag != bytes4(0), "DeployVerifier: versionTag must be non-zero");
     require(roles.verifier.owner != address(0), "DeployVerifier: verifier.owner role unset");
     require(
       roles.verifier.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset"
@@ -43,18 +43,19 @@ contract DeployVerifier is Script {
 
     address deployer = msg.sender;
 
-    CommitteeVerifier.DynamicConfig memory dyn = CommitteeVerifier.DynamicConfig({
+    CommitteeVerifier.DynamicConfig memory dynamicConfig = CommitteeVerifier.DynamicConfig({
       feeAggregator: roles.verifier.feeAggregator, allowlistAdmin: roles.verifier.allowlistAdmin
     });
 
     vm.broadcast();
-    CommitteeVerifier v = new CommitteeVerifier(dyn, cc.storageLocations, cc.rmn, cc.versionTag);
+    CommitteeVerifier v =
+      new CommitteeVerifier(dynamicConfig, chainConfig.storageLocations, chainConfig.rmn, chainConfig.versionTag);
     verifier = address(v);
 
     console2.log("[DeployVerifier] chain:", chainAlias);
     console2.log("  verifier deployed:", verifier);
-    console2.log("  versionTag:", vm.toString(cc.versionTag));
-    console2.log("  rmn:", cc.rmn);
+    console2.log("  versionTag:", vm.toString(chainConfig.versionTag));
+    console2.log("  rmn:", chainConfig.rmn);
 
     // ---- owner handover ----
     if (roles.verifier.owner == deployer) {
@@ -80,8 +81,8 @@ contract DeployVerifier is Script {
       console2.log("  WARN verifier feeAggregator is zero: fee withdrawals will revert until set");
     }
 
-    dep.verifier = verifier;
-    ConfigLib.writeDeployment(dep);
+    deployment.verifier = verifier;
+    ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }
 }

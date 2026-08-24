@@ -66,9 +66,9 @@ contract BootstrapFactory is Script {
     }
 
     // Record the factory address (merges into any existing deployment record).
-    Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);
-    dep.factory = factory;
-    ConfigLib.writeDeployment(dep);
+    Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
+    deployment.factory = factory;
+    ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }
 }

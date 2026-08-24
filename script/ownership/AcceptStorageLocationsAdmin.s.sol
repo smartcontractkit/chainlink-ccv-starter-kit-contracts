@@ -23,12 +23,12 @@ contract AcceptStorageLocationsAdmin is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.verifier != address(0), "target verifier unset");
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    require(deployment.verifier != address(0), "target verifier unset");
 
-    console2.log("[AcceptStorageLocationsAdmin] verifier:", dep.verifier);
+    console2.log("[AcceptStorageLocationsAdmin] verifier:", deployment.verifier);
 
-    _stageMany(callsFor(dep.verifier));
+    _stageMany(callsFor(deployment.verifier));
     _flush("b-accept-storage-locations-admin");
   }
 }

@@ -54,16 +54,16 @@ abstract contract FeeScriptsSetup is CommitteeVerifierSetup {
   ///      irrelevant here and left at defaults.
   function _chainConfig(
     address[] memory feeTokens
-  ) internal pure returns (Types.ChainConfig memory cc) {
-    cc.aliasName = "test_fee_chain";
-    cc.feeTokens = feeTokens;
+  ) internal pure returns (Types.ChainConfig memory chainConfig) {
+    chainConfig.aliasName = "test_fee_chain";
+    chainConfig.feeTokens = feeTokens;
   }
 
-  function _deployment() internal view returns (Types.Deployment memory dep) {
-    dep.aliasName = "test_fee_chain";
-    dep.factory = address(factory);
-    dep.resolver = address(resolver);
-    dep.verifier = address(verifier);
+  function _deployment() internal view returns (Types.Deployment memory deployment) {
+    deployment.aliasName = "test_fee_chain";
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifier = address(verifier);
   }
 
   function _bothTokens() internal view returns (address[] memory feeTokens) {

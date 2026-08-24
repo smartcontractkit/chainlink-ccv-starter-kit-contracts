@@ -123,8 +123,8 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     lane.source.chainSelector = SRC;
     lane.dest.aliasName = destAlias;
     lane.dest.chainSelector = 10344971235874465080;
-    lane.sig.threshold = threshold;
-    lane.sig.signers = signers;
+    lane.signatureConfig.threshold = threshold;
+    lane.signatureConfig.signers = signers;
   }
 
   function test_reverts_whenTargetVerifierNotYetDeployed() public {

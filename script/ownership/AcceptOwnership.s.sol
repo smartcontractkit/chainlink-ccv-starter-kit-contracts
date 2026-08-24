@@ -34,8 +34,8 @@ contract AcceptOwnership is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    address to = ConfigLib.targetAddress(dep, target);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    address to = ConfigLib.targetAddress(deployment, target);
     require(to != address(0), string.concat("AcceptOwnership: ", target, " not recorded for ", chainAlias));
 
     console2.log("[AcceptOwnership]", target, "->", to);

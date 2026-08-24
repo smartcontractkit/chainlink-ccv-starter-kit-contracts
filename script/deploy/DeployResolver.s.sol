@@ -33,11 +33,11 @@ contract DeployResolver is Script {
   function run(
     string calldata chainAlias
   ) external returns (address resolver) {
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeploymentOrEmpty(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
-    require(dep.factory != address(0), "DeployResolver: factory not recorded; run BootstrapFactory first");
+    require(deployment.factory != address(0), "DeployResolver: factory not recorded; run BootstrapFactory first");
     address configuredOwner = roles.resolver.owner;
     require(configuredOwner != address(0), "DeployResolver: resolver.owner role unset");
 
@@ -45,14 +45,15 @@ contract DeployResolver is Script {
     bytes memory creationCode = type(VersionedVerifierResolver).creationCode;
 
     // Precompute the address so parity can be asserted after deployment.
-    address predicted = CREATE2Factory(dep.factory).computeAddress(creationCode, cc.resolverSalt);
+    address predicted = CREATE2Factory(deployment.factory).computeAddress(creationCode, chainConfig.resolverSalt);
     console2.log("[DeployResolver] chain:", chainAlias);
-    console2.log("  factory:", dep.factory);
+    console2.log("  factory:", deployment.factory);
     console2.log("  predicted resolver:", predicted);
 
     // Deploy via CREATE2 and propose ownership to the configured owner.
     vm.broadcast();
-    resolver = CREATE2Factory(dep.factory).createAndTransferOwnership(creationCode, cc.resolverSalt, configuredOwner);
+    resolver = CREATE2Factory(deployment.factory)
+      .createAndTransferOwnership(creationCode, chainConfig.resolverSalt, configuredOwner);
     require(resolver == predicted, "DeployResolver: deployed address != predicted (determinism broken)");
     console2.log("  resolver deployed:", resolver);
 
@@ -66,8 +67,8 @@ contract DeployResolver is Script {
       console2.log("  (that owner must acceptOwnership() before running resolver config scripts)");
     }
 
-    dep.resolver = resolver;
-    ConfigLib.writeDeployment(dep);
+    deployment.resolver = resolver;
+    ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
     console2.log("  ACTION: confirm this matches the resolver address on other chains.");
   }

@@ -34,13 +34,13 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     require(
-      dep.resolver != address(0),
+      deployment.resolver != address(0),
       string.concat("ApplyOutboundImplementationUpdates: resolver not recorded for ", chainAlias)
     );
     require(
-      dep.verifier != address(0),
+      deployment.verifier != address(0),
       string.concat("ApplyOutboundImplementationUpdates: verifier not recorded for ", chainAlias)
     );
 
@@ -48,15 +48,15 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     // to this chain's local verifier.
     string[] memory lanePaths = ConfigLib.listLanes();
     VersionedVerifierResolver.OutboundImplementationArgs[] memory args =
-      _buildOutboundArgs(lanePaths, chainAlias, dep.verifier);
+      _buildOutboundArgs(lanePaths, chainAlias, deployment.verifier);
     require(args.length > 0, string.concat("ApplyOutboundImplementationUpdates: no outbound lanes for ", chainAlias));
 
     console2.log("[ApplyOutboundImplementationUpdates] chain:", chainAlias);
-    console2.log("  target resolver:", dep.resolver);
-    console2.log("  local verifier:", dep.verifier);
+    console2.log("  target resolver:", deployment.resolver);
+    console2.log("  local verifier:", deployment.verifier);
     console2.log("  outbound destinations:", args.length);
 
-    _stageMany(callsFor(dep.resolver, args));
+    _stageMany(callsFor(deployment.resolver, args));
     _flush("apply-outbound-implementations");
   }
 
@@ -69,14 +69,14 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     uint256 count;
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (_eq(lane.source.aliasName, chainAlias)) count++;
+      if (_stringsEqual(lane.source.aliasName, chainAlias)) count++;
     }
 
     args = new VersionedVerifierResolver.OutboundImplementationArgs[](count);
     uint256 j;
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_eq(lane.source.aliasName, chainAlias)) continue;
+      if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       require(lane.dest.chainSelector != 0, "ApplyOutboundImplementationUpdates: destChainSelector cannot be zero");
       args[j++] = VersionedVerifierResolver.OutboundImplementationArgs({
         destChainSelector: lane.dest.chainSelector, verifier: verifier

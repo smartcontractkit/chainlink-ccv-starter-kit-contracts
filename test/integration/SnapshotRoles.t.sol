@@ -44,9 +44,9 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
   }
 
   function test_snapshot_absentFactory_leavesOwnerZero() public view {
-    Types.Deployment memory dep = _deployment();
-    dep.factory = address(0);
-    assertEq(script.snapshot(dep).factoryOwner, address(0), "no factory recorded => zero, not a revert");
+    Types.Deployment memory deployment = _deployment();
+    deployment.factory = address(0);
+    assertEq(script.snapshot(deployment).factoryOwner, address(0), "no factory recorded => zero, not a revert");
   }
 
   /// @dev The promotion path is `cp out/governance/<alias>-<block>.roles.local.json config/roles/<alias>.json`,
@@ -80,10 +80,10 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
     assertEq(drift.checkRoles(_deployment(), promoted), 0, "a fresh snapshot must never drift against its source");
   }
 
-  function _deployment() internal view returns (Types.Deployment memory dep) {
-    dep.aliasName = ALIAS;
-    dep.factory = address(factory);
-    dep.resolver = address(resolver);
-    dep.verifier = address(verifier);
+  function _deployment() internal view returns (Types.Deployment memory deployment) {
+    deployment.aliasName = ALIAS;
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifier = address(verifier);
   }
 }

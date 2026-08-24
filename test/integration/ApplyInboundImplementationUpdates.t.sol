@@ -28,7 +28,7 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
   }
 
-  function _inboundImpl(
+  function _inboundImplementation(
     bytes4 version
   ) internal view returns (address) {
     return resolver.getInboundImplementation(abi.encodePacked(version));
@@ -36,13 +36,13 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
 
   function test_callsFor_setsInboundImplementation() public {
     assertTrue(_applyInbound(VERSION, address(verifier)), "apply failed");
-    assertEq(_inboundImpl(VERSION), address(verifier), "version -> verifier mapping");
+    assertEq(_inboundImplementation(VERSION), address(verifier), "version -> verifier mapping");
   }
 
   function test_zeroVerifier_clearsMapping() public {
     assertTrue(_applyInbound(VERSION, address(verifier)), "set failed");
     assertTrue(_applyInbound(VERSION, address(0)), "clear failed");
-    assertEq(_inboundImpl(VERSION), address(0), "mapping cleared");
+    assertEq(_inboundImplementation(VERSION), address(0), "mapping cleared");
   }
 
   function test_reverts_whenVersionZeroWithNonZeroVerifier() public {

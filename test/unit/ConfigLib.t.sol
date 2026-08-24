@@ -20,10 +20,10 @@ contract ConfigLibTest is Test {
     assertEq(lane.dest.chainSelector, 10344971235874465080);
 
     // Signature config must respect the "not 1-of-1, threshold > 2/3" constraint.
-    assertEq(lane.sig.threshold, 7);
-    assertEq(lane.sig.signers.length, 10);
-    assertGt(lane.sig.threshold, 1); // not 1-of-1
-    assertGt(uint256(lane.sig.threshold) * 3, lane.sig.signers.length * 2); // > 2/3
+    assertEq(lane.signatureConfig.threshold, 7);
+    assertEq(lane.signatureConfig.signers.length, 10);
+    assertGt(lane.signatureConfig.threshold, 1); // not 1-of-1
+    assertGt(uint256(lane.signatureConfig.threshold) * 3, lane.signatureConfig.signers.length * 2); // > 2/3
   }
 
   function test_listLanes_skipsTemplatesAndExamples() public view {

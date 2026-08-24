@@ -33,18 +33,20 @@ contract SetFeeAggregator is BaseScript {
     _initOutput(chainAlias);
 
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.resolver != address(0), string.concat("SetFeeAggregator: resolver not recorded for ", chainAlias));
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    require(
+      deployment.resolver != address(0), string.concat("SetFeeAggregator: resolver not recorded for ", chainAlias)
+    );
 
     console2.log("[SetFeeAggregator] chain:", chainAlias);
-    console2.log("  target resolver:", dep.resolver);
+    console2.log("  target resolver:", deployment.resolver);
     console2.log("  feeAggregator:", roles.resolver.feeAggregator);
 
     if (roles.resolver.feeAggregator == address(0)) {
       console2.log("  WARN resolver feeAggregator is zero: fee withdrawals will revert until set");
     }
 
-    _stageMany(callsFor(dep.resolver, roles.resolver.feeAggregator));
+    _stageMany(callsFor(deployment.resolver, roles.resolver.feeAggregator));
     _flush("set-fee-aggregator-resolver");
   }
 }

@@ -39,10 +39,12 @@ contract SnapshotRoles is Script {
   function run(
     string calldata chainAlias
   ) external {
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.verifier != address(0) && dep.resolver != address(0), "SnapshotRoles: contracts not deployed");
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    require(
+      deployment.verifier != address(0) && deployment.resolver != address(0), "SnapshotRoles: contracts not deployed"
+    );
 
-    Types.RolesConfig memory roles = snapshot(dep);
+    Types.RolesConfig memory roles = snapshot(deployment);
 
     console2.log("[SnapshotRoles] chain:", chainAlias);
     console2.log("  verifier owner:                ", roles.verifier.owner);
@@ -51,13 +53,13 @@ contract SnapshotRoles is Script {
     console2.log("  verifier feeAggregator:        ", roles.verifier.feeAggregator);
     console2.log("  resolver owner:                ", roles.resolver.owner);
     console2.log("  resolver feeAggregator:        ", roles.resolver.feeAggregator);
-    if (dep.factory != address(0)) {
+    if (deployment.factory != address(0)) {
       console2.log("  factory owner:                 ", roles.factoryOwner);
     } else {
       console2.log("  factory owner:                  (no factory recorded for this chain)");
     }
 
-    address pendingAdmin = CommitteeVerifier(dep.verifier).getPendingStorageLocationsAdmin();
+    address pendingAdmin = CommitteeVerifier(deployment.verifier).getPendingStorageLocationsAdmin();
     if (pendingAdmin != address(0)) {
       console2.log("  NOTE pending storageLocationsAdmin (handover in flight):", pendingAdmin);
     }
@@ -74,26 +76,26 @@ contract SnapshotRoles is Script {
   ///      must abort the snapshot rather than silently record `address(0)` as if it
   ///      were the real owner. Writing a zeroed roles file would be worse than failing.
   function snapshot(
-    Types.Deployment memory dep
+    Types.Deployment memory deployment
   ) public view returns (Types.RolesConfig memory roles) {
-    roles.aliasName = dep.aliasName;
+    roles.aliasName = deployment.aliasName;
 
-    CommitteeVerifier verifier = CommitteeVerifier(dep.verifier);
+    CommitteeVerifier verifier = CommitteeVerifier(deployment.verifier);
     roles.verifier.owner = verifier.owner();
     roles.verifier.storageLocationsAdmin = verifier.getStorageLocationsAdmin();
 
-    CommitteeVerifier.DynamicConfig memory dyn = verifier.getDynamicConfig();
-    roles.verifier.allowlistAdmin = dyn.allowlistAdmin;
-    roles.verifier.feeAggregator = dyn.feeAggregator;
+    CommitteeVerifier.DynamicConfig memory dynamicConfig = verifier.getDynamicConfig();
+    roles.verifier.allowlistAdmin = dynamicConfig.allowlistAdmin;
+    roles.verifier.feeAggregator = dynamicConfig.feeAggregator;
 
-    VersionedVerifierResolver resolver = VersionedVerifierResolver(dep.resolver);
+    VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
     roles.resolver.owner = resolver.owner();
     roles.resolver.feeAggregator = resolver.getFeeAggregator();
 
     // Optional: not every chain records a factory (only the CREATE2 bootstrap chain
     // needs one long-term), so an absent factory is a zero, not a failure.
-    if (dep.factory != address(0)) {
-      roles.factoryOwner = CREATE2Factory(dep.factory).owner();
+    if (deployment.factory != address(0)) {
+      roles.factoryOwner = CREATE2Factory(deployment.factory).owner();
     }
   }
 
@@ -103,29 +105,29 @@ contract SnapshotRoles is Script {
     string memory chainAlias,
     Types.RolesConfig memory roles
   ) public returns (string memory path) {
-    string memory verifierObj = "verifier";
-    vm.serializeAddress(verifierObj, "owner", roles.verifier.owner);
-    vm.serializeAddress(verifierObj, "storageLocationsAdmin", roles.verifier.storageLocationsAdmin);
-    vm.serializeAddress(verifierObj, "allowlistAdmin", roles.verifier.allowlistAdmin);
-    string memory verifierJson = vm.serializeAddress(verifierObj, "feeAggregator", roles.verifier.feeAggregator);
+    string memory verifierObject = "verifier";
+    vm.serializeAddress(verifierObject, "owner", roles.verifier.owner);
+    vm.serializeAddress(verifierObject, "storageLocationsAdmin", roles.verifier.storageLocationsAdmin);
+    vm.serializeAddress(verifierObject, "allowlistAdmin", roles.verifier.allowlistAdmin);
+    string memory verifierJson = vm.serializeAddress(verifierObject, "feeAggregator", roles.verifier.feeAggregator);
 
-    string memory resolverObj = "resolver";
-    vm.serializeAddress(resolverObj, "owner", roles.resolver.owner);
-    string memory resolverJson = vm.serializeAddress(resolverObj, "feeAggregator", roles.resolver.feeAggregator);
+    string memory resolverObject = "resolver";
+    vm.serializeAddress(resolverObject, "owner", roles.resolver.owner);
+    string memory resolverJson = vm.serializeAddress(resolverObject, "feeAggregator", roles.resolver.feeAggregator);
 
-    string memory factoryObj = "factory";
-    string memory factoryJson = vm.serializeAddress(factoryObj, "owner", roles.factoryOwner);
+    string memory factoryObject = "factory";
+    string memory factoryJson = vm.serializeAddress(factoryObject, "owner", roles.factoryOwner);
 
     string memory root = "roles";
     vm.serializeString(root, "alias", chainAlias);
     vm.serializeString(root, "verifier", verifierJson);
     vm.serializeString(root, "resolver", resolverJson);
-    string memory out = vm.serializeString(root, "factory", factoryJson);
+    string memory json = vm.serializeString(root, "factory", factoryJson);
 
     vm.createDir("out/governance", true); // idempotent; survives a fresh clone
     // out/governance/ is gitignored wholesale (live role addresses); the block number
     // keeps successive snapshots from clobbering each other.
     path = string.concat("out/governance/", chainAlias, "-", vm.toString(block.number), ".roles.local.json");
-    vm.writeJson(out, path);
+    vm.writeJson(json, path);
   }
 }

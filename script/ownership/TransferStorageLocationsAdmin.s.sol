@@ -28,16 +28,16 @@ contract TransferStorageLocationsAdmin is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
-    require(dep.verifier != address(0), "target verifier unset");
+    require(deployment.verifier != address(0), "target verifier unset");
     require(roles.verifier.storageLocationsAdmin != address(0), "storageLocationsAdmin role unset");
 
-    console2.log("[TransferStorageLocationsAdmin] verifier:", dep.verifier);
+    console2.log("[TransferStorageLocationsAdmin] verifier:", deployment.verifier);
     console2.log("  newAdmin:", roles.verifier.storageLocationsAdmin);
 
-    _stageMany(callsFor(dep.verifier, roles.verifier.storageLocationsAdmin));
+    _stageMany(callsFor(deployment.verifier, roles.verifier.storageLocationsAdmin));
     _flush("a-transfer-storage-locations-admin");
   }
 }

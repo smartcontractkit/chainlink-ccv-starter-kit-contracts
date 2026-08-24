@@ -63,9 +63,10 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     require(
-      dep.verifier != address(0), string.concat("ApplyRemoteChainConfigUpdates: verifier not recorded for ", chainAlias)
+      deployment.verifier != address(0),
+      string.concat("ApplyRemoteChainConfigUpdates: verifier not recorded for ", chainAlias)
     );
 
     string[] memory lanePaths = ConfigLib.listLanes();
@@ -73,16 +74,16 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
 
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_eq(_targetAlias(lane), chainAlias)) continue;
+      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
 
       _assertValidConfig(lane);
 
       console2.log("[ApplyRemoteChainConfigUpdates] lane:", lane.name);
-      console2.log("  target verifier:", dep.verifier);
+      console2.log("  target verifier:", deployment.verifier);
       console2.log("  remote (dest) selector:", lane.dest.chainSelector);
       console2.log("  router:", lane.remote.router);
 
-      _stageMany(callsFor(dep.verifier, toRemoteChainConfigArgs(lane)));
+      _stageMany(callsFor(deployment.verifier, toRemoteChainConfigArgs(lane)));
       ++staged;
     }
 

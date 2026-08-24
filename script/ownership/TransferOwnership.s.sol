@@ -33,10 +33,10 @@ contract TransferOwnership is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
-    address to = ConfigLib.targetAddress(dep, target);
+    address to = ConfigLib.targetAddress(deployment, target);
     address newOwner = ConfigLib.targetOwner(roles, target);
     require(to != address(0), string.concat("TransferOwnership: ", target, " not recorded for ", chainAlias));
     require(newOwner != address(0), string.concat("TransferOwnership: ", target, " owner role unset"));

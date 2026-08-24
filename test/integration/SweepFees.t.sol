@@ -70,11 +70,11 @@ contract SweepFeesTest is FeeScriptsSetup {
   }
 
   function test_sweepCalls_skipsUndeployedContracts() public view {
-    Types.Deployment memory dep = _deployment();
-    dep.verifier = address(0); // not deployed on this chain yet
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifier = address(0); // not deployed on this chain yet
 
     (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(dep, _chainConfig(_bothTokens()), false);
+      script.sweepCalls(deployment, _chainConfig(_bothTokens()), false);
 
     assertEq(calls.length, 1);
     assertEq(calls[0].to, address(resolver));

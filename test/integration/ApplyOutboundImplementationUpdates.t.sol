@@ -36,7 +36,7 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
   }
 
-  function _outboundImpl(
+  function _outboundImplementation(
     uint64 destSelector
   ) internal view returns (address) {
     return resolver.getOutboundImplementation(destSelector, "");
@@ -44,7 +44,7 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
 
   function test_callsFor_setsOutboundImplementation() public {
     assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "apply failed");
-    assertEq(_outboundImpl(DEST_FUJI), address(verifier), "dest -> verifier mapping");
+    assertEq(_outboundImplementation(DEST_FUJI), address(verifier), "dest -> verifier mapping");
   }
 
   function test_appliesMultipleDestinationsInOneCall() public {
@@ -56,14 +56,14 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
       VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: DEST_AMOY, verifier: address(verifier)});
 
     assertTrue(_applyOutbound(args), "batch apply failed");
-    assertEq(_outboundImpl(DEST_FUJI), address(verifier), "fuji mapped");
-    assertEq(_outboundImpl(DEST_AMOY), address(verifier), "amoy mapped");
+    assertEq(_outboundImplementation(DEST_FUJI), address(verifier), "fuji mapped");
+    assertEq(_outboundImplementation(DEST_AMOY), address(verifier), "amoy mapped");
   }
 
   function test_zeroVerifier_clearsMapping() public {
     assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "set failed");
     assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(0))), "clear failed");
-    assertEq(_outboundImpl(DEST_FUJI), address(0), "mapping cleared");
+    assertEq(_outboundImplementation(DEST_FUJI), address(0), "mapping cleared");
   }
 
   function test_reverts_whenDestSelectorZeroWithNonZeroVerifier() public {

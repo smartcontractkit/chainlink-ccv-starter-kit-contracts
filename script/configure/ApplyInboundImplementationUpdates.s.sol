@@ -42,24 +42,24 @@ contract ApplyInboundImplementationUpdates is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     require(
-      dep.resolver != address(0),
+      deployment.resolver != address(0),
       string.concat("ApplyInboundImplementationUpdates: resolver not recorded for ", chainAlias)
     );
     require(
-      dep.verifier != address(0),
+      deployment.verifier != address(0),
       string.concat("ApplyInboundImplementationUpdates: verifier not recorded for ", chainAlias)
     );
-    require(cc.versionTag != bytes4(0), "ApplyInboundImplementationUpdates: versionTag cannot be zero");
+    require(chainConfig.versionTag != bytes4(0), "ApplyInboundImplementationUpdates: versionTag cannot be zero");
 
     console2.log("[ApplyInboundImplementationUpdates] chain:", chainAlias);
-    console2.log("  target resolver:", dep.resolver);
-    console2.log("  version:", vm.toString(cc.versionTag));
-    console2.log("  verifier:", dep.verifier);
+    console2.log("  target resolver:", deployment.resolver);
+    console2.log("  version:", vm.toString(chainConfig.versionTag));
+    console2.log("  verifier:", deployment.verifier);
 
-    _stageMany(callsFor(dep.resolver, toInboundArgs(cc.versionTag, dep.verifier)));
+    _stageMany(callsFor(deployment.resolver, toInboundArgs(chainConfig.versionTag, deployment.verifier)));
     _flush("apply-inbound-implementations");
   }
 }

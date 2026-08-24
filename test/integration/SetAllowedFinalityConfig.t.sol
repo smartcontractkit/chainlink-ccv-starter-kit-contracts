@@ -51,8 +51,8 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   /// @dev Guards the robust bytes4 parser: a 4-byte hex value must round-trip exactly
   ///      (independent of Foundry's fixed-bytes padding convention).
   function test_readChainByPath_parsesBytes4FieldsExactly() public view {
-    Types.ChainConfig memory cc = ConfigLib.readChainByPath("config/chains/sepolia.example.json");
-    assertEq(cc.versionTag, bytes4(0x00010001), "versionTag parsed exactly");
-    assertEq(cc.finalityConfig, bytes4(0x00000001), "finalityConfig parsed exactly");
+    Types.ChainConfig memory chainConfig = ConfigLib.readChainByPath("config/chains/sepolia.example.json");
+    assertEq(chainConfig.versionTag, bytes4(0x00010001), "versionTag parsed exactly");
+    assertEq(chainConfig.finalityConfig, bytes4(0x00000001), "finalityConfig parsed exactly");
   }
 }

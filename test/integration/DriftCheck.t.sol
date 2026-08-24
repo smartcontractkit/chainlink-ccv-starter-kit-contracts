@@ -137,9 +137,9 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   /// @dev An unrecorded factory is skipped rather than compared against zero.
   function test_absentFactory_isNotDrift() public view {
-    Types.Deployment memory dep = _deployment();
-    dep.factory = address(0);
-    assertEq(script.checkRoles(dep, _roles()), 0, "absent factory must not count as drift");
+    Types.Deployment memory deployment = _deployment();
+    deployment.factory = address(0);
+    assertEq(script.checkRoles(deployment, _roles()), 0, "absent factory must not count as drift");
   }
 
   // ===========================================================================
@@ -147,29 +147,29 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   // ===========================================================================
 
   function test_drift_versionTag() public view {
-    Types.ChainConfig memory cc = _chainConfig();
-    cc.versionTag = 0xDEADBEEF;
-    assertEq(script.checkVerifierConfig(_deployment(), cc), 1, "immutable versionTag mismatch");
+    Types.ChainConfig memory chainConfig = _chainConfig();
+    chainConfig.versionTag = 0xDEADBEEF;
+    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "immutable versionTag mismatch");
   }
 
   function test_drift_finalityConfig() public view {
-    Types.ChainConfig memory cc = _chainConfig();
-    cc.finalityConfig = 0x00000009;
-    assertEq(script.checkVerifierConfig(_deployment(), cc), 1, "allowedFinalityConfig mismatch");
+    Types.ChainConfig memory chainConfig = _chainConfig();
+    chainConfig.finalityConfig = 0x00000009;
+    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "allowedFinalityConfig mismatch");
   }
 
   function test_drift_storageLocations_content() public view {
-    Types.ChainConfig memory cc = _chainConfig();
-    cc.storageLocations[0] = "https://elsewhere.example/ccv";
-    assertEq(script.checkVerifierConfig(_deployment(), cc), 1, "storage location content mismatch");
+    Types.ChainConfig memory chainConfig = _chainConfig();
+    chainConfig.storageLocations[0] = "https://elsewhere.example/ccv";
+    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "storage location content mismatch");
   }
 
   function test_drift_storageLocations_count() public view {
-    Types.ChainConfig memory cc = _chainConfig();
-    cc.storageLocations = new string[](2);
-    cc.storageLocations[0] = STORAGE_LOCATION;
-    cc.storageLocations[1] = "https://second.example/ccv";
-    assertEq(script.checkVerifierConfig(_deployment(), cc), 1, "storage location count mismatch");
+    Types.ChainConfig memory chainConfig = _chainConfig();
+    chainConfig.storageLocations = new string[](2);
+    chainConfig.storageLocations[0] = STORAGE_LOCATION;
+    chainConfig.storageLocations[1] = "https://second.example/ccv";
+    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "storage location count mismatch");
   }
 
   // ===========================================================================
@@ -178,13 +178,13 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function test_drift_signerThreshold() public view {
     Types.LaneConfig[] memory lanes = _lanes();
-    lanes[1].sig.threshold = THRESHOLD + 1;
+    lanes[1].signatureConfig.threshold = THRESHOLD + 1;
     assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 1, "threshold mismatch");
   }
 
   function test_drift_signerSet() public view {
     Types.LaneConfig[] memory lanes = _lanes();
-    lanes[1].sig.signers[0] = address(0xBAD);
+    lanes[1].signatureConfig.signers[0] = address(0xBAD);
     assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 1, "signer set mismatch");
   }
 
@@ -197,7 +197,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     reversed[0] = signers[2];
     reversed[1] = signers[1];
     reversed[2] = signers[0];
-    lanes[1].sig.signers = reversed;
+    lanes[1].signatureConfig.signers = reversed;
     assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 0, "signer order must be irrelevant");
   }
 
@@ -209,8 +209,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     lanes[0] = _outboundLane();
     // This lane's signer set is never applied to the local verifier; if the check ran
     // on the source side it would see an empty set and report drift.
-    lanes[0].sig.signers = signers;
-    lanes[0].sig.threshold = THRESHOLD;
+    lanes[0].signatureConfig.signers = signers;
+    lanes[0].signatureConfig.threshold = THRESHOLD;
     assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 0, "source side must not check signatures");
   }
 
@@ -255,11 +255,11 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function test_drift_inboundImplementation_missing() public {
     VersionedVerifierResolver fresh = new VersionedVerifierResolver();
-    Types.Deployment memory dep = _deployment();
-    dep.resolver = address(fresh);
+    Types.Deployment memory deployment = _deployment();
+    deployment.resolver = address(fresh);
     // No inbound registration and no outbound registration on the fresh resolver:
     // one inbound miss + one outbound miss for the single source-side lane.
-    assertEq(script.checkResolverImplementations(dep, _chainConfig(), _lanes()), 2, "both maps must be flagged");
+    assertEq(script.checkResolverImplementations(deployment, _chainConfig(), _lanes()), 2, "both maps must be flagged");
   }
 
   function test_drift_outboundImplementation_pointsElsewhere() public {
@@ -293,17 +293,17 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   // ===========================================================================
 
   function test_unreachableVerifier_revertsWithoutMarker() public {
-    Types.Deployment memory dep = _deployment();
-    dep.verifier = address(0xC0DE1E55); // recorded, but no code here
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifier = address(0xC0DE1E55); // recorded, but no code here
     vm.expectRevert("DriftCheck: no code at recorded verifier (wrong --rpc-url?)");
-    script.checkAll(dep, _chainConfig(), _roles(), _lanes());
+    script.checkAll(deployment, _chainConfig(), _roles(), _lanes());
   }
 
   function test_unreachableResolver_revertsWithoutMarker() public {
-    Types.Deployment memory dep = _deployment();
-    dep.resolver = address(0xC0DE1E55);
+    Types.Deployment memory deployment = _deployment();
+    deployment.resolver = address(0xC0DE1E55);
     vm.expectRevert("DriftCheck: no code at recorded resolver (wrong --rpc-url?)");
-    script.checkAll(dep, _chainConfig(), _roles(), _lanes());
+    script.checkAll(deployment, _chainConfig(), _roles(), _lanes());
   }
 
   // ===========================================================================
@@ -317,35 +317,35 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     roles.verifier.owner = address(0xBAD);
     roles.resolver.feeAggregator = address(0xBAD);
 
-    Types.ChainConfig memory cc = _chainConfig();
-    cc.finalityConfig = 0x00000009;
+    Types.ChainConfig memory chainConfig = _chainConfig();
+    chainConfig.finalityConfig = 0x00000009;
 
     Types.LaneConfig[] memory lanes = _lanes();
     lanes[0].remote.router = address(0xBAD);
 
-    assertEq(script.checkAll(_deployment(), cc, roles, lanes), 4, "every mismatch reported in one pass");
+    assertEq(script.checkAll(_deployment(), chainConfig, roles, lanes), 4, "every mismatch reported in one pass");
   }
 
   // ===========================================================================
   //  fixture builders
   // ===========================================================================
 
-  function _deployment() internal view returns (Types.Deployment memory dep) {
-    dep.aliasName = ALIAS;
-    dep.factory = address(factory);
-    dep.resolver = address(resolver);
-    dep.verifier = address(verifier);
+  function _deployment() internal view returns (Types.Deployment memory deployment) {
+    deployment.aliasName = ALIAS;
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifier = address(verifier);
   }
 
-  function _chainConfig() internal pure returns (Types.ChainConfig memory cc) {
-    cc.aliasName = ALIAS;
-    cc.chainSelector = LOCAL_SEL;
-    cc.rmn = RMN;
-    cc.versionTag = VERSION_TAG;
-    cc.finalityConfig = 0x00000000; // constructor default; never set in the fixture
-    cc.storageLocations = new string[](1);
-    cc.storageLocations[0] = STORAGE_LOCATION;
-    cc.resolverSalt = RESOLVER_SALT;
+  function _chainConfig() internal pure returns (Types.ChainConfig memory chainConfig) {
+    chainConfig.aliasName = ALIAS;
+    chainConfig.chainSelector = LOCAL_SEL;
+    chainConfig.rmn = RMN;
+    chainConfig.versionTag = VERSION_TAG;
+    chainConfig.finalityConfig = 0x00000000; // constructor default; never set in the fixture
+    chainConfig.storageLocations = new string[](1);
+    chainConfig.storageLocations[0] = STORAGE_LOCATION;
+    chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
   function _roles() internal view returns (Types.RolesConfig memory roles) {
@@ -379,16 +379,16 @@ contract DriftCheckTest is CommitteeVerifierSetup {
       payloadSizeBytes: PAYLOAD_SIZE_BYTES
     });
     // Signature config for this lane is applied on the DEST chain, not here.
-    lane.sig.threshold = THRESHOLD;
-    lane.sig.signers = signers;
+    lane.signatureConfig.threshold = THRESHOLD;
+    lane.signatureConfig.signers = signers;
   }
 
   function _inboundLane() internal view returns (Types.LaneConfig memory lane) {
     lane.name = "remote_to_local";
     lane.source = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SEL});
     lane.dest = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SEL});
-    lane.sig.threshold = THRESHOLD;
-    lane.sig.signers = signers;
+    lane.signatureConfig.threshold = THRESHOLD;
+    lane.signatureConfig.signers = signers;
     // Remote chain config for this lane is applied on the SOURCE chain, not here.
   }
 }

@@ -49,7 +49,9 @@ contract ApplySignatureConfigs is BaseScript {
   ) public pure returns (SignatureQuorumValidator.SignatureConfig[] memory configs) {
     configs = new SignatureQuorumValidator.SignatureConfig[](1);
     configs[0] = SignatureQuorumValidator.SignatureConfig({
-      sourceChainSelector: lane.source.chainSelector, threshold: lane.sig.threshold, signers: lane.sig.signers
+      sourceChainSelector: lane.source.chainSelector,
+      threshold: lane.signatureConfig.threshold,
+      signers: lane.signatureConfig.signers
     });
   }
 
@@ -61,12 +63,14 @@ contract ApplySignatureConfigs is BaseScript {
     Types.LaneConfig memory lane
   ) public view returns (Call[] memory calls, string memory targetAlias) {
     targetAlias = _targetAlias(lane);
-    Types.Deployment memory dep = ConfigLib.readDeployment(targetAlias);
-    require(dep.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias));
+    Types.Deployment memory deployment = ConfigLib.readDeployment(targetAlias);
+    require(
+      deployment.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias)
+    );
 
     _assertValidConfig(lane);
 
-    return (callsFor(dep.verifier, new uint64[](0), toSignatureConfig(lane)), targetAlias);
+    return (callsFor(deployment.verifier, new uint64[](0), toSignatureConfig(lane)), targetAlias);
   }
 
   function run(
@@ -79,7 +83,7 @@ contract ApplySignatureConfigs is BaseScript {
 
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_eq(_targetAlias(lane), chainAlias)) continue;
+      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
 
       (Call[] memory calls, string memory targetAlias) = laneCalls(lane);
 
@@ -87,7 +91,7 @@ contract ApplySignatureConfigs is BaseScript {
       console2.log("  target chain:", targetAlias);
       console2.log("  target verifier:", calls[0].to);
       console2.log("  source selector:", lane.source.chainSelector);
-      console2.log("  threshold / signers:", lane.sig.threshold, lane.sig.signers.length);
+      console2.log("  threshold / signers:", lane.signatureConfig.threshold, lane.signatureConfig.signers.length);
 
       _stageMany(calls);
       ++staged;
@@ -103,24 +107,26 @@ contract ApplySignatureConfigs is BaseScript {
   function _assertValidConfig(
     Types.LaneConfig memory lane
   ) internal pure {
-    address[] memory signers = lane.sig.signers;
-    uint8 threshold = lane.sig.threshold;
-    uint256 n = signers.length;
+    address[] memory signers = lane.signatureConfig.signers;
+    uint8 threshold = lane.signatureConfig.threshold;
+    uint256 signerCount = signers.length;
 
     // Hard rules (would revert onchain anyway; fail fast with a clearer message).
-    require(n > 0, "ApplySignatureConfigs: empty signer set");
-    require(threshold >= 1 && threshold <= n, "ApplySignatureConfigs: threshold must be in [1, signers.length]");
-    for (uint256 i; i < n; ++i) {
+    require(signerCount > 0, "ApplySignatureConfigs: empty signer set");
+    require(
+      threshold >= 1 && threshold <= signerCount, "ApplySignatureConfigs: threshold must be in [1, signers.length]"
+    );
+    for (uint256 i; i < signerCount; ++i) {
       require(signers[i] != address(0), "ApplySignatureConfigs: zero-address signer");
-      for (uint256 j = i + 1; j < n; ++j) {
+      for (uint256 j = i + 1; j < signerCount; ++j) {
         require(signers[i] != signers[j], "ApplySignatureConfigs: duplicate signer");
       }
     }
 
     // Committee policy (non-fatal): not 1-of-1, and threshold must exceed 2/3.
-    if (n == 1) {
+    if (signerCount == 1) {
       console2.log("  WARN 1-of-1 signer set (allowed for testing; not recommended for production)"); //TODO might want stronger guarantees than a warning in the future
-    } else if (uint256(threshold) * 3 <= n * 2) {
+    } else if (uint256(threshold) * 3 <= signerCount * 2) {
       console2.log("  WARN threshold does not exceed 2/3 of the committee (policy: e.g. 3-of-4)");
     }
   }

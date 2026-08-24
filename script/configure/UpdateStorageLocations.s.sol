@@ -35,19 +35,21 @@ contract UpdateStorageLocations is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.ChainConfig memory cc = ConfigLib.readChain(chainAlias);
-    Types.Deployment memory dep = ConfigLib.readDeployment(chainAlias);
-    require(dep.verifier != address(0), string.concat("UpdateStorageLocations: verifier not recorded for ", chainAlias));
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    require(
+      deployment.verifier != address(0), string.concat("UpdateStorageLocations: verifier not recorded for ", chainAlias)
+    );
 
     console2.log("[UpdateStorageLocations] chain:", chainAlias);
-    console2.log("  target verifier:", dep.verifier);
-    console2.log("  storageLocations count:", cc.storageLocations.length);
+    console2.log("  target verifier:", deployment.verifier);
+    console2.log("  storageLocations count:", chainConfig.storageLocations.length);
 
-    if (cc.storageLocations.length == 0) {
+    if (chainConfig.storageLocations.length == 0) {
       console2.log("  WARN storageLocations is empty (clears the on-chain record)");
     }
 
-    _stageMany(callsFor(dep.verifier, cc.storageLocations));
+    _stageMany(callsFor(deployment.verifier, chainConfig.storageLocations));
     _flush("update-storage-locations");
   }
 }
