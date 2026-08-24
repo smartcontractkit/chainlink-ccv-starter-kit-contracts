@@ -22,10 +22,10 @@ import {IRouter} from "@chainlink/contracts-ccip/contracts/interfaces/IRouter.so
 contract LaneParityCheckTest is CommitteeVerifierSetup {
   LaneParityCheck internal script;
 
-  string internal constant SRC_ALIAS = "src_chain";
-  string internal constant DST_ALIAS = "dst_chain";
-  uint64 internal constant SRC_SEL = 1111;
-  uint64 internal constant DST_SEL = 2222;
+  string internal constant SOURCE_ALIAS = "src_chain";
+  string internal constant DEST_ALIAS = "dst_chain";
+  uint64 internal constant SOURCE_SELECTOR = 1111;
+  uint64 internal constant DEST_SELECTOR = 2222;
 
   address internal constant ROUTER = address(0x9001);
   uint16 internal constant FEE_USD_CENTS = 25;
@@ -46,14 +46,15 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     // Source side of the lane: outbound impl keyed by DEST selector + remote chain config.
     VersionedVerifierResolver.OutboundImplementationArgs[] memory outbound =
       new VersionedVerifierResolver.OutboundImplementationArgs[](1);
-    outbound[0] =
-      VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: DST_SEL, verifier: address(verifier)});
+    outbound[0] = VersionedVerifierResolver.OutboundImplementationArgs({
+      destChainSelector: DEST_SELECTOR, verifier: address(verifier)
+    });
     resolver.applyOutboundImplementationUpdates(outbound);
 
     BaseVerifier.RemoteChainConfigArgs[] memory remotes = new BaseVerifier.RemoteChainConfigArgs[](1);
     remotes[0] = BaseVerifier.RemoteChainConfigArgs({
       router: IRouter(ROUTER),
-      remoteChainSelector: DST_SEL,
+      remoteChainSelector: DEST_SELECTOR,
       allowlistEnabled: false,
       feeUSDCents: FEE_USD_CENTS,
       gasForVerification: GAS_FOR_VERIFICATION,
@@ -70,8 +71,9 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     resolver.applyInboundImplementationUpdates(inbound);
 
     SignatureQuorumValidator.SignatureConfig[] memory sigConfigs = new SignatureQuorumValidator.SignatureConfig[](1);
-    sigConfigs[0] =
-      SignatureQuorumValidator.SignatureConfig({sourceChainSelector: SRC_SEL, threshold: THRESHOLD, signers: signers});
+    sigConfigs[0] = SignatureQuorumValidator.SignatureConfig({
+      sourceChainSelector: SOURCE_SELECTOR, threshold: THRESHOLD, signers: signers
+    });
     verifier.applySignatureConfigs(new uint64[](0), sigConfigs);
   }
 
@@ -259,8 +261,8 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
 
   function _lane() internal view returns (Types.LaneConfig memory lane) {
     lane.name = "src_to_dst";
-    lane.source = Types.LaneEndpoint({aliasName: SRC_ALIAS, chainSelector: SRC_SEL});
-    lane.dest = Types.LaneEndpoint({aliasName: DST_ALIAS, chainSelector: DST_SEL});
+    lane.source = Types.LaneEndpoint({aliasName: SOURCE_ALIAS, chainSelector: SOURCE_SELECTOR});
+    lane.dest = Types.LaneEndpoint({aliasName: DEST_ALIAS, chainSelector: DEST_SELECTOR});
     lane.signatureConfig.threshold = THRESHOLD;
     lane.signatureConfig.signers = signers;
     lane.remote = Types.RemoteChainConfig({
@@ -272,15 +274,15 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   }
 
   function _srcChain() internal pure returns (Types.ChainConfig memory chainConfig) {
-    chainConfig.aliasName = SRC_ALIAS;
-    chainConfig.chainSelector = SRC_SEL;
+    chainConfig.aliasName = SOURCE_ALIAS;
+    chainConfig.chainSelector = SOURCE_SELECTOR;
     chainConfig.versionTag = VERSION_TAG;
     chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
   function _dstChain() internal pure returns (Types.ChainConfig memory chainConfig) {
-    chainConfig.aliasName = DST_ALIAS;
-    chainConfig.chainSelector = DST_SEL;
+    chainConfig.aliasName = DEST_ALIAS;
+    chainConfig.chainSelector = DEST_SELECTOR;
     chainConfig.versionTag = VERSION_TAG;
     chainConfig.resolverSalt = RESOLVER_SALT;
   }

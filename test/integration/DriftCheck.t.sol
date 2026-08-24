@@ -4,7 +4,6 @@ pragma solidity 0.8.26;
 import {DriftCheck} from "../../script/governance/DriftCheck.s.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
-import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
 import {
@@ -25,8 +24,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   string internal constant ALIAS = "local_chain";
   string internal constant REMOTE_ALIAS = "remote_chain";
-  uint64 internal constant LOCAL_SEL = 1111;
-  uint64 internal constant REMOTE_SEL = 2222;
+  uint64 internal constant LOCAL_SELECTOR = 1111;
+  uint64 internal constant REMOTE_SELECTOR = 2222;
 
   address internal constant ROUTER = address(0x9001);
   address internal constant RESOLVER_FEE_AGGREGATOR = address(0xFEE2);
@@ -51,7 +50,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     // Inbound leg (this chain is the DEST of remote_chain -> local_chain).
     SignatureQuorumValidator.SignatureConfig[] memory sigConfigs = new SignatureQuorumValidator.SignatureConfig[](1);
     sigConfigs[0] = SignatureQuorumValidator.SignatureConfig({
-      sourceChainSelector: REMOTE_SEL, threshold: THRESHOLD, signers: signers
+      sourceChainSelector: REMOTE_SELECTOR, threshold: THRESHOLD, signers: signers
     });
     verifier.applySignatureConfigs(new uint64[](0), sigConfigs);
 
@@ -59,7 +58,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     BaseVerifier.RemoteChainConfigArgs[] memory remotes = new BaseVerifier.RemoteChainConfigArgs[](1);
     remotes[0] = BaseVerifier.RemoteChainConfigArgs({
       router: IRouter(ROUTER),
-      remoteChainSelector: REMOTE_SEL,
+      remoteChainSelector: REMOTE_SELECTOR,
       allowlistEnabled: false,
       feeUSDCents: FEE_USD_CENTS,
       gasForVerification: GAS_FOR_VERIFICATION,
@@ -77,7 +76,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     VersionedVerifierResolver.OutboundImplementationArgs[] memory outbound =
       new VersionedVerifierResolver.OutboundImplementationArgs[](1);
     outbound[0] = VersionedVerifierResolver.OutboundImplementationArgs({
-      destChainSelector: REMOTE_SEL, verifier: address(verifier)
+      destChainSelector: REMOTE_SELECTOR, verifier: address(verifier)
     });
     resolver.applyOutboundImplementationUpdates(outbound);
 
@@ -265,8 +264,9 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   function test_drift_outboundImplementation_pointsElsewhere() public {
     VersionedVerifierResolver.OutboundImplementationArgs[] memory outbound =
       new VersionedVerifierResolver.OutboundImplementationArgs[](1);
-    outbound[0] =
-      VersionedVerifierResolver.OutboundImplementationArgs({destChainSelector: REMOTE_SEL, verifier: address(0xBAD)});
+    outbound[0] = VersionedVerifierResolver.OutboundImplementationArgs({
+      destChainSelector: REMOTE_SELECTOR, verifier: address(0xBAD)
+    });
     resolver.applyOutboundImplementationUpdates(outbound);
 
     assertEq(
@@ -339,7 +339,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function _chainConfig() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = ALIAS;
-    chainConfig.chainSelector = LOCAL_SEL;
+    chainConfig.chainSelector = LOCAL_SELECTOR;
     chainConfig.rmn = RMN;
     chainConfig.versionTag = VERSION_TAG;
     chainConfig.finalityConfig = 0x00000000; // constructor default; never set in the fixture
@@ -369,8 +369,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function _outboundLane() internal view returns (Types.LaneConfig memory lane) {
     lane.name = "local_to_remote";
-    lane.source = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SEL});
-    lane.dest = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SEL});
+    lane.source = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SELECTOR});
+    lane.dest = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SELECTOR});
     lane.remote = Types.RemoteChainConfig({
       router: ROUTER,
       feeUSDCents: FEE_USD_CENTS,
@@ -384,8 +384,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function _inboundLane() internal view returns (Types.LaneConfig memory lane) {
     lane.name = "remote_to_local";
-    lane.source = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SEL});
-    lane.dest = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SEL});
+    lane.source = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SELECTOR});
+    lane.dest = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SELECTOR});
     lane.signatureConfig.threshold = THRESHOLD;
     lane.signatureConfig.signers = signers;
     // Remote chain config for this lane is applied on the SOURCE chain, not here.

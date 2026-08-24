@@ -23,9 +23,9 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage:
 ///   forge script script/governance/LaneParityCheck.s.sol --sig "runConfig(string)" <lane>
-///   forge script script/governance/LaneParityCheck.s.sol --sig "runSource(string)" <lane> --rpc-url $SRC_RPC
-///   forge script script/governance/LaneParityCheck.s.sol --sig "runDest(string)"   <lane> --rpc-url $DST_RPC
-///   script/governance/lane-parity-check.sh <lane> $SRC_RPC $DST_RPC
+///   forge script script/governance/LaneParityCheck.s.sol --sig "runSource(string)" <lane> --rpc-url $SOURCE_RPC
+///   forge script script/governance/LaneParityCheck.s.sol --sig "runDest(string)"   <lane> --rpc-url $DEST_RPC
+///   script/governance/lane-parity-check.sh <lane> $SOURCE_RPC $DEST_RPC
 contract LaneParityCheck is Script {
   error ParityMismatch(uint256 count);
 

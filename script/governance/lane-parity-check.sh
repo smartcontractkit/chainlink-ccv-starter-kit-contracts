@@ -12,8 +12,8 @@
 set -uo pipefail
 
 LANE="${1:?usage: lane-parity-check.sh <laneName> <sourceRpcUrl> <destRpcUrl>}"
-SRC_RPC="${2:?usage: lane-parity-check.sh <laneName> <sourceRpcUrl> <destRpcUrl>}"
-DST_RPC="${3:?usage: lane-parity-check.sh <laneName> <sourceRpcUrl> <destRpcUrl>}"
+SOURCE_RPC="${2:?usage: lane-parity-check.sh <laneName> <sourceRpcUrl> <destRpcUrl>}"
+DEST_RPC="${3:?usage: lane-parity-check.sh <laneName> <sourceRpcUrl> <destRpcUrl>}"
 
 SCRIPT="script/governance/LaneParityCheck.s.sol"
 WORST=0
@@ -34,7 +34,7 @@ run_leg() {
 }
 
 run_leg 'runConfig(string)'
-run_leg 'runSource(string)' --rpc-url "$SRC_RPC"
-run_leg 'runDest(string)' --rpc-url "$DST_RPC"
+run_leg 'runSource(string)' --rpc-url "$SOURCE_RPC"
+run_leg 'runDest(string)' --rpc-url "$DEST_RPC"
 
 exit $WORST

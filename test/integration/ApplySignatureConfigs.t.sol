@@ -18,11 +18,11 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   string internal constant EXAMPLE_LANE = "config/lanes/sepolia-to-base_sepolia.example.json";
   string internal constant DEST_ALIAS = "test_dest_chain";
-  string internal constant SRC_ALIAS = "test_src_chain";
+  string internal constant SOURCE_ALIAS = "test_src_chain";
   string internal constant PARTIAL_ALIAS = "test_partial_chain";
 
   // Sepolia selector (matches the staging config).
-  uint64 internal constant SRC = 16015286601757825753;
+  uint64 internal constant SOURCE_SELECTOR = 16015286601757825753;
 
   function setUp() public override {
     super.setUp();
@@ -50,8 +50,9 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     address[] memory signers
   ) internal pure returns (SignatureQuorumValidator.SignatureConfig[] memory configs) {
     configs = new SignatureQuorumValidator.SignatureConfig[](1);
-    configs[0] =
-      SignatureQuorumValidator.SignatureConfig({sourceChainSelector: SRC, threshold: threshold, signers: signers});
+    configs[0] = SignatureQuorumValidator.SignatureConfig({
+      sourceChainSelector: SOURCE_SELECTOR, threshold: threshold, signers: signers
+    });
   }
 
   function _applySignatureConfig(
@@ -68,7 +69,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   function test_callsFor_appliesSignerSet() public {
     assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply 3-of-4 failed");
 
-    (address[] memory got, uint8 threshold) = verifier.getSignatureConfig(SRC);
+    (address[] memory got, uint8 threshold) = verifier.getSignatureConfig(SOURCE_SELECTOR);
     assertEq(threshold, 3, "threshold");
     assertEq(got.length, 4, "signer count");
   }
@@ -82,7 +83,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     smaller[1] = address(0xCAFE);
     assertTrue(_applySignatureConfig(1, smaller), "replacement apply failed");
 
-    (address[] memory got, uint8 threshold) = verifier.getSignatureConfig(SRC);
+    (address[] memory got, uint8 threshold) = verifier.getSignatureConfig(SOURCE_SELECTOR);
     assertEq(threshold, 1, "threshold replaced");
     assertEq(got.length, 2, "signer set fully replaced, not merged");
     assertEq(got[0], address(0xBEEF));
@@ -119,8 +120,8 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     address[] memory signers
   ) internal pure returns (Types.LaneConfig memory lane) {
     lane.name = "test-lane";
-    lane.source.aliasName = SRC_ALIAS;
-    lane.source.chainSelector = SRC;
+    lane.source.aliasName = SOURCE_ALIAS;
+    lane.source.chainSelector = SOURCE_SELECTOR;
     lane.dest.aliasName = destAlias;
     lane.dest.chainSelector = 10344971235874465080;
     lane.signatureConfig.threshold = threshold;
