@@ -31,7 +31,10 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
   "feeTokens":        ["0x..."],               // fee tokens to report on / sweep. Empty => fee scripts no-op.
-  "resolverSalt":     "0x0000...0001"          // CREATE2 salt for the resolver. MUST be identical on every chain.
+  "resolverSalt":     "0x0000...0001",         // CREATE2 salt for the resolver. MUST be identical on every chain.
+  "explorerUrl":      "https://sepolia.etherscan.io" // OPTIONAL, operator-maintained; not served by the API, never synced.
+                                                     // deployments-report.sh links addresses as <explorerUrl>/address/<addr>;
+                                                     // empty or absent => plain unlinked addresses.
 }
 ```
 
