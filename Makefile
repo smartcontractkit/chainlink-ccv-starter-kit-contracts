@@ -1,7 +1,8 @@
 # CCV Starter Kit — Onchain (Foundry). Convenience targets.
 # Pass chain alias / lane via VARS, e.g.  make deploy-verifier CHAIN=sepolia
 
-.PHONY: install build build-dev test test-fork fmt fmt-check lint ci clean \
+.PHONY: install build build-dev clean \
+        test test-fork test-config fmt fmt-check lint lint-sh \
         bootstrap deploy-resolver deploy-verifier \
         snapshot drift
 
@@ -33,6 +34,12 @@ fmt-check:
 
 lint:
 	forge lint
+
+lint-sh:          ## shellcheck every wrapper script
+	shellcheck --severity=warning $$(find script -name '*.sh')
+
+test-config:      ## offline tests for the config-sync write/override semantics
+	./script/config/selftest.sh
 
 clean:
 	forge clean

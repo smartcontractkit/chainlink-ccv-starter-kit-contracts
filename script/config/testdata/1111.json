@@ -1,0 +1,10 @@
+{
+  "apiName": "fixture-chain",
+  "chainId": "1111",
+  "chainSelector": "1111",
+  "chainFamily": "evm",
+  "environment": "testnet",
+  "router": "0xRRRR000000000000000000000000000000000001",
+  "rmn": "0xNNNN000000000000000000000000000000000001",
+  "feeTokens": ["0xTTTT000000000000000000000000000000000001"]
+}

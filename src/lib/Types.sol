@@ -17,6 +17,7 @@ library Types {
     uint256 chainId;
     uint64 chainSelector; // parsed from a JSON string (selectors exceed 2^53)
     address rmn; // Chainlink-provided; MUST be non-zero
+    address router; // Chainlink's local CCIP router, synced from the API; default for lanes
     bytes4 versionTag; // non-zero, immutable
     bytes4 finalityConfig; // FinalityCodec bytes4; 0x00000000 = full finality. TODO PLACEHOLDER value (TBD).
     string[] storageLocations; // operator's own aggregator endpoint(s)

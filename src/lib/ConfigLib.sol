@@ -50,6 +50,8 @@ library ConfigLib {
     chainConfig.chainId = vm.parseJsonUint(json, ".chainId");
     chainConfig.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")));
     chainConfig.rmn = vm.parseJsonAddress(json, ".rmn");
+    // Optional while older configs predate the field; the sync tooling maintains it.
+    chainConfig.router = vm.keyExistsJson(json, ".router") ? vm.parseJsonAddress(json, ".router") : address(0);
     chainConfig.versionTag = _parseBytes4(json, ".versionTag");
     chainConfig.finalityConfig = _parseBytes4(json, ".finalityConfig");
     chainConfig.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
@@ -139,7 +141,24 @@ library ConfigLib {
     lane.signatureConfig.threshold = uint8(vm.parseJsonUint(json, ".signatureConfig.threshold"));
     lane.signatureConfig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
 
-    lane.remote.router = vm.parseJsonAddress(json, ".remoteChainConfig.router");
+    // Optional override: absent inherits the SOURCE chain's synced router; an explicit
+    // 0x0 pauses the lane. An inherited zero means the chain was never synced - error.
+    if (vm.keyExistsJson(json, ".remoteChainConfig.router")) {
+      lane.remote.router = vm.parseJsonAddress(json, ".remoteChainConfig.router");
+    } else {
+      lane.remote.router = readChain(lane.source.aliasName).router;
+      require(
+        lane.remote.router != address(0),
+        string.concat(
+          "ConfigLib: lane ",
+          lane.name,
+          " inherits its router, but chains/",
+          lane.source.aliasName,
+          ".json has none - run sync-ccip-config.sh sync ",
+          lane.source.aliasName
+        )
+      );
+    }
     lane.remote.feeUSDCents = uint16(vm.parseJsonUint(json, ".remoteChainConfig.feeUSDCents"));
     lane.remote.gasForVerification = uint32(vm.parseJsonUint(json, ".remoteChainConfig.gasForVerification"));
     lane.remote.payloadSizeBytes = uint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"));

@@ -45,6 +45,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: forge lint
 
+      # The shell wrappers have no test suite, so shellcheck is their only gate.
+      # ubuntu-latest ships shellcheck, so no install step is needed.
+      - name: Lint shell scripts
+        if: ${{ !cancelled() }}
+        run: shellcheck --severity=warning $(find script -name '*.sh')
+
+      # The config-sync scripts write into config/; these cover the write and override
+      # semantics offline (stubbed source, no network).
+      - name: Test config-sync scripts
+        if: ${{ !cancelled() }}
+        run: ./script/config/selftest.sh
+
   build-test:
     name: Build & test
     runs-on: ubuntu-latest

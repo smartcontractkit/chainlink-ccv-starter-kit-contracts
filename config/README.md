@@ -26,6 +26,7 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "chainId":          11155111,
   "chainSelector":    "16015286601757825753", // CCIP chain selector (string: exceeds JS safe int)
   "rmn":              "0x...",                 // Chainlink-provided RMN address. MUST be non-zero.
+  "router":           "0x...",                 // Chainlink's local CCIP router; synced from the API. Lanes inherit it unless they override.
   "versionTag":       "0xAABBCCDD",            // bytes4, non-zero, immutable. Scheme: 2 bytes operator id + 2 bytes version.
   "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
@@ -38,9 +39,10 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > and `SweepFees` (passes the list to `withdrawFeeTokens`). The key is **optional by
 > design**: fee sweeping is opt-in per chain, so a chain whose list is not decided yet still
 > loads for every other script — an absent or empty list makes both fee scripts a logged
-> no-op rather than an error. Nothing on-chain registers fee tokens: the set that can
-> actually accrue is governed by CCIP's `FeeQuoter`, so this list is a hand-maintained
-> mirror. The list is *not* filtered by current balance —
+> no-op rather than an error. The set of tokens that can actually accrue is governed by
+> CCIP's `FeeQuoter`; this list mirrors it, synced from the CCIP API by
+> `script/config/sync-ccip-config.sh` rather than maintained by hand.
+> The list is *not* filtered by current balance —
 > `SweepFees` builds Safe batches that execute later, and filtering on today's balance
 > would silently drop fees accruing in between. `SKIP_ZERO_BALANCES=1` optionally skips a
 > WHOLE contract whose every listed token reads zero at build time (saves a no-op tx); the
@@ -97,9 +99,10 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
   },
 
   // -> applyRemoteChainConfigUpdates, keyed by DEST chain selector (outbound).
-  //    router = 0x0 is the ONLY emergency lever (outbound pause) — see README.
+  //    `router` is OPTIONAL: absent inherits the SOURCE chain's synced router
+  //    (chains/<alias>.json, maintained by script/config/sync-ccip-config.sh).
+  //    An explicit 0x0 PAUSES the lane — the only emergency lever (outbound).
   "remoteChainConfig": {
-    "router":             "0x...",
     "feeUSDCents":        0,
     "gasForVerification": 200000,
     "payloadSizeBytes":   0
