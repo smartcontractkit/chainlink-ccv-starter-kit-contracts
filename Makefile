@@ -1,12 +1,11 @@
-# CCV Starter Kit — Onchain (Foundry). Convenience targets.
-# Pass chain alias / lane via VARS, e.g.  make deploy-verifier CHAIN=sepolia
+# CCV Starter Kit. Convenience targets.
 #
 # Recipes that expand an RPC URL are prefixed with `@`: make echoes recipe lines by
 # default, and RPC URLs usually carry an API key. Keep the `@` when editing them.
 
 .PHONY: install build build-dev clean \
         test test-fork test-config fmt fmt-check lint lint-sh lint-typos \
-        bootstrap deploy-resolver deploy-verifier \
+        bootstrap-factory deploy-resolver deploy-verifier \
         snapshot drift parity parity-config deployments-doc deployments-check
 
 CHAIN   ?=
@@ -54,8 +53,8 @@ clean:
 	forge clean
 
 # ---- deploy (EOA path) ----
-bootstrap:
-	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make bootstrap CHAIN=sepolia";   exit 2; }
+bootstrap-factory: ## CREATE2Factory; must be the deployer's FIRST tx on the chain
+	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make bootstrap-factory CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";            exit 2; }
 	@OUTPUT_MODE=EOA forge script script/deploy/BootstrapFactory.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
