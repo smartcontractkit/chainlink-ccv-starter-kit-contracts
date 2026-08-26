@@ -18,8 +18,18 @@ import {console2} from "forge-std/console2.sol";
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplySignatureConfigs.s.sol \
 ///     --sig "run(string)" base_sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast --aws)
 contract ApplySignatureConfigs is BaseScript {
-  /// @notice Which deployment a lane's signature config targets. TODO: Single point to flip
-  ///         if the confirmed direction is source-side instead of dest-side.
+  /// @notice Waives the committee-strength policy below. `run()` sets it from
+  ///         ALLOW_WEAK_COMMITTEE; callers and tests set it directly.
+  bool public allowWeakCommittee;
+
+  /// @notice Sets the waiver directly, for tests and callers that never reach `run()`.
+  function setAllowWeakCommittee(
+    bool allowed
+  ) external {
+    allowWeakCommittee = allowed;
+  }
+
+  /// @notice Which deployment a lane's signature config targets: the DEST chain.
   function _targetAlias(
     Types.LaneConfig memory lane
   ) internal pure returns (string memory) {
@@ -77,6 +87,7 @@ contract ApplySignatureConfigs is BaseScript {
     string calldata chainAlias
   ) external {
     _initOutput(chainAlias);
+    allowWeakCommittee = vm.envOr("ALLOW_WEAK_COMMITTEE", false);
 
     string[] memory lanePaths = ConfigLib.listLanes();
     uint256 staged;
@@ -106,7 +117,7 @@ contract ApplySignatureConfigs is BaseScript {
   // ---------------------------------------------------------------------------
   function _assertValidConfig(
     Types.LaneConfig memory lane
-  ) internal pure {
+  ) internal view {
     address[] memory signers = lane.signatureConfig.signers;
     uint8 threshold = lane.signatureConfig.threshold;
     uint256 signerCount = signers.length;
@@ -123,11 +134,19 @@ contract ApplySignatureConfigs is BaseScript {
       }
     }
 
-    // Committee policy (non-fatal): not 1-of-1, and threshold must exceed 2/3.
+    // Committee policy: not 1-of-1, and threshold must exceed 2/3. Fatal unless explicitly waived.
     if (signerCount == 1) {
-      console2.log("  WARN 1-of-1 signer set (allowed for testing; not recommended for production)"); //TODO might want stronger guarantees than a warning in the future
+      require(
+        allowWeakCommittee,
+        "ApplySignatureConfigs: 1-of-1 signer set (set ALLOW_WEAK_COMMITTEE=true for test committees)"
+      );
+      console2.log("  WARN 1-of-1 signer set, waived by ALLOW_WEAK_COMMITTEE");
     } else if (uint256(threshold) * 3 <= signerCount * 2) {
-      console2.log("  WARN threshold does not exceed 2/3 of the committee (policy: e.g. 3-of-4)");
+      require(
+        allowWeakCommittee,
+        "ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true)"
+      );
+      console2.log("  WARN threshold does not exceed 2/3, waived by ALLOW_WEAK_COMMITTEE");
     }
   }
 }

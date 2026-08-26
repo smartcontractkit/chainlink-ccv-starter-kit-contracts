@@ -16,8 +16,6 @@ import {console2} from "forge-std/console2.sol";
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/configure/UpdateStorageLocations.s.sol \
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
-///   NOTE: in SAFE mode the batch MUST be signed by the storageLocationsAdmin Safe,
-///         NOT the owner Safe.
 contract UpdateStorageLocations is BaseScript {
   /// @notice Single source of truth for the updateStorageLocations calldata.
   function callsFor(
