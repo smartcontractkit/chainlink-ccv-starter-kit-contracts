@@ -4,19 +4,25 @@ pragma solidity 0.8.26;
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {
   SignatureQuorumValidator
 } from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title ApplySignatureConfigs
-/// @notice Sets the signer set + threshold per source chain on the
-///         CommitteeVerifier.
+/// @notice Sets the signer set + threshold per source chain on the CommitteeVerifier.
+///         Runs every lane whose DESTINATION is the given chain, one call each, and skips
+///         the lanes already matching on-chain — so --rpc-url is required in BOTH output
+///         modes.
+///
 /// @dev This is a FULL-SET REPLACEMENT: the contract clears the
 ///      existing signer set for that source and re-adds `signers`.
+///
 /// Usage (chainAlias is the lane's DESTINATION chain — signatures are verified there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplySignatureConfigs.s.sol \
-///     --sig "run(string)" base_sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast --aws)
+///     --sig "run(string)" base_sepolia --rpc-url $BASE_SEPOLIA_RPC_URL
+///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplySignatureConfigs is BaseScript {
   /// @notice Waives the committee-strength policy below. `run()` sets it from
   ///         ALLOW_WEAK_COMMITTEE; callers and tests set it directly.
@@ -90,15 +96,25 @@ contract ApplySignatureConfigs is BaseScript {
     allowWeakCommittee = vm.envOr("ALLOW_WEAK_COMMITTEE", false);
 
     string[] memory lanePaths = ConfigLib.listLanes();
+    uint256 matched;
     uint256 staged;
 
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      ++matched;
 
       (Call[] memory calls, string memory targetAlias) = laneCalls(lane);
 
-      console2.log("[ApplySignatureConfigs] lane:", lane.name);
+      // The diff reads the verifier, so an unreachable one must fail with a legible
+      // reason rather than as a bare revert inside the getter.
+      require(calls[0].to.code.length != 0, "ApplySignatureConfigs: no code at recorded verifier (wrong --rpc-url?)");
+      if (isCurrent(calls[0].to, lane)) {
+        console2.log("[ApplySignatureConfigs] lane UNCHANGED:", lane.name);
+        continue;
+      }
+
+      console2.log("[ApplySignatureConfigs] lane STAGED:", lane.name);
       console2.log("  target chain:", targetAlias);
       console2.log("  target verifier:", calls[0].to);
       console2.log("  source selector:", lane.source.chainSelector);
@@ -108,8 +124,38 @@ contract ApplySignatureConfigs is BaseScript {
       ++staged;
     }
 
-    require(staged > 0, string.concat("ApplySignatureConfigs: no lanes with destination ", chainAlias));
+    require(matched > 0, string.concat("ApplySignatureConfigs: no lanes with destination ", chainAlias));
+    if (staged == 0) {
+      console2.log("[ApplySignatureConfigs] nothing to do: every lane is already current:", matched);
+      return;
+    }
+    console2.log("[ApplySignatureConfigs] staged lanes:", staged, "of", matched);
     _flush(string.concat("apply-signature-configs-", chainAlias));
+  }
+
+  /// @notice True when the config already matches on-chain: the verifier holds this
+  ///         lane's signer set and threshold for its source chain.
+  /// @dev Set comparison, not sequence: `applySignatureConfigs` replaces the whole set,
+  ///      and the contract does not preserve the order the signers were submitted in.
+  function isCurrent(
+    address verifier,
+    Types.LaneConfig memory lane
+  ) public view returns (bool) {
+    (address[] memory signers, uint8 threshold) =
+      CommitteeVerifier(verifier).getSignatureConfig(lane.source.chainSelector);
+    if (threshold != lane.signatureConfig.threshold) return false;
+    if (signers.length != lane.signatureConfig.signers.length) return false;
+    for (uint256 i; i < lane.signatureConfig.signers.length; ++i) {
+      bool found;
+      for (uint256 j; j < signers.length; ++j) {
+        if (lane.signatureConfig.signers[i] == signers[j]) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) return false;
+    }
+    return true;
   }
 
   // ---------------------------------------------------------------------------

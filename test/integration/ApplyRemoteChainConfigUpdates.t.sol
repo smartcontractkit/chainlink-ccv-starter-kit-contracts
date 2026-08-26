@@ -73,6 +73,58 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
     assertFalse(_applyRemoteChainConfig(ROUTER, 0), "should have reverted on-chain");
   }
 
+  // ---- isCurrent: what keeps a re-run from restaging applied lanes ----
+  // Every field this script writes has to participate, or a real change reads as
+  // "already current" and is silently dropped from the batch.
+
+  /// @dev Lane matching what `_applyRemoteChainConfig(ROUTER, 200000)` writes.
+  function _lane() internal pure returns (Types.LaneConfig memory lane) {
+    lane.name = "test-lane";
+    lane.dest.chainSelector = DEST;
+    lane.remote.router = ROUTER;
+    lane.remote.feeUSDCents = 50;
+    lane.remote.gasForVerification = 200000;
+    lane.remote.payloadSizeBytes = 0;
+    lane.allowlist.allowlistEnabled = false;
+  }
+
+  function test_isCurrent_falseBeforeAnythingIsApplied() public view {
+    assertFalse(script.isCurrent(address(verifier), _lane()), "unconfigured destination is not current");
+  }
+
+  function test_isCurrent_trueAfterApplyingTheSameValues() public {
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
+    assertTrue(script.isCurrent(address(verifier), _lane()), "identical config is current");
+  }
+
+  function test_isCurrent_falseWhenRouterDiffers() public {
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
+    Types.LaneConfig memory lane = _lane();
+    lane.remote.router = address(0xD1FF);
+    assertFalse(script.isCurrent(address(verifier), lane), "router change must stage");
+  }
+
+  function test_isCurrent_falseWhenGasForVerificationDiffers() public {
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
+    Types.LaneConfig memory lane = _lane();
+    lane.remote.gasForVerification = 300000;
+    assertFalse(script.isCurrent(address(verifier), lane), "gas change must stage");
+  }
+
+  function test_isCurrent_falseWhenFeeDiffers() public {
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
+    Types.LaneConfig memory lane = _lane();
+    lane.remote.feeUSDCents = 51;
+    assertFalse(script.isCurrent(address(verifier), lane), "fee change must stage");
+  }
+
+  function test_isCurrent_falseWhenAllowlistEnabledDiffers() public {
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
+    Types.LaneConfig memory lane = _lane();
+    lane.allowlist.allowlistEnabled = true;
+    assertFalse(script.isCurrent(address(verifier), lane), "allowlistEnabled is written by this call too");
+  }
+
   function test_toRemoteChainConfigArgs_translatesExampleLane() public view {
     Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
     BaseVerifier.RemoteChainConfigArgs[] memory args = script.toRemoteChainConfigArgs(lane);

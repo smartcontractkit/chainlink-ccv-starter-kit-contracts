@@ -66,6 +66,57 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
   }
 
+  // ---- isCurrent: what keeps a re-run from restaging applied lanes ----
+  // A stale answer here either restages every committee or silently drops a rotation,
+  // and neither is visible on-chain: applySignatureConfigs accepts both.
+
+  /// @dev Reverses `_generateSigners` so set-vs-sequence comparison is exercised.
+  function _reversed(
+    address[] memory input
+  ) internal pure returns (address[] memory out) {
+    out = new address[](input.length);
+    for (uint256 i; i < input.length; ++i) {
+      out[i] = input[input.length - 1 - i];
+    }
+  }
+
+  function test_isCurrent_falseBeforeAnythingIsApplied() public view {
+    assertFalse(
+      script.isCurrent(address(verifier), _lane(DEST_ALIAS, 3, _generateSigners(4))),
+      "unconfigured source is not current"
+    );
+  }
+
+  function test_isCurrent_trueAfterApplyingTheSameCommittee() public {
+    assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply failed");
+    assertTrue(script.isCurrent(address(verifier), _lane(DEST_ALIAS, 3, _generateSigners(4))), "identical committee");
+  }
+
+  function test_isCurrent_ignoresSignerOrder() public {
+    assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply failed");
+    assertTrue(
+      script.isCurrent(address(verifier), _lane(DEST_ALIAS, 3, _reversed(_generateSigners(4)))),
+      "same set in another order is not a change"
+    );
+  }
+
+  function test_isCurrent_falseWhenThresholdDiffers() public {
+    assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply failed");
+    assertFalse(script.isCurrent(address(verifier), _lane(DEST_ALIAS, 4, _generateSigners(4))), "threshold change");
+  }
+
+  function test_isCurrent_falseWhenASignerIsAdded() public {
+    assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply failed");
+    assertFalse(script.isCurrent(address(verifier), _lane(DEST_ALIAS, 3, _generateSigners(5))), "committee grew");
+  }
+
+  function test_isCurrent_falseWhenASignerIsSwapped() public {
+    assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply failed");
+    address[] memory rotated = _generateSigners(4);
+    rotated[3] = address(0xBEEF);
+    assertFalse(script.isCurrent(address(verifier), _lane(DEST_ALIAS, 3, rotated)), "a rotation must stage");
+  }
+
   function test_callsFor_appliesSignerSet() public {
     assertTrue(_applySignatureConfig(3, _generateSigners(4)), "apply 3-of-4 failed");
 

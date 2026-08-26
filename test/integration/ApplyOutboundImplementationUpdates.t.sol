@@ -70,6 +70,37 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
     assertFalse(_applyOutbound(_singleArg(0, address(verifier))), "should have reverted");
   }
 
+  // ---- isCurrent: what keeps a re-run from restaging applied destinations ----
+  // The write never reverts on a matching entry, so nothing on-chain forces this to be
+  // right — a wrong answer either restages every lane or silently skips a real change.
+
+  function test_isCurrent_falseBeforeAnythingIsApplied() public view {
+    assertFalse(script.isCurrent(address(resolver), DEST_FUJI, address(verifier)), "unset destination is not current");
+  }
+
+  function test_isCurrent_trueAfterApply() public {
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "apply failed");
+    assertTrue(script.isCurrent(address(resolver), DEST_FUJI, address(verifier)), "applied destination is current");
+  }
+
+  function test_isCurrent_falseWhenMappedToADifferentVerifier() public {
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(0xBEEF))), "apply failed");
+    assertFalse(
+      script.isCurrent(address(resolver), DEST_FUJI, address(verifier)), "a different verifier must not read as current"
+    );
+  }
+
+  function test_isCurrent_isPerDestination() public {
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "apply failed");
+    assertFalse(script.isCurrent(address(resolver), DEST_AMOY, address(verifier)), "an untouched destination");
+  }
+
+  function test_isCurrent_falseAfterMappingCleared() public {
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "set failed");
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(0))), "clear failed");
+    assertFalse(script.isCurrent(address(resolver), DEST_FUJI, address(verifier)), "cleared destination needs writing");
+  }
+
   function test_reverts_whenCallerNotOwner() public {
     BaseScript.Call[] memory calls = script.callsFor(address(resolver), _singleArg(DEST_FUJI, address(verifier)));
     vm.prank(address(0xBAD));
