@@ -57,6 +57,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: ./script/config/selftest.sh
 
+      - name: Spell-check
+        if: ${{ !cancelled() }}
+        uses: crate-ci/typos@v1.29.10
+
   build-test:
     name: Build & test
     runs-on: ubuntu-latest
