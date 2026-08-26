@@ -9,8 +9,9 @@
 #  _bootstrap-chain.sh.
 #
 #  Owns (overwrites) ONLY the fields core-fields.jq lists — and only when the target
-#  already carries the key. Preserves every other key byte-for-byte (versionTag,
-#  finalityConfig, storageLocations, resolverSalt, explorerUrl, ...).
+#  already carries the key, and only when the source supplies a non-null value.
+#  Preserves every other key byte-for-byte (versionTag, finalityConfig,
+#  storageLocations, resolverSalt, ...).
 #  chainSelector is the immutable join GUARD and is never rewritten.
 #
 #  Writes atomically: temp file in the SAME directory, validated, then mv.

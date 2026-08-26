@@ -10,14 +10,16 @@
 
 # The fields a config source owns. Everything else in a chain config is operator
 # input the source cannot know (versionTag, resolverSalt, storageLocations, ...).
-def core: ["router", "rmn", "chainId", "feeTokens"];
+def core: ["router", "rmn", "chainId", "feeTokens", "explorerAddressPath"];
 
 # Per-field equality. Addresses are case-insensitive; feeTokens is an unordered set;
-# everything else compares as opaque text — selectors and chainIds are never coerced
-# to numbers, so a uint64 can never lose precision on the comparison path.
+# a trailing slash on the explorer prefix is not a difference; everything else compares
+# as opaque text — selectors and chainIds are never coerced to numbers, so a uint64 can
+# never lose precision on the comparison path.
 def norm(k; v):
     if k == "feeTokens" then [ (v // [])[] | ascii_downcase ] | sort | tostring
     elif k == "router" or k == "rmn" then (v | tostring | ascii_downcase)
+    elif k == "explorerAddressPath" then (v | tostring | sub("/+$"; ""))
     else (v | tostring) end;
 
 # Human-readable value: strings bare, everything else as JSON.

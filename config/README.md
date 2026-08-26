@@ -27,14 +27,16 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "chainSelector":    "16015286601757825753", // CCIP chain selector (string: exceeds JS safe int)
   "rmn":              "0x...",                 // Chainlink-provided RMN address. MUST be non-zero.
   "router":           "0x...",                 // Chainlink's local CCIP router; synced from the API. Lanes inherit it unless they override.
+                                               // Synced fields: router, rmn, chainId, feeTokens, explorerAddressPath.
   "versionTag":       "0xAABBCCDD",            // bytes4, non-zero, immutable. Scheme: 2 bytes operator id + 2 bytes version.
   "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
   "feeTokens":        ["0x..."],               // fee tokens to report on / sweep. Empty => fee scripts no-op.
   "resolverSalt":     "0x0000...0001",         // CREATE2 salt for the resolver. MUST be identical on every chain.
-  "explorerUrl":      "https://sepolia.etherscan.io" // OPTIONAL, operator-maintained; not served by the API, never synced.
-                                                     // deployments-report.sh links addresses as <explorerUrl>/address/<addr>;
-                                                     // empty or absent => plain unlinked addresses.
+  "explorerAddressPath": "https://sepolia.etherscan.io/address" // Synced from the API (chainMetadata.explorer.addressPath).
+                                                     // A FULL URL prefix, not a path fragment: deployments-report.sh
+                                                     // links addresses as <explorerAddressPath>/<addr>.
+                                                     // Empty or absent => plain unlinked addresses.
 }
 ```
 

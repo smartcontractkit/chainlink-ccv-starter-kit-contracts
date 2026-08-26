@@ -1,7 +1,7 @@
 {
-  "apiName": "fixture-chain",
-  "chainId": "1111",
-  "chainSelector": "1111",
+  "apiName": "no-explorer-chain",
+  "chainId": "2222",
+  "chainSelector": "2222",
   "chainFamily": "evm",
   "environment": "testnet",
   "router": "0xRRRR000000000000000000000000000000000001",
@@ -9,5 +9,5 @@
   "feeTokens": [
     "0xTTTT000000000000000000000000000000000001"
   ],
-  "explorerAddressPath": "https://fixture.example/address"
+  "explorerAddressPath": null
 }

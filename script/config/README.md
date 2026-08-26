@@ -1,9 +1,9 @@
 # Config sync
 
 `sync-ccip-config.sh` pulls per-chain CCIP-core values — `router`, `rmn`,
-`chainId`, `feeTokens` — from the public CCIP REST API into `config/chains/<alias>.json`,
+`chainId`, `feeTokens`, `explorerAddressPath` — from the public CCIP REST API into `config/chains/<alias>.json`,
 and keeps them verifiable afterwards. It never touches the operator-owned fields
-(`versionTag`, `resolverSalt`, `storageLocations`, roles), and `chainSelector` is an
+(`versionTag`, `finalityConfig`, `resolverSalt`, `storageLocations`, roles), and `chainSelector` is an
 immutable join guard: a source whose selector disagrees with the file is refused.
 There is no per-file source setting: the API is the single upstream, and a chain it
 does not serve is simply skipped by sweeps.
@@ -31,8 +31,8 @@ Creates `config/chains/sepolia.json` from `_template.json` with the core fields
 filled in from the API, and lists what is left for you to fill by hand:
 
 ```
-CREATED config/chains/sepolia.json from api: router, rmn, chainId, feeTokens
-    still to fill in: versionTag, finalityConfig, storageLocations, resolverSalt, explorerUrl
+CREATED config/chains/sepolia.json from api: router, rmn, chainId, feeTokens, explorerAddressPath
+    still to fill in: versionTag, finalityConfig, storageLocations, resolverSalt
 ```
 
 **Bootstrap never overwrites.** Re-running against an existing file prints `OK` when it
@@ -62,7 +62,7 @@ typo'd selector.
 ./script/config/sync-ccip-config.sh sync sepolia
 ```
 
-The only writer. Overwrites the four core fields and preserves every other key
+The only writer. Overwrites the core fields and preserves every other key
 byte-for-byte, atomically (temp file, validate, rename).
 
 There is deliberately **no `sync --all`**: accepting upstream values is a per-chain
@@ -91,8 +91,7 @@ core-fields.jq           the owned field set and comparison rules, shared by bot
 ```
 
 The fetch layer is the one untrusted boundary, so validation lives there. Everything
-above it is covered by an offline selftest (`make test-config`, 39 assertions) that
-swaps the fetcher for a stub — see `script/config/selftest.sh`.
+above it is covered by an offline selftest (`make test-config`) that swaps the fetcher for a stub — see `script/config/selftest.sh`.
 
 Debugging: run the source directly to see the raw decoded output —
 

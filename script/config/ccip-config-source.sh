@@ -90,6 +90,12 @@ jq -c '
   # Refuse malformed addresses from the API before they can reach config/.
   def addr(v): (v | tostring)
     | if test("^0x[0-9a-fA-F]{40}$") then . else error("not an EVM address: \(.)") end;
+  # Explorer metadata is nullable at every level (chainMetadata, .explorer, .addressPath).
+  # Absent stays NULL, not "": the merge layer skips null source fields, so a chain the
+  # API has no explorer for keeps whatever the operator set instead of being wiped.
+  def httpUrl(v): if v == null then null else (v | tostring)
+    | if test("^https?://[^[:space:]]+$") then sub("/+$"; "")
+      else error("not an http(s) URL: \(.)") end end;
   .chainConfig as $c
   | def act(k): (($c[k] // []) | map(select(.isActive == true))
       | if length > 1 then error("\(length) ACTIVE \(k) entries in chainConfig - refusing to pick one: \(map(.address))")
@@ -107,6 +113,8 @@ jq -c '
     # The API serves objects (tokenAddress/tokenSymbol/decimals); the repo schema is a flat
     # address list. Absent => empty, which makes the fee scripts a logged no-op.
     feeTokens: [(($c.feeTokens // [])[] | addr(.tokenAddress))],
+    # Full URL prefix for address pages, e.g. "https://sepolia.etherscan.io/address".
+    explorerAddressPath: httpUrl(.chainMetadata.explorer.addressPath),
     tokenAdminRegistry: addr(optAct("tokenAdminRegistry")),
     registryModuleOwnerCustom: addr(optAct("registryModule")),
     feeQuoter: addr(optAct("feeQuoter"))

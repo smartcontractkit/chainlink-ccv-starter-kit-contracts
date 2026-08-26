@@ -10,7 +10,7 @@
 #  the SAME address on every chain. A divergence is flagged in the output and sets
 #  a non-zero exit, so this doubles as a CI check.
 #
-#  Explorer links come from the optional `explorerUrl` field in the chain config.
+#  Explorer links come from the optional `explorerAddressPath` field (synced from the API).
 #
 #  Usage: script/governance/deployments-report.sh [--check]
 #           (no args)  write docs/src/deployments.md
@@ -42,12 +42,14 @@ aliases() {
     done
 }
 
-# link <alias> <address> -> markdown link if the chain declares an explorerUrl, else code
+# link <alias> <address> -> markdown link if the chain declares an explorerAddressPath, else code
+# The field is a FULL URL prefix from the CCIP API (chainMetadata.explorer.addressPath),
+# e.g. "https://sepolia.etherscan.io/address" — the address is appended directly.
 link() {
     local base
-    base="$(jq -r '.explorerUrl // empty' "$CHAINS_DIR/$1.json")"
+    base="$(jq -r '.explorerAddressPath // empty' "$CHAINS_DIR/$1.json")"
     if [ -n "$base" ] && [ "$2" != "0x0000000000000000000000000000000000000000" ]; then
-        printf '[`%s`](%s/address/%s)' "$2" "${base%/}" "$2"
+        printf '[`%s`](%s/%s)' "$2" "${base%/}" "$2"
     else
         printf '`%s`' "$2"
     fi
