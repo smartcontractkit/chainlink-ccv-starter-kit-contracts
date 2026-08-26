@@ -59,7 +59,7 @@ jobs:
 
       - name: Spell-check
         if: ${{ !cancelled() }}
-        uses: crate-ci/typos@v1.29.10
+        uses: crate-ci/typos@db35ee91e80fbb447f33b0e5fbddb24d2a1a884f # v1.29.10
 
   build-test:
     name: Build & test
