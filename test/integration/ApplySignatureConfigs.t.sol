@@ -158,6 +158,34 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     script.laneCalls(_lane(DEST_ALIAS, 0, _generateSigners(4)));
   }
 
+  // ---- committee policy: fatal unless ALLOW_WEAK_COMMITTEE waives it ----
+  // Neither rule is enforced onchain, so this script is the only gate. The waiver is a
+  // field rather than an env read so these stay order-independent: forge reverts EVM
+  // state between tests but memoises vm.env*, so vm.setEnv could not be undone.
+
+  function test_reverts_on1of1Committee() public {
+    vm.expectRevert("ApplySignatureConfigs: 1-of-1 signer set (set ALLOW_WEAK_COMMITTEE=true for test committees)");
+    script.laneCalls(_lane(DEST_ALIAS, 1, _generateSigners(1)));
+  }
+
+  function test_reverts_whenThresholdDoesNotExceedTwoThirds() public {
+    // 2-of-3: 2*3 == 6, not > 3*2 == 6.
+    vm.expectRevert("ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true)");
+    script.laneCalls(_lane(DEST_ALIAS, 2, _generateSigners(3)));
+  }
+
+  function test_allowWeakCommittee_waives1of1() public {
+    script.setAllowWeakCommittee(true);
+    (BaseScript.Call[] memory calls,) = script.laneCalls(_lane(DEST_ALIAS, 1, _generateSigners(1)));
+    assertEq(calls.length, 1, "staged despite the weak committee");
+  }
+
+  function test_threeOfFour_passesPolicy() public view {
+    // 3*3 == 9 > 4*2 == 8, so the boundary case is accepted with no waiver.
+    (BaseScript.Call[] memory calls,) = script.laneCalls(_lane(DEST_ALIAS, 3, _generateSigners(4)));
+    assertEq(calls.length, 1, "3-of-4 is a compliant committee");
+  }
+
   function test_reverts_whenSignerSetEmpty() public {
     vm.expectRevert("ApplySignatureConfigs: empty signer set");
     script.laneCalls(_lane(DEST_ALIAS, 1, new address[](0)));

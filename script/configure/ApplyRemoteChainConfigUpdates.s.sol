@@ -21,8 +21,7 @@ import {console2} from "forge-std/console2.sol";
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyRemoteChainConfigUpdates.s.sol \
 ///     --sig "run(string)" sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $SEPOLIA_RPC_URL --broadcast --aws)
 contract ApplyRemoteChainConfigUpdates is BaseScript {
-  /// @notice Which deployment a lane's remote-chain config targets. TODO Single point to
-  ///         flip if the confirmed direction is dest-side instead of source-side.
+  /// @notice Which deployment a lane's remote-chain config targets: the SOURCE chain.
   function _targetAlias(
     Types.LaneConfig memory lane
   ) internal pure returns (string memory) {

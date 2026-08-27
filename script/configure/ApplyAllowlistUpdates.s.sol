@@ -10,9 +10,8 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title ApplyAllowlistUpdates
 /// @notice Sender allowlist per destination on the CommitteeVerifier.
-///
-/// @dev Caller must be the owner OR the DynamicConfig.allowlistAdmin (contract allows
-///      both; otherwise reverts OnlyCallableByOwnerOrAllowlistAdmin).
+///         Caller may be EITHER the owner or the DynamicConfig.allowlistAdmin — the
+///         contract accepts both (else reverts OnlyCallableByOwnerOrAllowlistAdmin).
 ///
 /// @dev Contract rules mirrored in _assertValidConfig:
 ///        - Adding senders requires allowlistEnabled == true, else InvalidAllowListRequest.
@@ -22,10 +21,8 @@ import {console2} from "forge-std/console2.sol";
 /// Usage (chainAlias is the lane's SOURCE chain — sender gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyAllowlistUpdates.s.sol \
 ///     --sig "run(string)" sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $SEPOLIA_RPC_URL --broadcast --aws)
-///   NOTE: in SAFE mode the batch must be signed by the owner OR allowlistAdmin Safe.
 contract ApplyAllowlistUpdates is BaseScript {
-  /// @notice Which deployment a lane's allowlist config targets. TODO Single point to flip
-  ///         if the confirmed direction is dest-side instead of source-side.
+  /// @notice Which deployment a lane's allowlist config targets: the SOURCE chain.
   function _targetAlias(
     Types.LaneConfig memory lane
   ) internal pure returns (string memory) {
@@ -73,7 +70,7 @@ contract ApplyAllowlistUpdates is BaseScript {
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       console2.log("[ApplyAllowlistUpdates] lane src alias:", lane.source.aliasName);
-      if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
+      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
       _assertValidConfig(lane);
 
       console2.log("[ApplyAllowlistUpdates] lane:", lane.name);
