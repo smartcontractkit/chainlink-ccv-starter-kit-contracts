@@ -66,7 +66,7 @@ case "$http_code" in
         ;;
 esac
 
-# A 200 with an unparseable body is an upstream problem, not a schema problem: check it
+# A 200 with an unparsable body is an upstream problem, not a schema problem: check it
 # first so the error names the real cause.
 jq -e . "$body_file" > /dev/null 2>&1 || {
     err "BAD_BODY: HTTP 200 from ${BASE_URL}/chains/${SELECTOR} but the body is not valid JSON"

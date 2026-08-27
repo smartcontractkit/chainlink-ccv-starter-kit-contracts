@@ -70,7 +70,7 @@ jqlib --slurpfile src "$FLAT_PATH" --indent 4 'include "core-fields";
     | reduce (diffs($cfg; $src[0])[]) as $d (.; .[$d.key] = $d.source)
 ' "$CONFIG_PATH" > "$TMP" || exit 2
 
-# Refuse to write an empty or unparseable result over a real config.
+# Refuse to write an empty or unparsable result over a real config.
 jq -e . "$TMP" > /dev/null 2>&1 || {
     echo "  ERROR $NAME: refusing to write malformed JSON" >&2
     exit 2

@@ -1,0 +1,6 @@
+# Spell-check config for crate-ci/typos. Run `typos` at the repo root, or `make lint-typos`.
+# Anything git ignores (dependencies, build output) is skipped automatically.
+
+[files]
+# Vendored dependency, not ours to fix.
+extend-exclude = ["lib/"]
