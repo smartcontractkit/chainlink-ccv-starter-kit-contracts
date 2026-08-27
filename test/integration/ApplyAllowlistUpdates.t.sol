@@ -52,6 +52,71 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     (, senders) = verifier.getRemoteChainConfig(DEST);
   }
 
+  // ---- isCurrent: what keeps a re-run from restaging applied lanes ----
+  // This call is a DELTA, not a full-set replacement, so "current" means the flag
+  // matches, every `added` is already present, and no `removed` still is.
+
+  function _lane(
+    bool enabled,
+    address[] memory added,
+    address[] memory removed
+  ) internal pure returns (Types.LaneConfig memory lane) {
+    lane.name = "test-lane";
+    lane.dest.chainSelector = DEST;
+    lane.allowlist.allowlistEnabled = enabled;
+    lane.allowlist.added = added;
+    lane.allowlist.removed = removed;
+  }
+
+  function test_isCurrent_falseWhenAddedSenderIsMissing() public view {
+    assertFalse(
+      script.isCurrent(address(verifier), _lane(true, _single(SENDER_A), new address[](0))), "sender not yet added"
+    );
+  }
+
+  function test_isCurrent_trueOnceAddedSendersArePresent() public {
+    assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "apply failed");
+    assertTrue(
+      script.isCurrent(address(verifier), _lane(true, _pair(SENDER_A, SENDER_B), new address[](0))), "both present"
+    );
+  }
+
+  function test_isCurrent_falseWhenOnlySomeAddedSendersArePresent() public {
+    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "apply failed");
+    assertFalse(
+      script.isCurrent(address(verifier), _lane(true, _pair(SENDER_A, SENDER_B), new address[](0))), "B still missing"
+    );
+  }
+
+  function test_isCurrent_falseWhileARemovedSenderIsStillPresent() public {
+    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "apply failed");
+    assertFalse(
+      script.isCurrent(address(verifier), _lane(true, new address[](0), _single(SENDER_A))), "removal still pending"
+    );
+  }
+
+  function test_isCurrent_trueOnceARemovedSenderIsGone() public {
+    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "add failed");
+    assertTrue(_applyAllowlistUpdate(true, new address[](0), _single(SENDER_A)), "remove failed");
+    assertTrue(
+      script.isCurrent(address(verifier), _lane(true, new address[](0), _single(SENDER_A))), "removal already applied"
+    );
+  }
+
+  function test_isCurrent_falseWhenOnlyTheEnabledFlagDiffers() public {
+    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "apply failed");
+    assertFalse(
+      script.isCurrent(address(verifier), _lane(false, new address[](0), new address[](0))), "flag flip must stage"
+    );
+  }
+
+  /// @dev A sender the lane file never mentions is not drift: the delta shape gives this
+  ///      script no way to express its removal, so it must not force a pointless restage.
+  function test_isCurrent_ignoresSendersTheLaneDoesNotMention() public {
+    assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "apply failed");
+    assertTrue(script.isCurrent(address(verifier), _lane(true, _single(SENDER_A), new address[](0))), "B is not drift");
+  }
+
   function _pair(
     address a,
     address b

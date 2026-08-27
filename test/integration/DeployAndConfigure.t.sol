@@ -109,6 +109,33 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     );
   }
 
+  /// @notice Once a lane is configured, every script that can skip work must agree it is
+  ///         current — the same state `DriftCheck` reports clean.
+  /// @dev Ties the skip logic to the drift definition, which nothing else does. A script
+  ///      comparing FEWER fields than `DriftCheck` drops a real change from the batch
+  ///      while drift keeps reporting it; comparing MORE restages a lane that never
+  ///      changes. Both are silent: re-writing a matching value never reverts.
+  function test_afterConfiguring_everyScriptReportsTheLaneCurrent() public {
+    Types.LaneConfig memory lane = _lane();
+
+    assertFalse(applySig.isCurrent(address(verifier), lane), "nothing applied yet");
+    assertFalse(applyRemote.isCurrent(address(verifier), lane), "nothing applied yet");
+    assertFalse(
+      applyOutbound.isCurrent(address(resolver), lane.dest.chainSelector, address(verifier)), "nothing applied yet"
+    );
+
+    _exec(applySig.callsFor(address(verifier), new uint64[](0), applySig.toSignatureConfig(lane)));
+    _exec(applyRemote.callsFor(address(verifier), applyRemote.toRemoteChainConfigArgs(lane)));
+    _exec(applyOutbound.callsFor(address(resolver), _outboundArgs(lane)));
+
+    assertTrue(applySig.isCurrent(address(verifier), lane), "signature config re-reads as current");
+    assertTrue(applyRemote.isCurrent(address(verifier), lane), "remote chain config re-reads as current");
+    assertTrue(
+      applyOutbound.isCurrent(address(resolver), lane.dest.chainSelector, address(verifier)),
+      "outbound implementation re-reads as current"
+    );
+  }
+
   /// @dev The lane is both source and dest of itself, with DIFFERENT selectors per side,
   ///      so one chain exercises both directions. Guards against a configure script and
   ///      `DriftCheck` agreeing on the wrong side: the signer set is keyed by SOURCE

@@ -10,6 +10,9 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title ApplyAllowlistUpdates
 /// @notice Sender allowlist per destination on the CommitteeVerifier.
+///         Runs every lane whose SOURCE is the given chain, one call each, and skips the
+///         lanes already matching on-chain — so --rpc-url is required in BOTH output
+///         modes.
 ///         Caller may be EITHER the owner or the DynamicConfig.allowlistAdmin — the
 ///         contract accepts both (else reverts OnlyCallableByOwnerOrAllowlistAdmin).
 ///
@@ -20,7 +23,8 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage (chainAlias is the lane's SOURCE chain — sender gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyAllowlistUpdates.s.sol \
-///     --sig "run(string)" sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $SEPOLIA_RPC_URL --broadcast --aws)
+///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyAllowlistUpdates is BaseScript {
   /// @notice Which deployment a lane's allowlist config targets: the SOURCE chain.
   function _targetAlias(
@@ -63,28 +67,72 @@ contract ApplyAllowlistUpdates is BaseScript {
     require(
       deployment.verifier != address(0), string.concat("ApplyAllowlistUpdates: verifier not recorded for ", chainAlias)
     );
+    // The diff below reads the verifier, so an unreachable one must fail here with a
+    // legible reason rather than as a bare revert inside the first getter call.
+    require(
+      deployment.verifier.code.length != 0, "ApplyAllowlistUpdates: no code at recorded verifier (wrong --rpc-url?)"
+    );
 
     string[] memory lanePaths = ConfigLib.listLanes();
+    uint256 matched;
     uint256 staged;
 
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      console2.log("[ApplyAllowlistUpdates] lane src alias:", lane.source.aliasName);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      ++matched;
       _assertValidConfig(lane);
 
-      console2.log("[ApplyAllowlistUpdates] lane:", lane.name);
+      if (isCurrent(deployment.verifier, lane)) {
+        console2.log("[ApplyAllowlistUpdates] lane UNCHANGED:", lane.name);
+        continue;
+      }
+
+      console2.log("[ApplyAllowlistUpdates] lane STAGED:", lane.name);
       console2.log("  target verifier:", deployment.verifier);
       console2.log("  dest selector:", lane.dest.chainSelector);
-      console2.log("  enabled / added / removed:", lane.allowlist.allowlistEnabled);
+      console2.log("  allowlistEnabled:", lane.allowlist.allowlistEnabled);
       console2.log("    added:", lane.allowlist.added.length, "removed:", lane.allowlist.removed.length);
 
       _stageMany(callsFor(deployment.verifier, toAllowlistConfigArgs(lane)));
       ++staged;
     }
 
-    require(staged > 0, string.concat("ApplyAllowlistUpdates: no lanes with source ", chainAlias));
+    require(matched > 0, string.concat("ApplyAllowlistUpdates: no lanes with source ", chainAlias));
+    if (staged == 0) {
+      console2.log("[ApplyAllowlistUpdates] nothing to do: every lane is already current:", matched);
+      return;
+    }
+    console2.log("[ApplyAllowlistUpdates] staged lanes:", staged, "of", matched);
     _flush(string.concat("apply-allowlist-updates-", chainAlias));
+  }
+
+  /// @notice True when the config already matches on-chain: the flag matches, every
+  ///         `added` sender is present, and no `removed` sender is.
+  function isCurrent(
+    address verifier,
+    Types.LaneConfig memory lane
+  ) public view returns (bool) {
+    (BaseVerifier.RemoteChainConfigArgs memory remote, address[] memory senders) =
+      CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
+    if (remote.allowlistEnabled != lane.allowlist.allowlistEnabled) return false;
+    for (uint256 i; i < lane.allowlist.added.length; ++i) {
+      if (!_contains(senders, lane.allowlist.added[i])) return false;
+    }
+    for (uint256 i; i < lane.allowlist.removed.length; ++i) {
+      if (_contains(senders, lane.allowlist.removed[i])) return false;
+    }
+    return true;
+  }
+
+  function _contains(
+    address[] memory haystack,
+    address needle
+  ) private pure returns (bool) {
+    for (uint256 i; i < haystack.length; ++i) {
+      if (haystack[i] == needle) return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------

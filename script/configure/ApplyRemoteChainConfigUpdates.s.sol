@@ -12,6 +12,9 @@ import {console2} from "forge-std/console2.sol";
 /// @title ApplyRemoteChainConfigUpdates
 /// @notice Per destination: local router + verification fee + gas +
 ///         payload size + allowlist toggle on the CommitteeVerifier.
+///         Runs every lane whose SOURCE is the given chain, one call each, and skips the
+///         lanes already matching on-chain — so --rpc-url is required in BOTH output
+///         modes.
 ///
 /// @dev EMERGENCY LEVER: router == address(0) for a destination is the ONLY outbound
 ///      pause. There is no inbound halt. Setting a zero router here is legitimate and
@@ -19,7 +22,8 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage (chainAlias is the lane's SOURCE chain — outbound gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyRemoteChainConfigUpdates.s.sol \
-///     --sig "run(string)" sepolia   # (EOA path: OUTPUT_MODE=EOA + --rpc-url $SEPOLIA_RPC_URL --broadcast --aws)
+///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyRemoteChainConfigUpdates is BaseScript {
   /// @notice Which deployment a lane's remote-chain config targets: the SOURCE chain.
   function _targetAlias(
@@ -67,17 +71,31 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
       deployment.verifier != address(0),
       string.concat("ApplyRemoteChainConfigUpdates: verifier not recorded for ", chainAlias)
     );
+    // The diff below reads the verifier, so an unreachable one must fail here with a
+    // legible reason rather than as a bare revert inside the first getter call.
+    require(
+      deployment.verifier.code.length != 0,
+      "ApplyRemoteChainConfigUpdates: no code at recorded verifier (wrong --rpc-url?)"
+    );
 
     string[] memory lanePaths = ConfigLib.listLanes();
+    uint256 matched;
     uint256 staged;
 
     for (uint256 i; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      ++matched;
 
       _assertValidConfig(lane);
 
-      console2.log("[ApplyRemoteChainConfigUpdates] lane:", lane.name);
+      // Every field this script writes already matches.
+      if (isCurrent(deployment.verifier, lane)) {
+        console2.log("[ApplyRemoteChainConfigUpdates] lane UNCHANGED:", lane.name);
+        continue;
+      }
+
+      console2.log("[ApplyRemoteChainConfigUpdates] lane STAGED:", lane.name);
       console2.log("  target verifier:", deployment.verifier);
       console2.log("  remote (dest) selector:", lane.dest.chainSelector);
       console2.log("  router:", lane.remote.router);
@@ -86,8 +104,29 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
       ++staged;
     }
 
-    require(staged > 0, string.concat("ApplyRemoteChainConfigUpdates: no lanes with source ", chainAlias));
+    require(matched > 0, string.concat("ApplyRemoteChainConfigUpdates: no lanes with source ", chainAlias));
+    if (staged == 0) {
+      console2.log("[ApplyRemoteChainConfigUpdates] nothing to do: every lane is already current:", matched);
+      return;
+    }
+    console2.log("[ApplyRemoteChainConfigUpdates] staged lanes:", staged, "of", matched);
     _flush(string.concat("apply-remote-chain-config-", chainAlias));
+  }
+
+  /// @notice True when the config already matches on-chain: every field this script
+  ///         writes equals what the verifier holds for the lane's destination.
+  /// @dev Mirrors the field set in `toRemoteChainConfigArgs`. The allowlist *senders* are
+  ///      deliberately not compared: they are owned by ApplyAllowlistUpdates, and only the
+  ///      `allowlistEnabled` flag is written by both.
+  function isCurrent(
+    address verifier,
+    Types.LaneConfig memory lane
+  ) public view returns (bool) {
+    (BaseVerifier.RemoteChainConfigArgs memory remote,) =
+      CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
+    return address(remote.router) == lane.remote.router && remote.allowlistEnabled == lane.allowlist.allowlistEnabled
+      && remote.feeUSDCents == lane.remote.feeUSDCents && remote.gasForVerification == lane.remote.gasForVerification
+      && remote.payloadSizeBytes == lane.remote.payloadSizeBytes;
   }
 
   // ---------------------------------------------------------------------------
