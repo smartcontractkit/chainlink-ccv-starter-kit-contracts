@@ -49,13 +49,14 @@ contract BootstrapFactory is Script {
     CREATE2Factory f = new CREATE2Factory(allowList);
     factory = address(f);
 
-    console2.log("[BootstrapFactory] chain:", chainAlias);
-    console2.log("  CREATE2Factory:", factory);
-    console2.log("  deployer/allowlisted:", deployer);
-
     // Hand ownership to the configured factory owner (roles-as-data). Unset (zero)
     // means "keep the deployer as owner".
     address configuredOwner = ConfigLib.readRolesOrEmpty(chainAlias).factoryOwner;
+
+    console2.log("[BootstrapFactory] chain:", chainAlias);
+    console2.log("  CREATE2Factory:", factory);
+    console2.log("  deployer/allowlisted:", deployer);
+    console2.log("  configured factory.owner:", configuredOwner);
     if (configuredOwner == address(0) || configuredOwner == deployer) {
       console2.log("  owner: deployer (configured factory.owner unset or == deployer)");
     } else {

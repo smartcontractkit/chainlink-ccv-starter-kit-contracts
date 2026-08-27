@@ -218,15 +218,18 @@ contract OwnershipTest is CommitteeVerifierSetup {
   // ===========================================================================
 
   /// @dev In-memory only — the handover seams take structs, so this alias never hits disk.
-  string internal constant ALIAS = "test_ownership_chain";
+  ///      Named like the rest for uniformity; zz-scratch-* is the repo-wide fixture marker.
+  string internal constant ALIAS = "zz-scratch-ownership-chain";
 
   /// @dev Any test that calls `ConfigLib.writeDeployment` needs its OWN alias. Foundry
   ///      runs test functions concurrently against a shared filesystem, so two tests
   ///      writing `config/deployments/<alias>.json` race: one overwrites the other's
   ///      fixture mid-run and the failure looks like a contract bug, not a test bug.
-  string internal constant ALIAS_DISPATCH = "test_ownership_dispatch";
-  string internal constant ALIAS_REJECT = "test_ownership_reject";
-  string internal constant ALIAS_FACTORY = "test_ownership_factory";
+  ///      `writeDeployment` targets the real config directory, so these must keep the
+  ///      zz-scratch- prefix the governance tooling skips.
+  string internal constant ALIAS_DISPATCH = "zz-scratch-ownership-dispatch";
+  string internal constant ALIAS_REJECT = "zz-scratch-ownership-reject";
+  string internal constant ALIAS_FACTORY = "zz-scratch-ownership-factory";
 
   function _deployment() internal view returns (Types.Deployment memory deployment) {
     deployment.aliasName = ALIAS;

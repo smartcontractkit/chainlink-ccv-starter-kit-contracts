@@ -11,7 +11,7 @@ import {console2} from "forge-std/console2.sol";
 /// @dev The storageLocationsAdmin is a distinct two-step admin role on the
 ///      CommitteeVerifier, separate from the contract owner. Current admin proposes;
 ///      new admin accepts (AcceptStorageLocationsAdmin).
-/// @dev Target call (grounded): CommitteeVerifier.transferStorageLocationsAdmin(address).
+/// @dev Target call: CommitteeVerifier.transferStorageLocationsAdmin(address).
 contract TransferStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the transfer-storageLocationsAdmin calldata.
   function callsFor(
