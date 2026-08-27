@@ -69,7 +69,10 @@ esac
 aliases() {
     for f in "$DEPLOYMENTS_DIR"/*.json; do
         [ -e "$f" ] || continue
-        case "$(basename "$f")" in _template.json | *.example.json) continue ;; esac
+        # zz-scratch-* is the repo-wide fixture marker.
+        # The test suite writes records under it: ConfigLib.writeDeployment targets the real
+        # directory, so fixtures land here.
+        case "$(basename "$f")" in _template.json | *.example.json | zz-scratch-*) continue ;; esac
         n="$(basename "$f" .json)"
         # A deployment record is only meaningful alongside its chain config. Say so on
         # stderr rather than dropping it: a silently short report reads as complete.

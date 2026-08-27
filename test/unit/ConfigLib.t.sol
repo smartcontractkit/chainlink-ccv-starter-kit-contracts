@@ -37,10 +37,6 @@ contract ConfigLibTest is Test {
     }
   }
 
-  // TODO: once real config/chains/<alias>.json and config/roles/<alias>.json exist,
-  //       add readChain / readRoles round-trip tests here. (readChain/readRoles are
-  //       alias-based; point them at your real deployment aliases.)
-
   function _endsWithJson(
     string memory s
   ) private pure returns (bool) {
