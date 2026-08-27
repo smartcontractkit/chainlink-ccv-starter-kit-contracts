@@ -53,6 +53,6 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   function test_readChainByPath_parsesBytes4FieldsExactly() public view {
     Types.ChainConfig memory chainConfig = ConfigLib.readChainByPath("config/chains/sepolia.example.json");
     assertEq(chainConfig.versionTag, bytes4(0x00010001), "versionTag parsed exactly");
-    assertEq(chainConfig.finalityConfig, bytes4(0x00000001), "finalityConfig parsed exactly");
+    assertEq(chainConfig.finalityConfig, bytes4(0), "finalityConfig parsed exactly (full finality)");
   }
 }
