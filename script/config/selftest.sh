@@ -71,6 +71,7 @@ check "reports CREATED" "$(echo "$out" | grep -c CREATED)" "1"
 check "seeds router" "$(jq -r .router "$CFG")" "0xRRRR000000000000000000000000000000000001"
 check "seeds rmn" "$(jq -r .rmn "$CFG")" "$SOURCE_RMN"
 check "seeds feeTokens" "$(jq -r '.feeTokens[0]' "$CFG")" "0xTTTT000000000000000000000000000000000001"
+check "seeds explorerAddressPath" "$(jq -r .explorerAddressPath "$CFG")" "https://fixture.example/address"
 check "chainId normalised to a number" "$(jq -r '.chainId|type' "$CFG")" "number"
 check "chainSelector kept a string" "$(jq -r '.chainSelector|type' "$CFG")" "string"
 check "operator fields left at placeholders" "$(jq -r .versionTag "$CFG")" "0x00000000"
@@ -135,6 +136,43 @@ rc=$?
 check "exit 0" "$rc" "0"
 check "reports MATCH" "$(echo "$out" | grep -c MATCH)" "1"
 check "file unchanged" "$(hash_of "$CFG")" "$before"
+
+# ---------------------------------------------------------------- explorer path
+echo "explorerAddressPath: a changed explorer is drift like any other core field"
+edit '.explorerAddressPath = "https://old-explorer.example/address"'
+before="$(hash_of "$CFG")"
+out="$(run check fixture)"
+rc=$?
+check "exit 1" "$rc" "1"
+check "names the field" "$(echo "$out" | grep -c 'explorerAddressPath')" "1"
+check "file unchanged by check" "$(hash_of "$CFG")" "$before"
+run sync fixture > /dev/null
+check "sync accepts the new explorer" "$(jq -r .explorerAddressPath "$CFG")" "https://fixture.example/address"
+
+echo "explorerAddressPath: a trailing slash is not a difference"
+edit '.explorerAddressPath = "https://fixture.example/address/"'
+before="$(hash_of "$CFG")"
+out="$(run check fixture)"
+rc=$?
+check "exit 0" "$rc" "0"
+check "reports MATCH" "$(echo "$out" | grep -c MATCH)" "1"
+check "no rewrite for a cosmetic slash" "$(hash_of "$CFG")" "$before"
+edit '.explorerAddressPath = "https://fixture.example/address"'
+
+echo "explorerAddressPath: upstream serving no explorer never wipes the operator's value"
+CFG2="$TMP/config/chains/noexplorer.json"
+run bootstrap noexplorer 2222 > /dev/null
+check "bootstrap leaves it empty when upstream has none" "$(jq -r .explorerAddressPath "$CFG2")" ""
+# The operator fills it by hand for a chain the API has no explorer for.
+jq '.explorerAddressPath = "https://private-explorer.internal/address"' "$CFG2" > "$TMP/e.json" && mv "$TMP/e.json" "$CFG2"
+before="$(hash_of "$CFG2")"
+out="$(run check noexplorer)"
+rc=$?
+check "null source is not drift" "$rc" "0"
+out="$(run sync noexplorer)"
+check "sync leaves the hand-set value alone" "$(jq -r .explorerAddressPath "$CFG2")" "https://private-explorer.internal/address"
+check "file byte-identical after sync" "$(hash_of "$CFG2")" "$before"
+rm -f "$CFG2"
 
 echo "check --all: a chain the upstream does not know is SKIPPED, not a failure"
 cat > "$TMP/config/chains/localchain.json" <<'JSON'

@@ -11,9 +11,10 @@
 # the active ARMProxy. Lane-level CCIP version lives in /lanes, not /chains.
 #
 # The sync OWNS (overwrites) only the CCIP-core fields the source provides that the target already
-# carries: router, rmn (+ chainId refresh). It PRESERVES everything else byte-for-byte: name,
-# chainSelector, rpcEnv, explorerUrl, verifier, publicRpcFallback, the whole ccv{} block, roles{},
-# _note. The immutable chainSelector is a GUARD (source.chainSelector must equal the file's).
+# carries: router, rmn, feeTokens, explorerAddressPath (+ chainId refresh). It PRESERVES everything
+# else byte-for-byte: alias, chainSelector, versionTag, finalityConfig, storageLocations,
+# resolverSalt. The immutable chainSelector is a GUARD (source.chainSelector must equal the file's).
+# A core field the source serves as null (explorerAddressPath is nullable) is skipped, not zeroed.
 #
 # JSON-parsing rule: all read/compare/merge goes through jq, which preserves uint64 literals.
 # Selectors and chainIds are compared as opaque text, never coerced to numbers.
@@ -95,7 +96,7 @@ run_one() { # <name> <mode:check|sync> <sweep:0|1>
 # bootstrap <alias> <chainSelector>
 #
 # Seeds config/chains/<alias>.json from _template.json with the CCIP-core values the API
-# serves (router, rmn, chainId, feeTokens). NEVER overwrites: if the file already exists
+# serves (router, rmn, chainId, feeTokens, explorerAddressPath). NEVER overwrites: if the file already exists
 # it only compares and WARNS, so a bootstrap can be re-run safely at any time. Fields the
 # API cannot know (versionTag, resolverSalt, storageLocations) keep their template
 # placeholders for the operator to fill in.

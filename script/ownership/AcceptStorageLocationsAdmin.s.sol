@@ -8,7 +8,7 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title AcceptStorageLocationsAdmin
 /// @notice Called BY the incoming admin to complete the two-step transfer.
-/// @dev Target call (grounded): CommitteeVerifier.acceptStorageLocationsAdmin().
+/// @dev Target call: CommitteeVerifier.acceptStorageLocationsAdmin().
 contract AcceptStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the accept-storageLocationsAdmin calldata.
   function callsFor(

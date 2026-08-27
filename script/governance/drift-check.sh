@@ -2,7 +2,7 @@
 # =============================================================================
 #  drift-check.sh — CI-schedulable wrapper around DriftCheck.s.sol.
 #
-#  Distinct exit codes (outline step 16):
+#  Distinct exit codes:
 #     0  clean        — on-chain state matches declared config
 #     1  drift        — at least one mismatch (script emitted DRIFT_DETECTED)
 #     2  rpc-unavail  — could not reach the RPC / the check failed for other reasons

@@ -17,9 +17,12 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   ApplySignatureConfigs internal script;
 
   string internal constant EXAMPLE_LANE = "config/lanes/sepolia-to-base_sepolia.example.json";
-  string internal constant DEST_ALIAS = "test_dest_chain";
-  string internal constant SOURCE_ALIAS = "test_src_chain";
-  string internal constant PARTIAL_ALIAS = "test_partial_chain";
+  // zz-scratch-* is the repo-wide fixture marker: `ConfigLib.writeDeployment` targets the
+  // real config/deployments/, so records written here must be ignorable by the governance
+  // tooling.
+  string internal constant DEST_ALIAS = "zz-scratch-dest-chain";
+  string internal constant SOURCE_ALIAS = "zz-scratch-src-chain";
+  string internal constant PARTIAL_ALIAS = "zz-scratch-partial-chain";
 
   // Sepolia selector (matches the staging config).
   uint64 internal constant SOURCE_SELECTOR = 16015286601757825753;
