@@ -1,8 +1,6 @@
 # `config/` — config-as-data
 
-Every deployment/config parameter lives here as JSON. The scripts under `script/`
-are generic loops that read these files, so the same script serves all 8 lanes
-(and any future chain) with nothing hardcoded.
+Every deployment/config parameter lives here as JSON. The scripts under `script/` are generic loops that read these files, so one script serves every lane and chain you add here, with nothing hardcoded.
 
 Three categories:
 
@@ -65,13 +63,11 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > reverts the whole `withdrawFeeTokens` call, so one typo blocks every future sweep for that
 > chain. `BalanceReport` flags such an entry as `UNREADABLE`.
 
-> ⚠️ **`finalityConfig` is a PLACEHOLDER pending a decision.** It is the `bytes4`
-> ALLOWED finality (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`.
-> Encoding: `0x00000000` = wait for full finality (safest, production default); the
-> low 16 bits are a block depth (`0x00000001` = depth-1, the fast path Chainlink uses
-> for staging tests); bit 16 (`0x00010000`) is the `safe`-tag flag. The staging config
-> currently uses `0x00000001` so the fast-path test messages are permitted. TODO: revisit
-> before production (likely `0x00000000`).
+> **`finalityConfig` defaults to `0x00000000`.** It is the `bytes4` ALLOWED finality
+> (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`. Encoding:
+> `0x00000000` = wait for full finality (safest, production default); the low 16 bits are
+> a block depth (`0x00000001` = depth-1, the fast path Chainlink uses for staging tests);
+> bit 16 (`0x00010000`) is the `safe`-tag flag.
 
 Notes:
 - `storageLocations` is a **cross-workstream input** from the off-chain/infra team

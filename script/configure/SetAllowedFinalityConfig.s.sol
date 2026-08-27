@@ -15,9 +15,7 @@ import {console2} from "forge-std/console2.sol";
 ///        0x00000000  wait for FULL finality (safest; production default)
 ///        0x0000NNNN  block depth NNNN (low 16 bits) — e.g. 0x00000001 = depth-1 fast path
 ///        0x00010000  WAIT_FOR_SAFE flag (bit 16)
-///      The value comes from config/chains/<alias>.json `finalityConfig`, which is
-///      currently a PLACEHOLDER (0x00000001 on staging to permit fast-path test
-///      messages) — TODO revisit before production.
+///      From config/chains/<alias>.json `finalityConfig`; bounds what a SENDER may request.
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/configure/SetAllowedFinalityConfig.s.sol \
