@@ -237,7 +237,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_allowWeakCommittee_waives1of1() public {
     script.setAllowWeakCommittee(true);
-    // the expected revert is the assertion; the call returns no value
+    // the other return values are deliberately ignored
     // forge-lint: disable-next-line(unused-return)
     (BaseScript.Call[] memory calls,) = script.laneCalls(_lane(DEST_ALIAS, 1, _generateSigners(1)));
     assertEq(calls.length, 1, "staged despite the weak committee");
@@ -245,7 +245,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_threeOfFour_passesPolicy() public view {
     // 3*3 == 9 > 4*2 == 8, so the boundary case is accepted with no waiver.
-    // the expected revert is the assertion; the call returns no value
+    // the other return values are deliberately ignored
     // forge-lint: disable-next-line(unused-return)
     (BaseScript.Call[] memory calls,) = script.laneCalls(_lane(DEST_ALIAS, 3, _generateSigners(4)));
     assertEq(calls.length, 1, "3-of-4 is a compliant committee");

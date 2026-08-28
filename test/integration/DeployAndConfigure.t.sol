@@ -149,12 +149,12 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     assertEq(threshold, THRESHOLD, "signer set landed under the SOURCE selector");
     assertEq(onChainSigners.length, signers.length, "full signer set");
 
-    // the needed tuple element is destructured; the rest is deliberately dropped
+    // the other return values are deliberately ignored
     // forge-lint: disable-next-line(unused-return)
     (BaseVerifier.RemoteChainConfigArgs memory remote,) = verifier.getRemoteChainConfig(DEST_SELECTOR);
     assertEq(address(remote.router), address(router), "remote config landed under the DEST selector");
 
-    // the needed tuple element is destructured; the rest is deliberately dropped
+    // the other return values are deliberately ignored
     // forge-lint: disable-next-line(unused-return)
     (, uint8 wrongWay) = verifier.getSignatureConfig(DEST_SELECTOR);
     assertEq(wrongWay, 0, "no signer set under the dest selector");

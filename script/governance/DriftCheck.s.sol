@@ -200,7 +200,7 @@ contract DriftCheck is Script {
       // Outbound leg: routing/fee/gas for messages LEAVING to lane.dest lives on this
       // chain only when this chain is the source.
       if (_stringsEqual(lane.source.aliasName, chainConfig.aliasName)) {
-        // the needed tuple element is destructured; the rest is deliberately dropped
+        // the other return values are deliberately ignored
         // forge-lint: disable-next-line(unused-return)
         (BaseVerifier.RemoteChainConfigArgs memory remote,) = verifier.getRemoteChainConfig(lane.dest.chainSelector);
         string memory lanePrefix = string.concat("lane ", lane.name, " ");

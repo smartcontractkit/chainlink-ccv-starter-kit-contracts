@@ -49,7 +49,7 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
   }
 
   function _allowedSenders() internal view returns (address[] memory senders) {
-    // the needed tuple element is destructured; the rest is deliberately dropped
+    // the other return values are deliberately ignored
     // forge-lint: disable-next-line(unused-return)
     (, senders) = verifier.getRemoteChainConfig(DEST);
   }

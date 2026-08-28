@@ -114,7 +114,7 @@ contract SweepFeesTest is FeeScriptsSetup {
     (
       BaseScript.Call[] memory calls,
       SweepFees.SkipReason skipV,
-      // called for its expected revert; the return is irrelevant
+      // resolverSkip is deliberately ignored
       // forge-lint: disable-next-line(unused-return)
     ) = script.sweepCalls(_deployment(), _chainConfig(onlyC), false);
 
@@ -137,7 +137,7 @@ contract SweepFeesTest is FeeScriptsSetup {
   // ---------------------------------------------------------------------------
 
   function test_executingSweep_movesBalancesToEachContractsOwnAggregator() public {
-    // the needed tuple element is destructured; the rest is deliberately dropped
+    // the other return values are deliberately ignored
     // forge-lint: disable-next-line(unused-return)
     (BaseScript.Call[] memory calls,,) = script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), false);
 

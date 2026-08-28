@@ -155,7 +155,7 @@ contract LaneParityCheck is Script {
 
     (
       BaseVerifier.RemoteChainConfigArgs memory remote,
-      // the needed tuple element is destructured; the rest is deliberately dropped
+      // the other return values are deliberately ignored
       // forge-lint: disable-next-line(unused-return)
     ) = CommitteeVerifier(sourceDeployment.verifier).getRemoteChainConfig(lane.dest.chainSelector);
     mismatches += _diffAddress("source remoteChainConfig.router", lane.remote.router, address(remote.router));

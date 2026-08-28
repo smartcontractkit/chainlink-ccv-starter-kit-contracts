@@ -124,7 +124,7 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
   ) public view returns (bool) {
     (
       BaseVerifier.RemoteChainConfigArgs memory remote,
-      // the needed tuple element is destructured; the rest is deliberately dropped
+      // the other return values are deliberately ignored
       // forge-lint: disable-next-line(unused-return)
     ) = CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
     return address(remote.router) == lane.remote.router && remote.allowlistEnabled == lane.allowlist.allowlistEnabled
