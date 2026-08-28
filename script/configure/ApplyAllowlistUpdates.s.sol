@@ -39,9 +39,7 @@ contract ApplyAllowlistUpdates is BaseScript {
     BaseVerifier.AllowlistConfigArgs[] memory args
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({
-      to: verifier, value: 0, data: abi.encodeWithSelector(CommitteeVerifier.applyAllowlistUpdates.selector, args)
-    });
+    calls[0] = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.applyAllowlistUpdates, (args))});
   }
 
   /// @notice Translate a lane's config-as-data into the Chainlink arg struct, keyed by

@@ -22,9 +22,7 @@ contract ApplyInboundImplementationUpdates is BaseScript {
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: resolver,
-      value: 0,
-      data: abi.encodeWithSelector(VersionedVerifierResolver.applyInboundImplementationUpdates.selector, args)
+      to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.applyInboundImplementationUpdates, (args))
     });
   }
 

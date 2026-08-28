@@ -38,11 +38,8 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     BaseVerifier.RemoteChainConfigArgs[] memory args
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({
-      to: verifier,
-      value: 0,
-      data: abi.encodeWithSelector(CommitteeVerifier.applyRemoteChainConfigUpdates.selector, args)
-    });
+    calls[0] =
+      Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.applyRemoteChainConfigUpdates, (args))});
   }
 
   /// @notice Translate a lane's config-as-data into the Chainlink arg struct. The

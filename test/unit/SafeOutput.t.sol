@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {IOwnable} from "@chainlink/contracts/src/v0.8/shared/interfaces/IOwnable.sol";
 import {Test} from "forge-std/Test.sol";
 
 /// @dev Concrete harness exposing BaseScript's internal dual-output API to tests.
@@ -49,7 +50,7 @@ contract SafeOutputTest is Test {
     assertEq(uint256(h.mode()), uint256(BaseScript.OutputMode.SAFE));
 
     address target = address(0xABCD);
-    h.stage(target, abi.encodeWithSignature("acceptOwnership()"));
+    h.stage(target, abi.encodeCall(IOwnable.acceptOwnership, ()));
     assertEq(h.count(), 1);
 
     h.flush("test-batch");

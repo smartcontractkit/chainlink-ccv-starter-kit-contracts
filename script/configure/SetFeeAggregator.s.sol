@@ -20,11 +20,8 @@ contract SetFeeAggregator is BaseScript {
     address feeAggregator
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({
-      to: resolver,
-      value: 0,
-      data: abi.encodeWithSelector(VersionedVerifierResolver.setFeeAggregator.selector, feeAggregator)
-    });
+    calls[0] =
+      Call({to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.setFeeAggregator, (feeAggregator))});
   }
 
   function run(

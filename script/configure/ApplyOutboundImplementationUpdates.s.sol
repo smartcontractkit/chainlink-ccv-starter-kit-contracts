@@ -26,9 +26,7 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: resolver,
-      value: 0,
-      data: abi.encodeWithSelector(VersionedVerifierResolver.applyOutboundImplementationUpdates.selector, args)
+      to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.applyOutboundImplementationUpdates, (args))
     });
   }
 

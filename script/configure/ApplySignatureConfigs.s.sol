@@ -53,9 +53,7 @@ contract ApplySignatureConfigs is BaseScript {
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: verifier,
-      value: 0,
-      data: abi.encodeWithSelector(SignatureQuorumValidator.applySignatureConfigs.selector, removals, configs)
+      to: verifier, value: 0, data: abi.encodeCall(SignatureQuorumValidator.applySignatureConfigs, (removals, configs))
     });
   }
 
