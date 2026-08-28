@@ -77,6 +77,8 @@ abstract contract BaseScript is Script {
   ) internal {
     if (outputMode == OutputMode.EOA) {
       vm.broadcast();
+      // a generic executor: the destination is caller-supplied by design
+      // forge-lint: disable-next-line(arbitrary-send-eth)
       (bool ok, bytes memory returnData) = to.call{value: value}(data);
       if (!ok) _bubbleRevert(returnData);
     } else {
@@ -96,7 +98,7 @@ abstract contract BaseScript is Script {
   function _stageMany(
     Call[] memory calls
   ) internal {
-    for (uint256 i; i < calls.length; ++i) {
+    for (uint256 i = 0; i < calls.length; ++i) {
       _stage(calls[i]);
     }
   }
@@ -112,12 +114,15 @@ abstract contract BaseScript is Script {
     // run without --rpc-url, where it is 31337 for every chain.
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
     string memory dir = string.concat("out/safe/", outputChainAlias);
-    vm.createDir(dir, true); // idempotent; survives a fresh clone
     string memory file = string.concat(dir, "/", name, ".json");
-    vm.writeFile(file, _buildSafeJson(name));
-    console2.log("[BaseScript] Safe batch written:", file);
-    console2.log("[BaseScript]   transactions:", _staged.length);
+    // Snapshot, then clear _staged before the file-system calls (checks-effects order).
+    string memory json = _buildSafeJson(name);
+    uint256 stagedTotal = _staged.length;
     delete _staged;
+    vm.createDir(dir, true); // idempotent; survives a fresh clone
+    vm.writeFile(file, json);
+    console2.log("[BaseScript] Safe batch written:", file);
+    console2.log("[BaseScript]   transactions:", stagedTotal);
   }
 
   function stagedCount() internal view returns (uint256) {
@@ -131,7 +136,7 @@ abstract contract BaseScript is Script {
     string memory name
   ) private view returns (string memory) {
     string memory txs = "";
-    for (uint256 i; i < _staged.length; ++i) {
+    for (uint256 i = 0; i < _staged.length; ++i) {
       Call memory stagedCall = _staged[i];
       string memory one = string.concat(
         '{"to":"',

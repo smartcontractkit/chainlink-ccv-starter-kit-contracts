@@ -79,10 +79,10 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     );
 
     string[] memory lanePaths = ConfigLib.listLanes();
-    uint256 matched;
-    uint256 staged;
+    uint256 matched = 0;
+    uint256 staged = 0;
 
-    for (uint256 i; i < lanePaths.length; ++i) {
+    for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
       ++matched;
@@ -122,8 +122,11 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     address verifier,
     Types.LaneConfig memory lane
   ) public view returns (bool) {
-    (BaseVerifier.RemoteChainConfigArgs memory remote,) =
-      CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
+    (
+      BaseVerifier.RemoteChainConfigArgs memory remote,
+      // the needed tuple element is destructured; the rest is deliberately dropped
+      // forge-lint: disable-next-line(unused-return)
+    ) = CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
     return address(remote.router) == lane.remote.router && remote.allowlistEnabled == lane.allowlist.allowlistEnabled
       && remote.feeUSDCents == lane.remote.feeUSDCents && remote.gasForVerification == lane.remote.gasForVerification
       && remote.payloadSizeBytes == lane.remote.payloadSizeBytes;

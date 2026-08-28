@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+// vm.serializeX accumulates into the object; only the final call returns the JSON.
+// forge-lint: disable-start(unused-return)
+
 import {Types} from "./Types.sol";
 import {Vm} from "forge-std/Vm.sol";
 
@@ -48,7 +51,7 @@ library ConfigLib {
     string memory json = vm.readFile(path);
     chainConfig.aliasName = vm.parseJsonString(json, ".alias");
     chainConfig.chainId = vm.parseJsonUint(json, ".chainId");
-    chainConfig.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")));
+    chainConfig.chainSelector = _toUint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")), ".chainSelector");
     chainConfig.rmn = vm.parseJsonAddress(json, ".rmn");
     // Optional while older configs predate the field; the sync tooling maintains it.
     chainConfig.router = vm.keyExistsJson(json, ".router") ? vm.parseJsonAddress(json, ".router") : address(0);
@@ -95,8 +98,8 @@ library ConfigLib {
   function listLanes() internal view returns (string[] memory paths) {
     Vm.DirEntry[] memory entries = vm.readDir(LANES_DIR);
     string[] memory buf = new string[](entries.length);
-    uint256 n;
-    for (uint256 i; i < entries.length; ++i) {
+    uint256 n = 0;
+    for (uint256 i = 0; i < entries.length; ++i) {
       string memory p = entries[i].path;
       if (_hasSuffix(p, ".json") && !_contains(p, "_template") && !_contains(p, ".example.")) {
         buf[n++] = p;
@@ -104,7 +107,7 @@ library ConfigLib {
     }
 
     paths = new string[](n);
-    for (uint256 i; i < n; ++i) {
+    for (uint256 i = 0; i < n; ++i) {
       paths[i] = buf[i];
     }
 
@@ -134,11 +137,14 @@ library ConfigLib {
     lane.name = vm.parseJsonString(json, ".name");
 
     lane.source.aliasName = vm.parseJsonString(json, ".source.alias");
-    lane.source.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".source.chainSelector")));
+    lane.source.chainSelector =
+      _toUint64(vm.parseUint(vm.parseJsonString(json, ".source.chainSelector")), ".source.chainSelector");
     lane.dest.aliasName = vm.parseJsonString(json, ".dest.alias");
-    lane.dest.chainSelector = uint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")));
+    lane.dest.chainSelector =
+      _toUint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")), ".dest.chainSelector");
 
-    lane.signatureConfig.threshold = uint8(vm.parseJsonUint(json, ".signatureConfig.threshold"));
+    lane.signatureConfig.threshold =
+      _toUint8(vm.parseJsonUint(json, ".signatureConfig.threshold"), ".signatureConfig.threshold");
     lane.signatureConfig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
 
     // Optional override: absent inherits the SOURCE chain's synced router; an explicit
@@ -159,9 +165,13 @@ library ConfigLib {
         )
       );
     }
-    lane.remote.feeUSDCents = uint16(vm.parseJsonUint(json, ".remoteChainConfig.feeUSDCents"));
-    lane.remote.gasForVerification = uint32(vm.parseJsonUint(json, ".remoteChainConfig.gasForVerification"));
-    lane.remote.payloadSizeBytes = uint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"));
+    lane.remote.feeUSDCents =
+      _toUint16(vm.parseJsonUint(json, ".remoteChainConfig.feeUSDCents"), ".remoteChainConfig.feeUSDCents");
+    lane.remote.gasForVerification = _toUint32(
+      vm.parseJsonUint(json, ".remoteChainConfig.gasForVerification"), ".remoteChainConfig.gasForVerification"
+    );
+    lane.remote.payloadSizeBytes =
+      _toUint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"), ".remoteChainConfig.payloadSizeBytes");
 
     lane.allowlist.allowlistEnabled = vm.parseJsonBool(json, ".allowlist.allowlistEnabled");
     lane.allowlist.added = vm.parseJsonAddressArray(json, ".allowlist.addedAllowlistedSenders");
@@ -307,11 +317,58 @@ library ConfigLib {
   ) private pure returns (bytes4 result) {
     bytes memory raw = vm.parseJsonBytes(json, key);
     require(raw.length == 4, "ConfigLib: expected a 4-byte hex value");
-    uint32 accumulated;
-    for (uint256 i; i < 4; ++i) {
+    uint32 accumulated = 0;
+    for (uint256 i = 0; i < 4; ++i) {
       accumulated = (accumulated << 8) | uint32(uint8(raw[i]));
     }
     result = bytes4(accumulated);
+  }
+
+  // --------------------------------------------------------------------------
+  //  range-checked narrowing
+  // --------------------------------------------------------------------------
+  /// @dev Config numbers are hand-edited, so a bare downcast turns an out-of-range value
+  ///      into a valid-looking smaller one with no error. A typo'd extra digit on a chain
+  ///      selector is the dangerous case: any uint64 is a syntactically valid selector, so
+  ///      nothing downstream can catch it and the lane targets the wrong chain.
+  function _toUint64(
+    uint256 value,
+    string memory key
+  ) private pure returns (uint64) {
+    require(value <= type(uint64).max, string.concat("ConfigLib: ", key, " exceeds uint64"));
+    // casting to 'uint64' is safe because the require above bounds `value`
+    // forge-lint: disable-next-line(unsafe-typecast)
+    return uint64(value);
+  }
+
+  function _toUint32(
+    uint256 value,
+    string memory key
+  ) private pure returns (uint32) {
+    require(value <= type(uint32).max, string.concat("ConfigLib: ", key, " exceeds uint32"));
+    // casting to 'uint32' is safe because the require above bounds `value`
+    // forge-lint: disable-next-line(unsafe-typecast)
+    return uint32(value);
+  }
+
+  function _toUint16(
+    uint256 value,
+    string memory key
+  ) private pure returns (uint16) {
+    require(value <= type(uint16).max, string.concat("ConfigLib: ", key, " exceeds uint16"));
+    // casting to 'uint16' is safe because the require above bounds `value`
+    // forge-lint: disable-next-line(unsafe-typecast)
+    return uint16(value);
+  }
+
+  function _toUint8(
+    uint256 value,
+    string memory key
+  ) private pure returns (uint8) {
+    require(value <= type(uint8).max, string.concat("ConfigLib: ", key, " exceeds uint8"));
+    // casting to 'uint8' is safe because the require above bounds `value`
+    // forge-lint: disable-next-line(unsafe-typecast)
+    return uint8(value);
   }
 
   // --------------------------------------------------------------------------
@@ -324,7 +381,7 @@ library ConfigLib {
     bytes memory textBytes = bytes(text);
     bytes memory suffixBytes = bytes(suffix);
     if (suffixBytes.length > textBytes.length) return false;
-    for (uint256 i; i < suffixBytes.length; ++i) {
+    for (uint256 i = 0; i < suffixBytes.length; ++i) {
       if (textBytes[textBytes.length - suffixBytes.length + i] != suffixBytes[i]) return false;
     }
     return true;
@@ -338,7 +395,7 @@ library ConfigLib {
     bytes memory leftBytes = bytes(left);
     bytes memory rightBytes = bytes(right);
     uint256 shortest = leftBytes.length < rightBytes.length ? leftBytes.length : rightBytes.length;
-    for (uint256 i; i < shortest; ++i) {
+    for (uint256 i = 0; i < shortest; ++i) {
       if (leftBytes[i] != rightBytes[i]) return uint8(leftBytes[i]) < uint8(rightBytes[i]);
     }
     return leftBytes.length < rightBytes.length;
@@ -351,9 +408,9 @@ library ConfigLib {
     bytes memory textBytes = bytes(text);
     bytes memory needleBytes = bytes(needle);
     if (needleBytes.length == 0 || needleBytes.length > textBytes.length) return needleBytes.length == 0;
-    for (uint256 i; i <= textBytes.length - needleBytes.length; ++i) {
+    for (uint256 i = 0; i <= textBytes.length - needleBytes.length; ++i) {
       bool matched = true;
-      for (uint256 j; j < needleBytes.length; ++j) {
+      for (uint256 j = 0; j < needleBytes.length; ++j) {
         if (textBytes[i + j] != needleBytes[j]) {
           matched = false;
           break;

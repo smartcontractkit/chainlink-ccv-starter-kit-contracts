@@ -30,7 +30,7 @@ contract ConfigLibTest is Test {
     // Every listed path must be a .json and must NOT be a template or example,
     // regardless of how many real (gitignored) lane files exist locally.
     string[] memory lanes = ConfigLib.listLanes();
-    for (uint256 i; i < lanes.length; ++i) {
+    for (uint256 i = 0; i < lanes.length; ++i) {
       assertTrue(_endsWithJson(lanes[i]), "listed path must end in .json");
       assertFalse(_contains(lanes[i], "_template"), "must skip _template files");
       assertFalse(_contains(lanes[i], ".example."), "must skip .example files");
@@ -57,9 +57,9 @@ contract ConfigLibTest is Test {
     bytes memory b = bytes(s);
     bytes memory n = bytes(needle);
     if (n.length == 0 || n.length > b.length) return false;
-    for (uint256 i; i <= b.length - n.length; ++i) {
+    for (uint256 i = 0; i <= b.length - n.length; ++i) {
       bool ok = true;
-      for (uint256 j; j < n.length; ++j) {
+      for (uint256 j = 0; j < n.length; ++j) {
         if (b[i + j] != n[j]) {
           ok = false;
           break;

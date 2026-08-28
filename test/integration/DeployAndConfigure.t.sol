@@ -149,9 +149,13 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     assertEq(threshold, THRESHOLD, "signer set landed under the SOURCE selector");
     assertEq(onChainSigners.length, signers.length, "full signer set");
 
+    // the needed tuple element is destructured; the rest is deliberately dropped
+    // forge-lint: disable-next-line(unused-return)
     (BaseVerifier.RemoteChainConfigArgs memory remote,) = verifier.getRemoteChainConfig(DEST_SELECTOR);
     assertEq(address(remote.router), address(router), "remote config landed under the DEST selector");
 
+    // the needed tuple element is destructured; the rest is deliberately dropped
+    // forge-lint: disable-next-line(unused-return)
     (, uint8 wrongWay) = verifier.getSignatureConfig(DEST_SELECTOR);
     assertEq(wrongWay, 0, "no signer set under the dest selector");
   }
@@ -177,6 +181,8 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
 
     vm.prank(onRamp);
     vm.expectRevert(abi.encodeWithSelector(BaseVerifier.RemoteChainNotSupported.selector, DEST_SELECTOR));
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     pausableVerifier.forwardToVerifier(_message(DEST_SELECTOR), bytes32(0), address(0), 0, "");
   }
 
@@ -205,6 +211,8 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
 
     vm.prank(onRamp);
     vm.expectRevert(abi.encodeWithSelector(BaseVerifier.CursedByRMN.selector, DEST_SELECTOR));
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     pausableVerifier.forwardToVerifier(_message(DEST_SELECTOR), bytes32(0), address(0), 0, "");
   }
 
@@ -215,6 +223,8 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
 
     vm.prank(address(0xBAD));
     vm.expectRevert(abi.encodeWithSelector(BaseVerifier.CallerIsNotARampOnRouter.selector, address(0xBAD)));
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     pausableVerifier.forwardToVerifier(_message(DEST_SELECTOR), bytes32(0), address(0), 0, "");
   }
 
@@ -294,7 +304,9 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   function _exec(
     BaseScript.Call[] memory calls
   ) internal {
-    for (uint256 i; i < calls.length; ++i) {
+    for (uint256 i = 0; i < calls.length; ++i) {
+      // a generic executor: the destination is caller-supplied by design
+      // forge-lint: disable-next-line(arbitrary-send-eth)
       (bool ok, bytes memory ret) = calls[i].to.call{value: calls[i].value}(calls[i].data);
       if (!ok) {
         // solhint-disable-next-line no-inline-assembly

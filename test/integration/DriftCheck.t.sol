@@ -296,6 +296,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     Types.Deployment memory deployment = _deployment();
     deployment.verifier = address(0xC0DE1E55); // recorded, but no code here
     vm.expectRevert("DriftCheck: no code at recorded verifier (wrong --rpc-url?)");
+    // called for its expected revert; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
     script.checkAll(deployment, _chainConfig(), _roles(), _lanes());
   }
 
@@ -303,6 +305,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     Types.Deployment memory deployment = _deployment();
     deployment.resolver = address(0xC0DE1E55);
     vm.expectRevert("DriftCheck: no code at recorded resolver (wrong --rpc-url?)");
+    // called for its expected revert; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
     script.checkAll(deployment, _chainConfig(), _roles(), _lanes());
   }
 

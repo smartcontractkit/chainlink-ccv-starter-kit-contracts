@@ -29,12 +29,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Pinned, not "nightly": forge fmt and forge lint output can change between
-      # versions, which would turn this gate red without a code change.
+      # Exact version, not the floating "stable": fmt and lint output changes
+      # between releases, which turns this gate red without a code change.
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.0
 
       - name: Check formatting
         run: forge fmt --check
@@ -79,10 +79,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Must match the pinned version in the `static` job above.
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.0
 
       # The ci profile inherits the deterministic settings and adds
       # deny = "warnings", so a compiler warning fails the build.

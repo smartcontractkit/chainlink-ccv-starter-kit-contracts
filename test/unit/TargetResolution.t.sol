@@ -35,7 +35,7 @@ contract TargetResolutionTest is Test {
   ///      ceremony could address different contracts.
   function test_addressAndOwner_acceptTheSameNames() public pure {
     string[3] memory names = ["verifier", "resolver", "factory"];
-    for (uint256 i; i < names.length; ++i) {
+    for (uint256 i = 0; i < names.length; ++i) {
       assertTrue(ConfigLib.targetAddress(_dep(), names[i]) != address(0), "address side");
       assertTrue(ConfigLib.targetOwner(_roles(), names[i]) != address(0), "owner side");
     }

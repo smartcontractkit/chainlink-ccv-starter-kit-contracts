@@ -245,6 +245,8 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     Types.Deployment memory deployment = _dep();
     deployment.verifier = address(0xC0DE1E55);
     vm.expectRevert("LaneParityCheck: no code at source verifier (wrong RPC?)");
+    // called for its expected revert; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
     script.checkSourceSide(_lane(), deployment);
   }
 
@@ -252,6 +254,8 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     Types.Deployment memory deployment = _dep();
     deployment.resolver = address(0xC0DE1E55);
     vm.expectRevert("LaneParityCheck: no code at dest resolver (wrong RPC?)");
+    // called for its expected revert; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
     script.checkDestSide(_lane(), VERSION_TAG, deployment);
   }
 

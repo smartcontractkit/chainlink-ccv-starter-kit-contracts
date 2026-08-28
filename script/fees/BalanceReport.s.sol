@@ -66,7 +66,7 @@ contract BalanceReport is Script {
     address[] memory feeTokens
   ) public view returns (TokenBalance[] memory balances) {
     balances = new TokenBalance[](feeTokens.length);
-    for (uint256 i; i < feeTokens.length; ++i) {
+    for (uint256 i = 0; i < feeTokens.length; ++i) {
       balances[i].token = feeTokens[i];
 
       if (verifier.code.length != 0 && feeTokens[i].code.length != 0) {
@@ -133,7 +133,7 @@ contract BalanceReport is Script {
     }
 
     TokenBalance[] memory balances = readBalances(deployment.verifier, deployment.resolver, chainConfig.feeTokens);
-    for (uint256 i; i < balances.length; ++i) {
+    for (uint256 i = 0; i < balances.length; ++i) {
       console2.log("  token:", balances[i].token);
       if (balances[i].verifierReadOk) {
         console2.log("    verifier balance:", balances[i].verifierBalance);

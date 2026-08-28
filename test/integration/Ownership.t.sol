@@ -251,7 +251,9 @@ contract OwnershipTest is CommitteeVerifierSetup {
   function _exec(
     BaseScript.Call[] memory calls
   ) internal {
-    for (uint256 i; i < calls.length; ++i) {
+    for (uint256 i = 0; i < calls.length; ++i) {
+      // a generic executor: the destination is caller-supplied by design
+      // forge-lint: disable-next-line(arbitrary-send-eth)
       (bool ok, bytes memory ret) = calls[i].to.call{value: calls[i].value}(calls[i].data);
       if (!ok) _bubble(ret);
     }
@@ -260,6 +262,8 @@ contract OwnershipTest is CommitteeVerifierSetup {
   function _exec1(
     BaseScript.Call memory call
   ) internal {
+    // a generic executor: the destination is caller-supplied by design
+    // forge-lint: disable-next-line(arbitrary-send-eth)
     (bool ok, bytes memory ret) = call.to.call{value: call.value}(call.data);
     if (!ok) _bubble(ret);
   }

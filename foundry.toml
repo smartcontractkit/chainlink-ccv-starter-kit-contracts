@@ -61,6 +61,14 @@ optimizer_runs = 200
 [profile.ci]
 deny = "warnings"
 
+# Needs forge >= 1.8.0. These two rules ignore inline directives, so config exclusion
+# is the only option. Re-evaluate if deployable contracts are ever added to src/.
+[lint]
+exclude_lints = [
+  "require-revert-in-loop", # per-entry config validation; the callers iterate lanes
+  "calls-loop",             # per-lane getters and cheatcodes; also fires inside lib/forge-std
+]
+
 [fmt]
 tab_width = 2
 line_length = 120

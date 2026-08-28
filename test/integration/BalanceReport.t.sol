@@ -33,6 +33,8 @@ contract BalanceReportTest is FeeScriptsSetup {
   function test_readAggregators_surfacesZeroVerifierAggregator() public {
     _setVerifierAggregator(address(0));
 
+    // the needed tuple element is destructured; the rest is deliberately dropped
+    // forge-lint: disable-next-line(unused-return)
     (address vAgg,, bool vOk,) = script.readAggregators(address(verifier), address(resolver));
 
     assertTrue(vOk, "still readable - the contract exists, the value is just zero");
@@ -50,6 +52,8 @@ contract BalanceReportTest is FeeScriptsSetup {
 
   function test_readAggregators_doesNotRevertOnNonContract() public view {
     // An EOA at a plausible-looking address: the report must flag, not abort.
+    // the needed tuple element is destructured; the rest is deliberately dropped
+    // forge-lint: disable-next-line(unused-return)
     (,, bool vOk, bool rOk) = script.readAggregators(address(0xDEADBEEF), address(0xFEEDFACE));
 
     assertFalse(vOk, "non-contract flagged unreadable");

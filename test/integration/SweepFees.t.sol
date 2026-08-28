@@ -111,8 +111,12 @@ contract SweepFeesTest is FeeScriptsSetup {
     address[] memory onlyC = new address[](1);
     onlyC[0] = address(tokenC);
 
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV,) =
-      script.sweepCalls(_deployment(), _chainConfig(onlyC), false);
+    (
+      BaseScript.Call[] memory calls,
+      SweepFees.SkipReason skipV,
+      // called for its expected revert; the return is irrelevant
+      // forge-lint: disable-next-line(unused-return)
+    ) = script.sweepCalls(_deployment(), _chainConfig(onlyC), false);
 
     assertEq(calls.length, 2, "both staged regardless of balances");
     assertTrue(skipV == SweepFees.SkipReason.None, "zero balance is not a skip when the flag is off");
@@ -133,9 +137,11 @@ contract SweepFeesTest is FeeScriptsSetup {
   // ---------------------------------------------------------------------------
 
   function test_executingSweep_movesBalancesToEachContractsOwnAggregator() public {
+    // the needed tuple element is destructured; the rest is deliberately dropped
+    // forge-lint: disable-next-line(unused-return)
     (BaseScript.Call[] memory calls,,) = script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), false);
 
-    for (uint256 i; i < calls.length; ++i) {
+    for (uint256 i = 0; i < calls.length; ++i) {
       (bool ok,) = calls[i].to.call(calls[i].data); // permissionless, any sender
       assertTrue(ok, "sweep call reverted");
     }

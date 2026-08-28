@@ -74,10 +74,10 @@ contract ApplyAllowlistUpdates is BaseScript {
     );
 
     string[] memory lanePaths = ConfigLib.listLanes();
-    uint256 matched;
-    uint256 staged;
+    uint256 matched = 0;
+    uint256 staged = 0;
 
-    for (uint256 i; i < lanePaths.length; ++i) {
+    for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
       ++matched;
@@ -116,10 +116,10 @@ contract ApplyAllowlistUpdates is BaseScript {
     (BaseVerifier.RemoteChainConfigArgs memory remote, address[] memory senders) =
       CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
     if (remote.allowlistEnabled != lane.allowlist.allowlistEnabled) return false;
-    for (uint256 i; i < lane.allowlist.added.length; ++i) {
+    for (uint256 i = 0; i < lane.allowlist.added.length; ++i) {
       if (!_contains(senders, lane.allowlist.added[i])) return false;
     }
-    for (uint256 i; i < lane.allowlist.removed.length; ++i) {
+    for (uint256 i = 0; i < lane.allowlist.removed.length; ++i) {
       if (_contains(senders, lane.allowlist.removed[i])) return false;
     }
     return true;
@@ -129,7 +129,7 @@ contract ApplyAllowlistUpdates is BaseScript {
     address[] memory haystack,
     address needle
   ) private pure returns (bool) {
-    for (uint256 i; i < haystack.length; ++i) {
+    for (uint256 i = 0; i < haystack.length; ++i) {
       if (haystack[i] == needle) return true;
     }
     return false;
@@ -145,7 +145,7 @@ contract ApplyAllowlistUpdates is BaseScript {
     Types.AllowlistConfig memory allowlist = lane.allowlist;
     if (allowlist.added.length > 0) {
       require(allowlist.allowlistEnabled, "ApplyAllowlistUpdates: adding senders requires allowlistEnabled=true");
-      for (uint256 i; i < allowlist.added.length; ++i) {
+      for (uint256 i = 0; i < allowlist.added.length; ++i) {
         require(allowlist.added[i] != address(0), "ApplyAllowlistUpdates: zero-address sender in adds");
       }
     }
