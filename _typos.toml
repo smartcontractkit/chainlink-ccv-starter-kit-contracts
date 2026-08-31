@@ -2,5 +2,5 @@
 # Anything git ignores (dependencies, build output) is skipped automatically.
 
 [files]
-# Vendored dependency, not ours to fix.
-extend-exclude = ["lib/"]
+# Vendored dependency, not ours to fix. CODEOWNERS is GitHub handles, not prose.
+extend-exclude = ["lib/", "CODEOWNERS"]

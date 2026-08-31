@@ -8,17 +8,17 @@ pragma solidity 0.8.26;
 ///      address returns empty data that fails to decode as `bool`. Any test reaching
 ///      `forwardToVerifier` therefore needs a real contract here.
 contract MockRMN {
-  bool private s_cursed;
+  bool private sCursed;
 
   function setCursed(
     bool cursed
   ) external {
-    s_cursed = cursed;
+    sCursed = cursed;
   }
 
   function isCursed(
     bytes16
   ) external view returns (bool) {
-    return s_cursed;
+    return sCursed;
   }
 }
