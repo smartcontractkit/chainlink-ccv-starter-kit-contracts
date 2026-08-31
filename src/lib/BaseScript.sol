@@ -36,16 +36,31 @@ abstract contract BaseScript is Script {
   OutputMode internal outputMode;
   /// @dev Chain alias this run targets; becomes the out/safe/ subdirectory.
   string internal outputChainAlias;
+  /// @dev The Safe expected to execute the batch; embedded in the batch JSON so the
+  ///      Transaction Builder flags an import into a different Safe.
+  address internal outputSafeAddress;
   Call[] private _staged;
 
   /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE and reverts on a
-  ///         missing, empty, or unknown value, no default.
+  ///         missing, empty, or unknown value, no default. SAFE mode also requires
+  ///         SAFE_ADDRESS (the executing Safe); EOA mode ignores it with a log.
   /// @param chainAlias The chain this run targets. A Safe batch executes on ONE chain, so
   ///        this scopes the output directory; without it two chains overwrite each other.
   function _initOutput(
     string memory chainAlias
   ) internal {
-    _initOutput(_parseOutputMode(vm.envOr("OUTPUT_MODE", string(""))), chainAlias);
+    OutputMode mode = _parseOutputMode(vm.envOr("OUTPUT_MODE", string("")));
+    // Read as a string first: a malformed value must not abort an EOA run that ignores it.
+    string memory safeRaw = vm.envOr("SAFE_ADDRESS", string(""));
+    address safeAddress = address(0);
+    if (mode == OutputMode.SAFE) {
+      require(bytes(safeRaw).length != 0, "BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)");
+      safeAddress = vm.parseAddress(safeRaw);
+      require(safeAddress != address(0), "BaseScript: SAFE_ADDRESS must not be the zero address");
+    } else if (bytes(safeRaw).length != 0) {
+      console2.log("[BaseScript] EOA mode: SAFE_ADDRESS is set but ignored");
+    }
+    _initOutput(mode, chainAlias, safeAddress);
   }
 
   /// @dev Case-sensitive exact match on purpose: this decides whether calls go on-chain
@@ -65,8 +80,17 @@ abstract contract BaseScript is Script {
     OutputMode mode,
     string memory chainAlias
   ) internal {
+    _initOutput(mode, chainAlias, address(0));
+  }
+
+  function _initOutput(
+    OutputMode mode,
+    string memory chainAlias,
+    address safeAddress
+  ) internal {
     outputMode = mode;
     outputChainAlias = chainAlias;
+    outputSafeAddress = safeAddress;
     delete _staged;
     console2.log("[BaseScript] output mode:", outputMode == OutputMode.SAFE ? "SAFE" : "EOA");
   }
@@ -122,6 +146,8 @@ abstract contract BaseScript is Script {
     // One directory per chain. `block.chainid` is deliberately not used: SAFE mode can
     // run without --rpc-url, where it is 31337 for every chain.
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
+    // Backstop for explicit-mode callers: every emitted batch must name its executing Safe.
+    require(outputSafeAddress != address(0), "BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)");
     string memory dir = string.concat("out/safe/", outputChainAlias);
     string memory file = string.concat(dir, "/", name, ".json");
     // An empty batch is not signable, and writing one leaves an artifact that reads as
@@ -175,7 +201,9 @@ abstract contract BaseScript is Script {
     string memory meta = string.concat(
       '"meta":{"name":"', name, '","description":"CCV Starter Kit generated batch","txBuilderVersion":"1.16.5"'
     );
-    meta = string.concat(meta, "}");
+    // The Transaction Builder compares this against the Safe importing the batch and
+    // flags a mismatch, so a batch built for the wrong Safe is caught before signing.
+    meta = string.concat(meta, ',"createdFromSafeAddress":"', vm.toString(outputSafeAddress), '"}');
     return string.concat(
       '{"version":"1.0","chainId":"', vm.toString(_outputChainId()), '",', meta, ',"transactions":[', txs, "]}"
     );

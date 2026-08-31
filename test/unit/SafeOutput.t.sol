@@ -9,9 +9,16 @@ import {Test} from "forge-std/Test.sol";
 ///      Uses the explicit-mode initializer so tests never depend on process-global
 ///      env state (which is order- and parallelism-sensitive).
 contract Harness is BaseScript {
+  /// @dev Stands in for the executing Safe; only its presence in the batch JSON matters.
+  address public constant SAFE = address(0x5AFE);
+
   /// @dev Scoped to "test" so the batch lands in out/safe/test/, which .gitignore
   ///      excludes as a directory. Everything else under out/safe/ is committed.
   function initSafe() external {
+    _initOutput(OutputMode.SAFE, "test", SAFE);
+  }
+
+  function initSafeWithoutAddress() external {
     _initOutput(OutputMode.SAFE, "test");
   }
 
@@ -70,8 +77,20 @@ contract SafeOutputTest is Test {
 
     assertEq(vm.parseJsonString(json, ".version"), "1.0");
     assertEq(vm.parseJsonString(json, ".chainId"), vm.toString(block.chainid));
+    assertEq(vm.parseJsonAddress(json, ".meta.createdFromSafeAddress"), h.SAFE(), "batch bound to the executing Safe");
     assertEq(vm.parseJsonAddress(json, ".transactions[0].to"), target);
     assertEq(vm.parseJsonString(json, ".transactions[0].value"), "0");
+  }
+
+  /// @dev A batch that names no executing Safe cannot be checked at import time, so
+  ///      flushing without SAFE_ADDRESS is refused even via the explicit-mode seam.
+  function test_flush_withoutSafeAddress_reverts() public {
+    Harness h = new Harness();
+    h.initSafeWithoutAddress();
+    h.stage(address(0xABCD), abi.encodeWithSignature("acceptOwnership()"));
+
+    vm.expectRevert(bytes("BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)"));
+    h.flush("unbound-batch");
   }
 
   /// @dev An empty batch is not signable, so no file should appear at all.
