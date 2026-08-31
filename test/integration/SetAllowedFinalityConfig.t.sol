@@ -60,6 +60,10 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   ///      that exists. FinalityCodec accepts unknown flags on the wire, but here the value
   ///      is hand-written config, where a reserved bit is a typo.
   function test_validateEncoding_rejectsReservedBits() public {
+    // Boundary: bit 17 alone is the lowest reserved bit (bit 16 = WAIT_FOR_SAFE is assigned).
+    vm.expectRevert(bytes(script.RESERVED_BITS_ERROR()));
+    script.validateEncoding(bytes4(uint32(1) << 17));
+
     vm.expectRevert(bytes(script.RESERVED_BITS_ERROR()));
     script.validateEncoding(bytes4(0xDEADBEEF));
 
