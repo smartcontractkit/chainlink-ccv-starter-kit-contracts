@@ -34,7 +34,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.8.0
+          version: v1.8.1
 
       - name: Check formatting
         run: forge fmt --check
@@ -83,7 +83,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: v1.8.0
+          version: v1.8.1
 
       # The ci profile inherits the deterministic settings and adds
       # deny = "warnings", so a compiler warning fails the build.
