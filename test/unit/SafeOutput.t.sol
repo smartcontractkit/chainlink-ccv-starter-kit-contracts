@@ -66,6 +66,37 @@ contract SafeOutputTest is Test {
     assertEq(vm.parseJsonString(json, ".transactions[0].value"), "0");
   }
 
+  /// @dev An empty batch is not signable, so no file should appear at all.
+  function test_flush_withNothingStaged_writesNoFile() public {
+    Harness h = new Harness();
+    h.initSafe();
+
+    string memory path = "out/safe/test/empty-batch.json";
+    if (vm.exists(path)) vm.removeFile(path);
+
+    h.flush("empty-batch");
+
+    assertFalse(vm.exists(path), "no file written for an empty batch");
+  }
+
+  /// @dev Before the empty-batch guard, an empty write overwrote the previous batch. With
+  ///      the guard the write is skipped, so a stale file has to be removed explicitly or
+  ///      a signer could import last run's calls as if they were current.
+  function test_flush_withNothingStaged_removesAStaleBatch() public {
+    Harness h = new Harness();
+    h.initSafe();
+
+    string memory path = "out/safe/test/stale-batch.json";
+    h.stage(address(0xABCD), abi.encodeWithSignature("acceptOwnership()"));
+    h.flush("stale-batch");
+    assertTrue(vm.exists(path), "first run wrote a batch");
+
+    // Second run stages nothing — e.g. every lane already matches on-chain.
+    h.flush("stale-batch");
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
   function test_eoaMode_doesNotBuffer() public {
     Harness h = new Harness();
     h.initEoa();
