@@ -96,10 +96,10 @@ contract ApplySignatureConfigs is BaseScript {
     allowWeakCommittee = vm.envOr("ALLOW_WEAK_COMMITTEE", false);
 
     string[] memory lanePaths = ConfigLib.listLanes();
-    uint256 matched;
-    uint256 staged;
+    uint256 matched = 0;
+    uint256 staged = 0;
 
-    for (uint256 i; i < lanePaths.length; ++i) {
+    for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
       ++matched;
@@ -145,9 +145,9 @@ contract ApplySignatureConfigs is BaseScript {
       CommitteeVerifier(verifier).getSignatureConfig(lane.source.chainSelector);
     if (threshold != lane.signatureConfig.threshold) return false;
     if (signers.length != lane.signatureConfig.signers.length) return false;
-    for (uint256 i; i < lane.signatureConfig.signers.length; ++i) {
-      bool found;
-      for (uint256 j; j < signers.length; ++j) {
+    for (uint256 i = 0; i < lane.signatureConfig.signers.length; ++i) {
+      bool found = false;
+      for (uint256 j = 0; j < signers.length; ++j) {
         if (lane.signatureConfig.signers[i] == signers[j]) {
           found = true;
           break;
@@ -173,7 +173,7 @@ contract ApplySignatureConfigs is BaseScript {
     require(
       threshold >= 1 && threshold <= signerCount, "ApplySignatureConfigs: threshold must be in [1, signers.length]"
     );
-    for (uint256 i; i < signerCount; ++i) {
+    for (uint256 i = 0; i < signerCount; ++i) {
       require(signers[i] != address(0), "ApplySignatureConfigs: zero-address signer");
       for (uint256 j = i + 1; j < signerCount; ++j) {
         require(signers[i] != signers[j], "ApplySignatureConfigs: duplicate signer");

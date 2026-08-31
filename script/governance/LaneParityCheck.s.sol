@@ -153,8 +153,11 @@ contract LaneParityCheck is Script {
     address outbound = _outboundImplementation(sourceDeployment.resolver, lane.dest.chainSelector);
     mismatches += _diffAddress("source outbound implementation for dest selector", sourceDeployment.verifier, outbound);
 
-    (BaseVerifier.RemoteChainConfigArgs memory remote,) =
-      CommitteeVerifier(sourceDeployment.verifier).getRemoteChainConfig(lane.dest.chainSelector);
+    (
+      BaseVerifier.RemoteChainConfigArgs memory remote,
+      // the other return values are deliberately ignored
+      // forge-lint: disable-next-line(unused-return)
+    ) = CommitteeVerifier(sourceDeployment.verifier).getRemoteChainConfig(lane.dest.chainSelector);
     mismatches += _diffAddress("source remoteChainConfig.router", lane.remote.router, address(remote.router));
     mismatches += _diffUint(
       "source remoteChainConfig.gasForVerification", lane.remote.gasForVerification, remote.gasForVerification
@@ -219,7 +222,7 @@ contract LaneParityCheck is Script {
   ) private view returns (address implementation) {
     VersionedVerifierResolver.OutboundImplementationArgs[] memory all =
       VersionedVerifierResolver(resolver).getAllOutboundImplementations();
-    for (uint256 i; i < all.length; ++i) {
+    for (uint256 i = 0; i < all.length; ++i) {
       if (all[i].destChainSelector == destSelector) return all[i].verifier;
     }
   }
@@ -230,7 +233,7 @@ contract LaneParityCheck is Script {
   ) private view returns (address implementation) {
     VersionedVerifierResolver.InboundImplementationArgs[] memory all =
       VersionedVerifierResolver(resolver).getAllInboundImplementations();
-    for (uint256 i; i < all.length; ++i) {
+    for (uint256 i = 0; i < all.length; ++i) {
       if (all[i].version == version) return all[i].verifier;
     }
   }
@@ -300,9 +303,9 @@ contract LaneParityCheck is Script {
     address[] memory actual
   ) private pure returns (uint256) {
     bool same = expected.length == actual.length;
-    for (uint256 i; same && i < expected.length; ++i) {
-      bool found;
-      for (uint256 j; j < actual.length; ++j) {
+    for (uint256 i = 0; same && i < expected.length; ++i) {
+      bool found = false;
+      for (uint256 j = 0; j < actual.length; ++j) {
         if (expected[i] == actual[j]) {
           found = true;
           break;

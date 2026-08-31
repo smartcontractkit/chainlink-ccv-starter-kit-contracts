@@ -88,7 +88,7 @@ contract SweepFees is BaseScript {
 
     uint256 sweepableCount = (verifierSkip == SkipReason.None ? 1 : 0) + (resolverSkip == SkipReason.None ? 1 : 0);
     calls = new Call[](sweepableCount);
-    uint256 i;
+    uint256 i = 0;
     if (verifierSkip == SkipReason.None) calls[i++] = callsFor(deployment.verifier, chainConfig.feeTokens);
     if (resolverSkip == SkipReason.None) calls[i++] = callsFor(deployment.resolver, chainConfig.feeTokens);
   }
@@ -147,7 +147,7 @@ contract SweepFees is BaseScript {
     address target,
     address[] memory feeTokens
   ) private view returns (bool) {
-    for (uint256 i; i < feeTokens.length; ++i) {
+    for (uint256 i = 0; i < feeTokens.length; ++i) {
       if (feeTokens[i].code.length == 0) continue;
       try IERC20(feeTokens[i]).balanceOf(target) returns (uint256 bal) {
         if (bal > 0) return true;

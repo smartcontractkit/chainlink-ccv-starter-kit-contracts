@@ -43,7 +43,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     uint256 count
   ) internal pure returns (address[] memory signers) {
     signers = new address[](count);
-    for (uint160 i; i < count; ++i) {
+    for (uint160 i = 0; i < count; ++i) {
       signers[i] = address(0x1000 + i); // distinct, non-zero, ascending
     }
   }
@@ -78,7 +78,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     address[] memory input
   ) internal pure returns (address[] memory out) {
     out = new address[](input.length);
-    for (uint256 i; i < input.length; ++i) {
+    for (uint256 i = 0; i < input.length; ++i) {
       out[i] = input[input.length - 1 - i];
     }
   }
@@ -190,6 +190,8 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     );
 
     vm.expectRevert(bytes(string.concat("ApplySignatureConfigs: verifier not recorded for ", PARTIAL_ALIAS)));
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(PARTIAL_ALIAS, 3, _generateSigners(4)));
   }
 
@@ -204,11 +206,15 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_reverts_whenThresholdExceedsSignerCount_failsFast() public {
     vm.expectRevert("ApplySignatureConfigs: threshold must be in [1, signers.length]");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 5, _generateSigners(4)));
   }
 
   function test_reverts_whenThresholdIsZero() public {
     vm.expectRevert("ApplySignatureConfigs: threshold must be in [1, signers.length]");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 0, _generateSigners(4)));
   }
 
@@ -219,29 +225,39 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_reverts_on1of1Committee() public {
     vm.expectRevert("ApplySignatureConfigs: 1-of-1 signer set (set ALLOW_WEAK_COMMITTEE=true for test committees)");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 1, _generateSigners(1)));
   }
 
   function test_reverts_whenThresholdDoesNotExceedTwoThirds() public {
     // 2-of-3: 2*3 == 6, not > 3*2 == 6.
     vm.expectRevert("ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true)");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 2, _generateSigners(3)));
   }
 
   function test_allowWeakCommittee_waives1of1() public {
     script.setAllowWeakCommittee(true);
+    // the other return values are deliberately ignored
+    // forge-lint: disable-next-line(unused-return)
     (BaseScript.Call[] memory calls,) = script.laneCalls(_lane(DEST_ALIAS, 1, _generateSigners(1)));
     assertEq(calls.length, 1, "staged despite the weak committee");
   }
 
   function test_threeOfFour_passesPolicy() public view {
     // 3*3 == 9 > 4*2 == 8, so the boundary case is accepted with no waiver.
+    // the other return values are deliberately ignored
+    // forge-lint: disable-next-line(unused-return)
     (BaseScript.Call[] memory calls,) = script.laneCalls(_lane(DEST_ALIAS, 3, _generateSigners(4)));
     assertEq(calls.length, 1, "3-of-4 is a compliant committee");
   }
 
   function test_reverts_whenSignerSetEmpty() public {
     vm.expectRevert("ApplySignatureConfigs: empty signer set");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 1, new address[](0)));
   }
 
@@ -249,6 +265,8 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     address[] memory signers = _generateSigners(3);
     signers[1] = address(0);
     vm.expectRevert("ApplySignatureConfigs: zero-address signer");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 2, signers));
   }
 
@@ -256,6 +274,8 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     address[] memory signers = _generateSigners(3);
     signers[2] = signers[0];
     vm.expectRevert("ApplySignatureConfigs: duplicate signer");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(DEST_ALIAS, 2, signers));
   }
 }

@@ -97,8 +97,8 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     address resolver,
     address verifier
   ) internal view returns (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) {
-    uint256 count;
-    for (uint256 i; i < lanePaths.length; ++i) {
+    uint256 count = 0;
+    for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       ++matched;
@@ -106,8 +106,8 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     }
 
     args = new VersionedVerifierResolver.OutboundImplementationArgs[](count);
-    uint256 j;
-    for (uint256 i; i < lanePaths.length; ++i) {
+    uint256 j = 0;
+    for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       require(lane.dest.chainSelector != 0, "ApplyOutboundImplementationUpdates: destChainSelector cannot be zero");

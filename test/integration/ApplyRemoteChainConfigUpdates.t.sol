@@ -52,6 +52,8 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
   function test_callsFor_setsRemoteChainConfig() public {
     assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
 
+    // the other return values are deliberately ignored
+    // forge-lint: disable-next-line(unused-return)
     (BaseVerifier.RemoteChainConfigArgs memory cfg,) = verifier.getRemoteChainConfig(DEST);
     assertEq(address(cfg.router), ROUTER, "router");
     assertEq(cfg.remoteChainSelector, DEST, "remote selector");
@@ -64,6 +66,8 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
     // router == 0 is the outbound emergency lever and is a valid on-chain state.
     assertTrue(_applyRemoteChainConfig(address(0), 200000), "pause apply failed");
 
+    // the other return values are deliberately ignored
+    // forge-lint: disable-next-line(unused-return)
     (BaseVerifier.RemoteChainConfigArgs memory cfg,) = verifier.getRemoteChainConfig(DEST);
     assertEq(address(cfg.router), address(0), "router should be zero (paused)");
   }

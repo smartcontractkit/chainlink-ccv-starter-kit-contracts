@@ -36,10 +36,14 @@ contract DeployResolverDeterminismTest is Test {
 
   function test_redeployingSameSaltReverts() public {
     bytes32 salt = bytes32(uint256(1));
+    // called to occupy the CREATE2 address; the return is not needed
+    // forge-lint: disable-next-line(unused-return)
     factory.createAndTransferOwnership(resolverCode, salt, address(this));
 
     // Same code + salt => same address, which already exists => CREATE2 collision.
     vm.expectRevert();
+    // called for its expected revert; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
     factory.createAndTransferOwnership(resolverCode, salt, address(this));
   }
 

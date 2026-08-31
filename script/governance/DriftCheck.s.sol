@@ -153,8 +153,8 @@ contract DriftCheck is Script {
     VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
 
     VersionedVerifierResolver.InboundImplementationArgs[] memory inbound = resolver.getAllInboundImplementations();
-    address inboundImplementation;
-    for (uint256 i; i < inbound.length; ++i) {
+    address inboundImplementation = address(0);
+    for (uint256 i = 0; i < inbound.length; ++i) {
       if (inbound[i].version == chainConfig.versionTag) inboundImplementation = inbound[i].verifier;
     }
     drift += _diffAddress(
@@ -162,11 +162,11 @@ contract DriftCheck is Script {
     );
 
     VersionedVerifierResolver.OutboundImplementationArgs[] memory outbound = resolver.getAllOutboundImplementations();
-    for (uint256 i; i < lanes.length; ++i) {
+    for (uint256 i = 0; i < lanes.length; ++i) {
       if (!_stringsEqual(lanes[i].source.aliasName, chainConfig.aliasName)) continue;
 
-      address outboundImplementation;
-      for (uint256 j; j < outbound.length; ++j) {
+      address outboundImplementation = address(0);
+      for (uint256 j = 0; j < outbound.length; ++j) {
         if (outbound[j].destChainSelector == lanes[i].dest.chainSelector) {
           outboundImplementation = outbound[j].verifier;
         }
@@ -186,7 +186,7 @@ contract DriftCheck is Script {
     if (deployment.verifier == address(0)) return 0;
     CommitteeVerifier verifier = CommitteeVerifier(deployment.verifier);
 
-    for (uint256 i; i < lanes.length; ++i) {
+    for (uint256 i = 0; i < lanes.length; ++i) {
       Types.LaneConfig memory lane = lanes[i];
 
       // Inbound leg: the signer set that verifies messages ARRIVING from lane.source
@@ -200,6 +200,8 @@ contract DriftCheck is Script {
       // Outbound leg: routing/fee/gas for messages LEAVING to lane.dest lives on this
       // chain only when this chain is the source.
       if (_stringsEqual(lane.source.aliasName, chainConfig.aliasName)) {
+        // the other return values are deliberately ignored
+        // forge-lint: disable-next-line(unused-return)
         (BaseVerifier.RemoteChainConfigArgs memory remote,) = verifier.getRemoteChainConfig(lane.dest.chainSelector);
         string memory lanePrefix = string.concat("lane ", lane.name, " ");
         drift += _diffAddress(string.concat(lanePrefix, "router"), lane.remote.router, address(remote.router));
@@ -240,7 +242,7 @@ contract DriftCheck is Script {
   function _readLanes() private view returns (Types.LaneConfig[] memory lanes) {
     string[] memory paths = ConfigLib.listLanes();
     lanes = new Types.LaneConfig[](paths.length);
-    for (uint256 i; i < paths.length; ++i) {
+    for (uint256 i = 0; i < paths.length; ++i) {
       lanes[i] = ConfigLib.readLaneByPath(paths[i]);
     }
   }
@@ -304,7 +306,7 @@ contract DriftCheck is Script {
     string[] memory actual
   ) private pure returns (uint256) {
     bool same = expected.length == actual.length;
-    for (uint256 i; same && i < expected.length; ++i) {
+    for (uint256 i = 0; same && i < expected.length; ++i) {
       if (!_stringsEqual(expected[i], actual[i])) same = false;
     }
     if (same) return 0;
@@ -323,9 +325,9 @@ contract DriftCheck is Script {
     address[] memory actual
   ) private pure returns (uint256) {
     bool same = expected.length == actual.length;
-    for (uint256 i; same && i < expected.length; ++i) {
-      bool found;
-      for (uint256 j; j < actual.length; ++j) {
+    for (uint256 i = 0; same && i < expected.length; ++i) {
+      bool found = false;
+      for (uint256 j = 0; j < actual.length; ++j) {
         if (expected[i] == actual[j]) {
           found = true;
           break;
