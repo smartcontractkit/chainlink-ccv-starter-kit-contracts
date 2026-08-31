@@ -112,6 +112,11 @@ their own tooling, since the propose leg already made them the pending holder.
    two-step: re-point them via `SetDynamicConfig` only AFTER acceptance is confirmed
    on-chain.
 
+A mistaken or stale proposal is cancelled by the **current** holder via
+`CancelOwnership` / `CancelStorageLocationsAdmin`, which re-propose `address(0)`
+so nobody can accept. Cancellation only clears the pending slot — it never moves
+the role.
+
 ## Operational notes
 
 - **Two distinct fee destinations.** The verifier's `DynamicConfig.feeAggregator`

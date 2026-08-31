@@ -3,6 +3,8 @@ pragma solidity 0.8.26;
 
 import {AcceptOwnership} from "../../script/ownership/AcceptOwnership.s.sol";
 import {AcceptStorageLocationsAdmin} from "../../script/ownership/AcceptStorageLocationsAdmin.s.sol";
+import {CancelOwnership} from "../../script/ownership/CancelOwnership.s.sol";
+import {CancelStorageLocationsAdmin} from "../../script/ownership/CancelStorageLocationsAdmin.s.sol";
 import {TransferOwnership} from "../../script/ownership/TransferOwnership.s.sol";
 import {TransferStorageLocationsAdmin} from "../../script/ownership/TransferStorageLocationsAdmin.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
@@ -21,6 +23,8 @@ contract OwnershipTest is CommitteeVerifierSetup {
   AcceptOwnership internal acceptOwner;
   TransferStorageLocationsAdmin internal transferSla;
   AcceptStorageLocationsAdmin internal acceptSla;
+  CancelOwnership internal cancelOwner;
+  CancelStorageLocationsAdmin internal cancelSla;
 
   address internal constant NEW_OWNER = address(0x0117);
   address internal constant NEW_ADMIN = address(0x0AD3);
@@ -32,6 +36,8 @@ contract OwnershipTest is CommitteeVerifierSetup {
     acceptOwner = new AcceptOwnership();
     transferSla = new TransferStorageLocationsAdmin();
     acceptSla = new AcceptStorageLocationsAdmin();
+    cancelOwner = new CancelOwnership();
+    cancelSla = new CancelStorageLocationsAdmin();
   }
 
   // ===========================================================================
@@ -156,6 +162,82 @@ contract OwnershipTest is CommitteeVerifierSetup {
 
     assertEq(verifier.getStorageLocationsAdmin(), NEW_ADMIN, "admin moved");
     assertEq(verifier.owner(), address(this), "ownership must NOT follow the admin role");
+  }
+
+  // ===========================================================================
+  //  cancellation — clearing a mistaken or stale proposal before it is accepted
+  // ===========================================================================
+
+  /// @dev Ownable2Step has no pending-owner getter, so cancellation is proven the way
+  ///      it matters: the previously proposed owner can no longer accept.
+  function test_cancelOwnership_clearsPendingProposal() public {
+    _exec(transferOwner.callsFor(address(verifier), NEW_OWNER));
+    _exec(cancelOwner.callsFor(address(verifier)));
+
+    BaseScript.Call[] memory accept = acceptOwner.callsFor(address(verifier));
+    vm.prank(NEW_OWNER);
+    vm.expectRevert(Ownable2Step.MustBeProposedOwner.selector);
+    _exec1(accept[0]);
+
+    assertEq(verifier.owner(), address(this), "cancel must not move ownership");
+  }
+
+  /// @dev A failed cancel must also leave the proposal intact, so a griefing attempt
+  ///      neither clears nor moves anything.
+  function test_cancelOwnership_callerMustBeCurrentOwner() public {
+    _exec(transferOwner.callsFor(address(verifier), NEW_OWNER));
+    BaseScript.Call[] memory cancel = cancelOwner.callsFor(address(verifier));
+
+    vm.prank(INTERLOPER);
+    vm.expectRevert(Ownable2Step.OnlyCallableByOwner.selector);
+    _exec1(cancel[0]);
+
+    BaseScript.Call[] memory accept = acceptOwner.callsFor(address(verifier));
+    vm.prank(NEW_OWNER);
+    _exec1(accept[0]);
+    assertEq(verifier.owner(), NEW_OWNER, "proposal survives an unauthorized cancel");
+  }
+
+  /// @dev Nothing pending: re-proposing zero overwrites zero with zero.
+  function test_cancelOwnership_withNothingPending_isHarmless() public {
+    _exec(cancelOwner.callsFor(address(verifier)));
+    assertEq(verifier.owner(), address(this), "owner unchanged");
+  }
+
+  /// @dev The zero address is deliberate and lives ONLY in the cancel script;
+  ///      TransferOwnership keeps rejecting it as a proposed owner.
+  function test_cancelOwnership_callsForEncodesZeroAddress() public view {
+    BaseScript.Call[] memory calls = cancelOwner.callsFor(address(resolver));
+    assertEq(calls.length, 1, "one call");
+    assertEq(calls[0].to, address(resolver), "addressed to the requested contract");
+    assertEq(calls[0].value, 0, "never sends value");
+    assertEq(calls[0].data, abi.encodeCall(IOwnable.transferOwnership, (address(0))), "calldata");
+  }
+
+  function test_cancelStorageLocationsAdmin_clearsPendingProposal() public {
+    _exec(transferSla.callsFor(address(verifier), NEW_ADMIN));
+    assertEq(verifier.getPendingStorageLocationsAdmin(), NEW_ADMIN, "proposal in place");
+
+    _exec(cancelSla.callsFor(address(verifier)));
+    assertEq(verifier.getPendingStorageLocationsAdmin(), address(0), "pending admin cleared");
+
+    BaseScript.Call[] memory accept = acceptSla.callsFor(address(verifier));
+    vm.prank(NEW_ADMIN);
+    vm.expectRevert(CommitteeVerifier.MustBeProposedStorageLocationsAdmin.selector);
+    _exec1(accept[0]);
+
+    assertEq(verifier.getStorageLocationsAdmin(), address(this), "cancel must not move the role");
+  }
+
+  function test_cancelStorageLocationsAdmin_callerMustBeCurrentAdmin() public {
+    _exec(transferSla.callsFor(address(verifier), NEW_ADMIN));
+    BaseScript.Call[] memory cancel = cancelSla.callsFor(address(verifier));
+
+    vm.prank(INTERLOPER);
+    vm.expectRevert(CommitteeVerifier.OnlyCallableByStorageLocationsAdmin.selector);
+    _exec1(cancel[0]);
+
+    assertEq(verifier.getPendingStorageLocationsAdmin(), NEW_ADMIN, "proposal survives an unauthorized cancel");
   }
 
   // ===========================================================================
