@@ -40,6 +40,7 @@ contract DeployVerifier is Script {
     require(
       roles.verifier.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset"
     );
+    require(roles.verifier.feeAggregator != address(0), "DeployVerifier: verifier.feeAggregator role unset");
 
     address deployer = msg.sender;
 
@@ -75,10 +76,6 @@ contract DeployVerifier is Script {
       v.transferStorageLocationsAdmin(roles.verifier.storageLocationsAdmin);
       console2.log("  storageLocationsAdmin PROPOSED to:", roles.verifier.storageLocationsAdmin);
       console2.log("  (must acceptStorageLocationsAdmin() before running UpdateStorageLocations)");
-    }
-
-    if (roles.verifier.feeAggregator == address(0)) {
-      console2.log("  WARN verifier feeAggregator is zero: fee withdrawals will revert until set");
     }
 
     deployment.verifier = verifier;

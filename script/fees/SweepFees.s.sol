@@ -10,35 +10,112 @@ import {IERC20} from "@openzeppelin/contracts@5.3.0/token/ERC20/IERC20.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title SweepFees
-/// @notice Sweeps accrued fee-token balances from BOTH the verifier
-///         and the resolver to their (distinct) fee aggregators.
-/// @dev Target call (both contracts, permissionless):
-///        withdrawFeeTokens(address[] feeTokens)  -> transfers to that contract's feeAggregator.
-/// @dev A zero feeAggregator makes the withdraw REVERT (FeeTokenHandler). This script
-///      gates on the ON-CHAIN aggregator, not the intended value in config/roles: config
-///      can be aspirational, only chain state decides whether the call reverts. Config is
-///      still read, to warn on drift between the two.
-/// @dev Gating reads chain state at build time, so --rpc-url is required even in SAFE
-///      mode: without it every read sees a codeless address and nothing is staged.
-/// @dev Because withdrawFeeTokens is permissionless it works from an EOA directly,
-///      but is routed through _stage so a Safe batch can be produced too.
-/// @dev The token list is NOT filtered by current balance. A Safe batch is built now and
-///      executed later; filtering on today's balance would silently drop fees that accrue
-///      in between. SKIP_ZERO_BALANCES=1 optionally skips a WHOLE contract whose every
-///      configured token reads zero at build time (saves a no-op tx). Off by default:
-///      balance-dependent batches regenerate differently as traffic accrues.
+/// @notice Sweeps accrued fee-token balances from the verifier and the resolver to
+///         their (distinct) fee aggregators via the permissionless withdrawFeeTokens.
+/// @dev Both contracts must be deployed; beyond that each is gated independently -
+///      skipped while its on-chain aggregator is unset, reverted on config drift.
+///      Reads chain state at build time, so --rpc-url is required even in SAFE mode.
+/// @dev Zero-balance tokens are omitted by default; SKIP_ZERO_BALANCES=false stages
+///      every configured token, for batches executed long after they are built.
 contract SweepFees is BaseScript {
-  /// @notice Why a contract was not swept.
-  enum SkipReason {
-    None, // staged
-    NoAggregator, // undeployed, or on-chain feeAggregator zero/unreadable: withdraw would revert
-    NoBalance // no feeTokens configured, or every balance zero under SKIP_ZERO_BALANCES=1
+  function run(
+    string calldata chainAlias
+  ) external {
+    _initOutput(chainAlias);
+    bool skipZeroBalances = vm.envOr("SKIP_ZERO_BALANCES", true);
+
+    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+
+    console2.log("[SweepFees] chain:", chainAlias);
+    if (chainConfig.feeTokens.length == 0) {
+      console2.log(string.concat("  no feeTokens in config/chains/", chainAlias, ".json; nothing to sweep (no-op)"));
+      return;
+    }
+    console2.log("  fee tokens configured:", chainConfig.feeTokens.length);
+
+    // Both contracts must be deployed and reachable; a partial deployment is an error.
+    require(deployment.verifier != address(0), "SweepFees: no verifier recorded in config/deployments");
+    require(deployment.resolver != address(0), "SweepFees: no resolver recorded in config/deployments");
+    _assertReachable(deployment.verifier, "verifier");
+    _assertReachable(deployment.resolver, "resolver");
+
+    Call[] memory calls = buildSweepBatch(deployment, roles, chainConfig.feeTokens, skipZeroBalances);
+
+    if (calls.length == 0) {
+      console2.log("  nothing sweepable; no batch written");
+      return;
+    }
+    _stageMany(calls);
+    _flush("sweep-fees");
   }
 
-  /// @notice Calldata for one contract's sweep.
-  /// @dev Encoded against CommitteeVerifier, but used for the resolver too: both declare
-  ///      `withdrawFeeTokens(address[])` identically, so the selector is the same.
-  function callsFor(
+  /// @notice Builds the sweep batch for both contracts from config and chain state.
+  ///         Each contract is gated independently, so one being skipped - no on-chain
+  ///         aggregator yet, nothing held - never blocks the other. Reverts on
+  ///         misconfiguration: a broken token entry, an undeclared or drifted
+  ///         config/roles aggregator.
+  function buildSweepBatch(
+    Types.Deployment memory deployment,
+    Types.RolesConfig memory roles,
+    address[] memory feeTokens,
+    bool skipZeroBalances
+  ) public view returns (Call[] memory calls) {
+    (address verifierAggregator, address resolverAggregator) = readAggregators(deployment.verifier, deployment.resolver);
+
+    // An empty token list is the natural "nothing to stage" signal for a contract.
+    address[] memory verifierTokens = new address[](0);
+    address[] memory resolverTokens = new address[](0);
+
+    if (verifierAggregator == address(0)) {
+      console2.log("  SKIP verifier: no feeAggregator set on-chain (withdraw would revert)");
+    } else {
+      _requireAggregatorMatchesConfig("verifier", verifierAggregator, roles.verifier.feeAggregator);
+      verifierTokens = sweepableTokens(deployment.verifier, feeTokens, skipZeroBalances);
+      if (verifierTokens.length == 0) console2.log("  SKIP verifier: no fee-token balance");
+    }
+    if (resolverAggregator == address(0)) {
+      console2.log("  SKIP resolver: no feeAggregator set on-chain (withdraw would revert)");
+    } else {
+      _requireAggregatorMatchesConfig("resolver", resolverAggregator, roles.resolver.feeAggregator);
+      resolverTokens = sweepableTokens(deployment.resolver, feeTokens, skipZeroBalances);
+      if (resolverTokens.length == 0) console2.log("  SKIP resolver: no fee-token balance");
+    }
+
+    calls = new Call[]((verifierTokens.length != 0 ? 1 : 0) + (resolverTokens.length != 0 ? 1 : 0));
+    uint256 n = 0;
+    if (verifierTokens.length != 0) calls[n++] = buildWithdrawCall(deployment.verifier, verifierTokens);
+    if (resolverTokens.length != 0) calls[n++] = buildWithdrawCall(deployment.resolver, resolverTokens);
+  }
+
+  /// @dev Sweeping would push funds to an address config disagrees with.
+  function _requireAggregatorMatchesConfig(
+    string memory label,
+    address onchainAggregator,
+    address intendedAggregator
+  ) private pure {
+    require(
+      intendedAggregator != address(0),
+      string.concat("SweepFees: ", label, " feeAggregator is not declared in config/roles - declare it before sweeping")
+    );
+    require(
+      onchainAggregator == intendedAggregator,
+      string.concat(
+        "SweepFees: ",
+        label,
+        " feeAggregator on-chain ",
+        vm.toString(onchainAggregator),
+        " does not match config/roles ",
+        vm.toString(intendedAggregator)
+      )
+    );
+  }
+
+  /// @notice The withdraw calldata for one contract's sweep.
+  /// @dev CommitteeVerifier and VersionedVerifierResolver declare the identical
+  ///      withdrawFeeTokens(address[]), so one encoding serves both targets.
+  function buildWithdrawCall(
     address target,
     address[] memory feeTokens
   ) public pure returns (Call memory call) {
@@ -48,7 +125,8 @@ contract SweepFees is BaseScript {
   /// @notice Reads the on-chain fee aggregator of both contracts.
   /// @dev Guarded on `code.length` before the call: a staticcall to a codeless address
   ///      succeeds with empty returndata and the ABI-decode failure is NOT catchable by
-  ///      try/catch, so the guard - not the catch - is what makes this safe.
+  ///      try/catch, so the guard - not the catch - is what makes this safe. A getter
+  ///      that reverts reads as a zero aggregator, so buildSweepBatch skips that contract.
   function readAggregators(
     address verifier,
     address resolver
@@ -67,132 +145,52 @@ contract SweepFees is BaseScript {
     }
   }
 
-  /// @notice Decides which contracts are safe and worth sweeping, and builds their calls.
-  /// @param skipZeroBalances Also skip a contract whose every configured token reads zero
-  ///        right now. Optional: a no-op sweep is harmless, just gas.
-  /// @return calls Sweep calls, in verifier-then-resolver order. Empty when nothing is sweepable.
-  /// @return verifierSkip Why the verifier was skipped (None when staged).
-  /// @return resolverSkip Why the resolver was skipped (None when staged).
-  function sweepCalls(
-    Types.Deployment memory deployment,
-    Types.ChainConfig memory chainConfig,
-    bool skipZeroBalances
-  ) public view returns (Call[] memory calls, SkipReason verifierSkip, SkipReason resolverSkip) {
-    // No fee tokens configured => nothing to sweep anywhere.
-    if (chainConfig.feeTokens.length == 0) {
-      return (new Call[](0), SkipReason.NoBalance, SkipReason.NoBalance);
-    }
-
-    (address vAgg, address rAgg) = readAggregators(deployment.verifier, deployment.resolver);
-
-    verifierSkip = _skipReason(deployment.verifier, vAgg, chainConfig.feeTokens, skipZeroBalances);
-    resolverSkip = _skipReason(deployment.resolver, rAgg, chainConfig.feeTokens, skipZeroBalances);
-
-    uint256 sweepableCount = (verifierSkip == SkipReason.None ? 1 : 0) + (resolverSkip == SkipReason.None ? 1 : 0);
-    calls = new Call[](sweepableCount);
-    uint256 i = 0;
-    if (verifierSkip == SkipReason.None) calls[i++] = callsFor(deployment.verifier, chainConfig.feeTokens);
-    if (resolverSkip == SkipReason.None) calls[i++] = callsFor(deployment.resolver, chainConfig.feeTokens);
-  }
-
-  function run(
-    string calldata chainAlias
-  ) external {
-    _initOutput(chainAlias);
-
-    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    bool skipZeroBalances = vm.envOr("SKIP_ZERO_BALANCES", false);
-
-    console2.log("[SweepFees] chain:", chainAlias);
-    console2.log("  fee tokens configured:", chainConfig.feeTokens.length);
-
-    if (chainConfig.feeTokens.length == 0) {
-      console2.log("  no feeTokens in config/chains/<alias>.json; nothing to sweep (no-op)");
-      return;
-    }
-
-    _assertReachable(deployment.verifier, "verifier");
-    _assertReachable(deployment.resolver, "resolver");
-
-    (address vAgg, address rAgg) = readAggregators(deployment.verifier, deployment.resolver);
-
-    // Warn on drift between chain state and the intended holder in config/roles.
-    if (roles.verifier.feeAggregator != address(0) && vAgg != roles.verifier.feeAggregator) {
-      console2.log("  DRIFT verifier feeAggregator on-chain:", vAgg);
-      console2.log("        config/roles expects:", roles.verifier.feeAggregator);
-    }
-    if (roles.resolver.feeAggregator != address(0) && rAgg != roles.resolver.feeAggregator) {
-      console2.log("  DRIFT resolver feeAggregator on-chain:", rAgg);
-      console2.log("        config/roles expects:", roles.resolver.feeAggregator);
-    }
-
-    (Call[] memory calls, SkipReason verifierSkip, SkipReason resolverSkip) =
-      sweepCalls(deployment, chainConfig, skipZeroBalances);
-
-    _logOutcome("verifier", verifierSkip, vAgg);
-    _logOutcome("resolver", resolverSkip, rAgg);
-
-    if (calls.length == 0) {
-      console2.log("  nothing sweepable; no batch written");
-      return;
-    }
-
-    _stageMany(calls);
-    _flush("sweep-fees");
-  }
-
-  /// @dev True when the contract holds a non-zero balance in ANY configured token.
-  ///      Codeless or non-ERC20 entries count as zero rather than aborting the read.
-  function _hasAnyBalance(
+  /// @notice Validates every configured fee token and returns the ones to stage for
+  ///         `target`: those it holds, or all of them when skipZeroBalances is false.
+  /// @dev Reverts on the first broken entry - zero, codeless, or not an ERC20. A broken
+  ///      entry is a misconfiguration, not an empty balance.
+  function sweepableTokens(
     address target,
-    address[] memory feeTokens
-  ) private view returns (bool) {
-    for (uint256 i = 0; i < feeTokens.length; ++i) {
-      if (feeTokens[i].code.length == 0) continue;
-      try IERC20(feeTokens[i]).balanceOf(target) returns (uint256 bal) {
-        if (bal > 0) return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  function _skipReason(
-    address target,
-    address aggregator,
     address[] memory feeTokens,
     bool skipZeroBalances
-  ) private view returns (SkipReason) {
-    if (target == address(0) || aggregator == address(0)) return SkipReason.NoAggregator;
-    if (skipZeroBalances && !_hasAnyBalance(target, feeTokens)) return SkipReason.NoBalance;
-    return SkipReason.None;
-  }
-
-  function _logOutcome(
-    string memory label,
-    SkipReason reason,
-    address aggregator
-  ) private pure {
-    if (reason == SkipReason.NoAggregator) {
-      console2.log(
-        string.concat("  SKIP ", label, ": undeployed or on-chain feeAggregator zero (withdraw would revert)")
+  ) public view returns (address[] memory kept) {
+    address[] memory buf = new address[](feeTokens.length);
+    uint256 n = 0;
+    for (uint256 i = 0; i < feeTokens.length; ++i) {
+      address token = feeTokens[i];
+      require(
+        token != address(0),
+        string.concat(
+          "SweepFees: feeTokens[", vm.toString(i), "] in config/chains is the zero address, fix or remove the entry"
+        )
       );
-    } else if (reason == SkipReason.NoBalance) {
-      console2.log(string.concat("  SKIP ", label, ": no fee-token balance (SKIP_ZERO_BALANCES=1)"));
-    } else {
-      console2.log(string.concat("  sweeping ", label, " -> aggregator:"), aggregator);
+      require(
+        token.code.length != 0,
+        string.concat(
+          "SweepFees: fee token ",
+          vm.toString(token),
+          " has no code - wrong address in config/chains, or wrong --rpc-url?"
+        )
+      );
+      try IERC20(token).balanceOf(target) returns (uint256 bal) {
+        if (!skipZeroBalances || bal > 0) buf[n++] = token;
+      } catch {
+        revert(string.concat("SweepFees: fee token ", vm.toString(token), " balanceOf reverted - not an ERC20?"));
+      }
+    }
+    kept = new address[](n);
+    for (uint256 i = 0; i < n; ++i) {
+      kept[i] = buf[i];
     }
   }
 
   /// @dev A recorded address with no code means the wrong RPC (or none), not an empty
   ///      balance. Without this the reads below silently yield zero and the sweep looks
-  ///      like a clean no-op. Unrecorded (zero) targets are a real state, so they pass.
+  ///      like a clean no-op. Callers require a recorded (non-zero) target first.
   function _assertReachable(
     address target,
     string memory label
   ) private view {
-    if (target == address(0)) return;
     require(
       target.code.length != 0,
       string.concat(
