@@ -203,6 +203,9 @@ contract OwnershipTest is CommitteeVerifierSetup {
       })
     );
 
+    // run() reads OUTPUT_MODE, which deliberately has no default. setEnv is process-global
+    // and memoised by forge, but this is the suite's only env-path run() call.
+    vm.setEnv("OUTPUT_MODE", "EOA");
     acceptOwner.run(ALIAS_FACTORY, "factory");
 
     assertEq(factory.owner(), DEFAULT_SENDER, "factory ownership accepted");
