@@ -4,15 +4,11 @@ pragma solidity 0.8.26;
 import {SweepFees} from "../../script/fees/SweepFees.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {MockERC20} from "../mocks/MockERC20.sol";
 import {FeeScriptsSetup} from "./FeeScriptsSetup.t.sol";
-import {FeeTokenHandler} from "@chainlink/contracts-ccip/contracts/libraries/FeeTokenHandler.sol";
 
-/// @notice Exercises SweepFees through `sweepCalls`, the same seam `run()` uses, against
-///         the real audited contracts. The skip logic is the whole point: a zero
-///         feeAggregator makes withdrawFeeTokens revert unconditionally
-///         (FeeTokenHandler:21 checks before the loop), so emitting such a call would
-///         hand signers a Safe batch that fails on execution.
+/// @notice Exercises buildSweepBatch - the composed config-in, batch-out seam run()
+///         drives - and its parts, against the real audited contracts. The only
+///         untested gates are run()'s recorded-deployment and reachability requires.
 contract SweepFeesTest is FeeScriptsSetup {
   SweepFees internal script;
 
@@ -22,114 +18,215 @@ contract SweepFeesTest is FeeScriptsSetup {
   }
 
   // ---------------------------------------------------------------------------
-  //  Which contracts get swept
+  //  sweepableTokens: entry validation
   // ---------------------------------------------------------------------------
 
-  function test_sweepCalls_includesBothWhenAggregatorsSet() public view {
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), false);
+  function test_sweepableTokens_revertsOnZeroAddress() public {
+    address[] memory tokens = _bothTokens();
+    tokens[1] = address(0);
+
+    vm.expectRevert(bytes("SweepFees: feeTokens[1] in config/chains is the zero address, fix or remove the entry"));
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.sweepableTokens(address(verifier), tokens, true);
+  }
+
+  function test_sweepableTokens_revertsOnCodelessToken() public {
+    address ghost = address(0x60057);
+    address[] memory tokens = new address[](1);
+    tokens[0] = ghost;
+
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "SweepFees: fee token ",
+          vm.toString(ghost),
+          " has no code - wrong address in config/chains, or wrong --rpc-url?"
+        )
+      )
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.sweepableTokens(address(verifier), tokens, true);
+  }
+
+  /// @dev An address with code that is not an ERC20 (here: the resolver itself) must be
+  ///      rejected at build time instead of reverting the withdraw on-chain.
+  function test_sweepableTokens_revertsOnNonErc20() public {
+    address[] memory tokens = new address[](1);
+    tokens[0] = address(resolver);
+
+    vm.expectRevert(
+      bytes(
+        string.concat("SweepFees: fee token ", vm.toString(address(resolver)), " balanceOf reverted - not an ERC20?")
+      )
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.sweepableTokens(address(verifier), tokens, true);
+  }
+
+  // ---------------------------------------------------------------------------
+  //  sweepableTokens: the SKIP_ZERO_BALANCES filter
+  // ---------------------------------------------------------------------------
+
+  function test_sweepableTokens_keepsOnlyHeldTokens() public view {
+    address[] memory verifierKept = script.sweepableTokens(address(verifier), _bothTokens(), true);
+    assertEq(verifierKept.length, 2, "verifier holds tokenA and tokenB");
+    assertEq(verifierKept[0], address(tokenA));
+    assertEq(verifierKept[1], address(tokenB));
+
+    address[] memory resolverKept = script.sweepableTokens(address(resolver), _bothTokens(), true);
+    assertEq(resolverKept.length, 1, "resolver holds only tokenA");
+    assertEq(resolverKept[0], address(tokenA));
+  }
+
+  function test_sweepableTokens_emptyWhenTargetHoldsNothing() public view {
+    address[] memory kept = script.sweepableTokens(address(0xFEE), _bothTokens(), true);
+    assertEq(kept.length, 0, "no balances, nothing kept");
+  }
+
+  /// @dev Flag off: every configured token is staged regardless of balance, so a batch
+  ///      executed much later also sweeps fees that accrue in between.
+  function test_sweepableTokens_disabledFlagKeepsAllTokens() public view {
+    address[] memory kept = script.sweepableTokens(address(0xFEE), _bothTokens(), false);
+    assertEq(kept.length, 2, "flag off: full list, balances ignored");
+    assertEq(kept[0], address(tokenA));
+    assertEq(kept[1], address(tokenB));
+  }
+
+  // ---------------------------------------------------------------------------
+  //  buildSweepBatch: config + chain state in, the whole batch out
+  // ---------------------------------------------------------------------------
+
+  function _rolesWithAggregators(
+    address verifierAggregator,
+    address resolverAggregator
+  ) private pure returns (Types.RolesConfig memory roles) {
+    roles.verifier.feeAggregator = verifierAggregator;
+    roles.resolver.feeAggregator = resolverAggregator;
+  }
+
+  function test_batch_stagesBothWhenFullyConfigured() public view {
+    BaseScript.Call[] memory calls =
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
 
     assertEq(calls.length, 2, "verifier + resolver");
     assertEq(calls[0].to, address(verifier), "verifier first");
     assertEq(calls[1].to, address(resolver), "resolver second");
-    assertTrue(skipV == SweepFees.SkipReason.None, "verifier not skipped");
-    assertTrue(skipR == SweepFees.SkipReason.None, "resolver not skipped");
+    assertEq(
+      keccak256(calls[0].data),
+      keccak256(script.buildWithdrawCall(address(verifier), _bothTokens()).data),
+      "verifier sweeps both held tokens"
+    );
+
+    // The batch must carry the FILTERED list: the resolver holds no tokenB, and the
+    // executing test cannot catch this (the on-chain withdraw skips zeros anyway).
+    address[] memory onlyA = new address[](1);
+    onlyA[0] = address(tokenA);
+    assertEq(
+      keccak256(calls[1].data),
+      keccak256(script.buildWithdrawCall(address(resolver), onlyA).data),
+      "resolver call omits the token it does not hold"
+    );
   }
 
-  function test_sweepCalls_skipsVerifierWhenItsAggregatorIsZero() public {
+  /// @dev The point of per-contract gating: the verifier not being in use (no aggregator
+  ///      on-chain or in config) must not block the resolver's accrued fees, and vice versa.
+  function test_batch_unusedVerifierDoesNotBlockResolver() public {
     _setVerifierAggregator(address(0));
 
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), false);
+    BaseScript.Call[] memory calls =
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), RESOLVER_AGG), _bothTokens(), true);
 
-    assertEq(calls.length, 1, "only the resolver is sweepable");
-    assertEq(calls[0].to, address(resolver), "surviving call targets the resolver");
-    assertTrue(skipV == SweepFees.SkipReason.NoAggregator, "verifier skipped: would revert");
-    assertTrue(skipR == SweepFees.SkipReason.None, "resolver still swept - aggregators are independent");
+    assertEq(calls.length, 1, "verifier skipped, resolver staged");
+    assertEq(calls[0].to, address(resolver));
   }
 
-  function test_sweepCalls_skipsResolverWhenItsAggregatorIsZero() public {
+  function test_batch_unusedResolverDoesNotBlockVerifier() public {
     resolver.setFeeAggregator(address(0));
 
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), false);
+    BaseScript.Call[] memory calls =
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, address(0)), _bothTokens(), true);
 
-    assertEq(calls.length, 1, "only the verifier is sweepable");
-    assertEq(calls[0].to, address(verifier), "surviving call targets the verifier");
-    assertTrue(skipV == SweepFees.SkipReason.None, "verifier still swept");
-    assertTrue(skipR == SweepFees.SkipReason.NoAggregator, "resolver skipped: would revert");
+    assertEq(calls.length, 1, "resolver skipped, verifier staged");
+    assertEq(calls[0].to, address(verifier));
   }
 
-  function test_sweepCalls_isNoopWhenNoFeeTokensConfigured() public view {
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(_deployment(), _chainConfig(new address[](0)), false);
+  /// @dev A contract holding nothing is skipped without blocking the other either.
+  function test_batch_noBalanceSkipsOnlyThatContract() public view {
+    address[] memory onlyB = new address[](1);
+    onlyB[0] = address(tokenB); // the resolver holds only tokenA
 
-    assertEq(calls.length, 0, "nothing to sweep");
-    assertTrue(skipV == SweepFees.SkipReason.NoBalance, "no tokens configured = nothing to move");
-    assertTrue(skipR == SweepFees.SkipReason.NoBalance, "no tokens configured = nothing to move");
+    BaseScript.Call[] memory calls =
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), onlyB, true);
+
+    assertEq(calls.length, 1, "resolver has no tokenB; verifier staged");
+    assertEq(calls[0].to, address(verifier));
   }
 
-  function test_sweepCalls_skipsUndeployedContracts() public view {
-    Types.Deployment memory deployment = _deployment();
-    deployment.verifier = address(0); // not deployed on this chain yet
+  function test_batch_emptyWhenNothingSweepable() public {
+    _setVerifierAggregator(address(0));
+    resolver.setFeeAggregator(address(0));
 
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(deployment, _chainConfig(_bothTokens()), false);
+    BaseScript.Call[] memory calls =
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), address(0)), _bothTokens(), true);
 
-    assertEq(calls.length, 1);
-    assertEq(calls[0].to, address(resolver));
-    assertTrue(skipV == SweepFees.SkipReason.NoAggregator, "unrecorded verifier skipped, not addressed as address(0)");
-    assertTrue(skipR == SweepFees.SkipReason.None);
+    assertEq(calls.length, 0, "both skipped: nothing sweepable");
   }
 
-  // ---------------------------------------------------------------------------
-  //  SKIP_ZERO_BALANCES: optional whole-contract skip when nothing would move
-  // ---------------------------------------------------------------------------
-
-  /// @dev Only the resolver holds tokenC, so under the flag the verifier is skipped as
-  ///      NoBalance - a different reason than NoAggregator, so run() logs it honestly.
-  function test_skipZeroBalances_skipsContractHoldingNothing() public {
-    MockERC20 tokenC = new MockERC20("Fee Token C", "FEEC");
-    tokenC.mint(address(resolver), 1e18);
-    address[] memory onlyC = new address[](1);
-    onlyC[0] = address(tokenC);
-
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(_deployment(), _chainConfig(onlyC), true);
-
-    assertEq(calls.length, 1, "only the funded contract is staged");
-    assertEq(calls[0].to, address(resolver));
-    assertTrue(skipV == SweepFees.SkipReason.NoBalance, "verifier skipped: nothing to move, not a revert risk");
-    assertTrue(skipR == SweepFees.SkipReason.None);
+  function test_batch_revertsOnUndeclaredIntent() public {
+    vm.expectRevert(
+      bytes("SweepFees: verifier feeAggregator is not declared in config/roles - declare it before sweeping")
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), RESOLVER_AGG), _bothTokens(), true);
   }
 
-  /// @dev Default (flag off): a zero-balance contract is STILL staged - batches must not
-  ///      depend on volatile balances unless the operator opts in.
-  function test_skipZeroBalances_offByDefault_stagesZeroBalanceContract() public {
-    MockERC20 tokenC = new MockERC20("Fee Token C", "FEEC");
-    tokenC.mint(address(resolver), 1e18);
-    address[] memory onlyC = new address[](1);
-    onlyC[0] = address(tokenC);
+  /// @dev An unset on-chain aggregator with one intended in config/roles is drift
+  ///      like any other mismatch, not a skippable state.
+  function test_batch_revertsOnIntendedButUnsetAggregator() public {
+    _setVerifierAggregator(address(0));
 
-    (
-      BaseScript.Call[] memory calls,
-      SweepFees.SkipReason skipV,
-      // resolverSkip is deliberately ignored
-      // forge-lint: disable-next-line(unused-return)
-    ) = script.sweepCalls(_deployment(), _chainConfig(onlyC), false);
-
-    assertEq(calls.length, 2, "both staged regardless of balances");
-    assertTrue(skipV == SweepFees.SkipReason.None, "zero balance is not a skip when the flag is off");
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "SweepFees: verifier feeAggregator on-chain ",
+          vm.toString(address(0)),
+          " does not match config/roles ",
+          vm.toString(VERIFIER_AGG)
+        )
+      )
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
   }
 
-  /// @dev The flag must never skip a funded contract.
-  function test_skipZeroBalances_doesNotSkipFundedContracts() public view {
-    (BaseScript.Call[] memory calls, SweepFees.SkipReason skipV, SweepFees.SkipReason skipR) =
-      script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), true);
+  function test_batch_revertsOnAggregatorDrift() public {
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "SweepFees: resolver feeAggregator on-chain ",
+          vm.toString(RESOLVER_AGG),
+          " does not match config/roles ",
+          vm.toString(address(0xD41F7))
+        )
+      )
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, address(0xD41F7)), _bothTokens(), true);
+  }
 
-    assertEq(calls.length, 2, "both hold balances; both staged");
-    assertTrue(skipV == SweepFees.SkipReason.None);
-    assertTrue(skipR == SweepFees.SkipReason.None);
+  /// @dev A deployed contract whose getter reverts is the wrong contract at the
+  ///      recorded address, not an unset aggregator.
+  function test_readAggregators_revertsOnWrongContract() public {
+    vm.expectRevert(bytes("SweepFees: verifier getDynamicConfig() reverted - not a CommitteeVerifier at this address?"));
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.readAggregators(address(tokenA), address(resolver));
   }
 
   // ---------------------------------------------------------------------------
@@ -137,9 +234,8 @@ contract SweepFeesTest is FeeScriptsSetup {
   // ---------------------------------------------------------------------------
 
   function test_executingSweep_movesBalancesToEachContractsOwnAggregator() public {
-    // the other return values are deliberately ignored
-    // forge-lint: disable-next-line(unused-return)
-    (BaseScript.Call[] memory calls,,) = script.sweepCalls(_deployment(), _chainConfig(_bothTokens()), false);
+    BaseScript.Call[] memory calls =
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
 
     for (uint256 i = 0; i < calls.length; ++i) {
       (bool ok,) = calls[i].to.call(calls[i].data); // permissionless, any sender
@@ -161,22 +257,11 @@ contract SweepFeesTest is FeeScriptsSetup {
     assertTrue(VERIFIER_AGG != RESOLVER_AGG, "fixture must use distinct aggregators");
   }
 
-  /// @dev Proves the skip logic earns its keep: the call SweepFees declines to emit is
-  ///      exactly the one that reverts. Built via `callsFor` to bypass the guard.
-  function test_sweepingWithZeroAggregator_revertsOnChain() public {
-    _setVerifierAggregator(address(0));
-
-    BaseScript.Call memory call = script.callsFor(address(verifier), _bothTokens());
-
-    vm.expectRevert(FeeTokenHandler.ZeroAddressNotAllowed.selector);
-    (bool ok,) = call.to.call(call.data);
-    ok; // silence unused; expectRevert asserts the outcome
-  }
-
   /// @dev FeeTokenHandler skips zero balances inside an otherwise successful sweep, so a
-  ///      token the contract never accrued is harmless in the list.
+  ///      token the contract never accrued is harmless in the list (the
+  ///      SKIP_ZERO_BALANCES=false path stages exactly such lists).
   function test_sweepTolerates_tokenWithZeroBalance() public {
-    BaseScript.Call memory call = script.callsFor(address(resolver), _bothTokens());
+    BaseScript.Call memory call = script.buildWithdrawCall(address(resolver), _bothTokens());
 
     (bool ok,) = call.to.call(call.data);
     assertTrue(ok, "zero-balance token must not revert the sweep");
