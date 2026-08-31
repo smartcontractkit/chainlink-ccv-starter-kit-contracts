@@ -115,7 +115,9 @@ their own tooling, since the propose leg already made them the pending holder.
 A mistaken or stale proposal is cancelled by the **current** holder via
 `CancelOwnership` / `CancelStorageLocationsAdmin`, which re-propose `address(0)`
 so nobody can accept. Cancellation only clears the pending slot — it never moves
-the role.
+the role. These scripts read chain state, so `--rpc-url` is required even in SAFE
+mode, where the batch is refused unless `SAFE_ADDRESS` is the current on-chain
+holder of the role.
 
 ## Operational notes
 

@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {Ownable2Step} from "@chainlink/contracts/src/v0.8/shared/access/Ownable2Step.sol";
 import {IOwnable} from "@chainlink/contracts/src/v0.8/shared/interfaces/IOwnable.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -15,6 +16,9 @@ import {console2} from "forge-std/console2.sol";
 ///      Executed by the CURRENT owner (onlyOwner on-chain); the zero address lives only
 ///      here so TransferOwnership keeps rejecting it as a proposed owner.
 /// @dev Harmless when nothing is pending: the call just overwrites zero with zero.
+/// @dev Preflight reads chain state, so --rpc-url is required even in SAFE mode. In SAFE
+///      mode the batch is refused unless SAFE_ADDRESS is the current on-chain owner; EOA
+///      runs get the same guarantee from forge's pre-broadcast simulation reverting.
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/ownership/CancelOwnership.s.sol \
@@ -36,6 +40,10 @@ contract CancelOwnership is BaseScript {
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     address to = ConfigLib.targetAddress(deployment, target);
     require(to != address(0), string.concat("CancelOwnership: ", target, " not recorded for ", chainAlias));
+    _assertReachable(to, target);
+    // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already
+    // reverts on a non-owner sender. Only a deferred batch can hide the mismatch.
+    if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentOwner(to, outputSafeAddress);
 
     console2.log("[CancelOwnership]", target);
     console2.log("  target:", to);
@@ -43,5 +51,38 @@ contract CancelOwnership is BaseScript {
 
     _stageMany(callsFor(to));
     _flush(string.concat("cancel-owner-", target));
+  }
+
+  /// @notice Reverts unless expectedExecutor is the target's current owner.
+  /// @dev The cancel call is onlyOwner: a batch from any other Safe is dead on arrival,
+  ///      so a mismatch fails here at build time, before signatures are collected.
+  function requireExecutorIsCurrentOwner(
+    address target,
+    address expectedExecutor
+  ) public view {
+    address currentOwner = Ownable2Step(target).owner();
+    require(
+      expectedExecutor == currentOwner,
+      string.concat(
+        "CancelOwnership: SAFE_ADDRESS ",
+        vm.toString(expectedExecutor),
+        " is not the current owner ",
+        vm.toString(currentOwner)
+      )
+    );
+  }
+
+  /// @dev The executor preflight reads chain state; against a codeless address the
+  ///      owner() read would fail undecodably instead of pointing at the real problem.
+  function _assertReachable(
+    address target,
+    string memory label
+  ) private view {
+    require(
+      target.code.length != 0,
+      string.concat(
+        "CancelOwnership: no code at ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?"
+      )
+    );
   }
 }

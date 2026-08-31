@@ -240,6 +240,45 @@ contract OwnershipTest is CommitteeVerifierSetup {
     assertEq(verifier.getPendingStorageLocationsAdmin(), NEW_ADMIN, "proposal survives an unauthorized cancel");
   }
 
+  // ---- SAFE-mode executor preflight: the batch is refused at build time unless ----
+  // ---- the declared executing Safe holds the role the cancel call requires.    ----
+
+  function test_cancelOwnership_executorPreflight_acceptsCurrentOwner() public view {
+    cancelOwner.requireExecutorIsCurrentOwner(address(verifier), address(this));
+  }
+
+  function test_cancelOwnership_executorPreflight_rejectsNonOwner() public {
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "CancelOwnership: SAFE_ADDRESS ",
+          vm.toString(INTERLOPER),
+          " is not the current owner ",
+          vm.toString(address(this))
+        )
+      )
+    );
+    cancelOwner.requireExecutorIsCurrentOwner(address(verifier), INTERLOPER);
+  }
+
+  function test_cancelStorageLocationsAdmin_executorPreflight_acceptsCurrentAdmin() public view {
+    cancelSla.requireExecutorIsCurrentAdmin(address(verifier), address(this));
+  }
+
+  function test_cancelStorageLocationsAdmin_executorPreflight_rejectsNonAdmin() public {
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "CancelStorageLocationsAdmin: SAFE_ADDRESS ",
+          vm.toString(INTERLOPER),
+          " is not the current storageLocationsAdmin ",
+          vm.toString(address(this))
+        )
+      )
+    );
+    cancelSla.requireExecutorIsCurrentAdmin(address(verifier), INTERLOPER);
+  }
+
   // ===========================================================================
   //  full ceremony via the per-target scripts
   // ===========================================================================
