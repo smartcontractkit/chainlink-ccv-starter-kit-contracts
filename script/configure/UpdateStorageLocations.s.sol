@@ -23,9 +23,8 @@ contract UpdateStorageLocations is BaseScript {
     string[] memory locations
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({
-      to: verifier, value: 0, data: abi.encodeWithSelector(CommitteeVerifier.updateStorageLocations.selector, locations)
-    });
+    calls[0] =
+      Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.updateStorageLocations, (locations))});
   }
 
   function run(

@@ -21,9 +21,7 @@ contract SetDynamicConfig is BaseScript {
     CommitteeVerifier.DynamicConfig memory dynamicConfig
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({
-      to: verifier, value: 0, data: abi.encodeWithSelector(CommitteeVerifier.setDynamicConfig.selector, dynamicConfig)
-    });
+    calls[0] = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.setDynamicConfig, (dynamicConfig))});
   }
 
   /// @notice Translate roles-as-data into the verifier DynamicConfig struct.

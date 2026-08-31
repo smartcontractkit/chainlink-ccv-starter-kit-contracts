@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {IOwnable} from "@chainlink/contracts/src/v0.8/shared/interfaces/IOwnable.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title TransferOwnership
@@ -24,7 +25,7 @@ contract TransferOwnership is BaseScript {
     address newOwner
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({to: to, value: 0, data: abi.encodeWithSignature("transferOwnership(address)", newOwner)});
+    calls[0] = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (newOwner))});
   }
 
   function run(

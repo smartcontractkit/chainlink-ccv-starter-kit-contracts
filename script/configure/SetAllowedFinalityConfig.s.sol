@@ -76,9 +76,7 @@ contract SetAllowedFinalityConfig is BaseScript {
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] = Call({
-      to: verifier,
-      value: 0,
-      data: abi.encodeWithSelector(CommitteeVerifier.setAllowedFinalityConfig.selector, allowedFinality)
+      to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.setAllowedFinalityConfig, (allowedFinality))
     });
   }
 

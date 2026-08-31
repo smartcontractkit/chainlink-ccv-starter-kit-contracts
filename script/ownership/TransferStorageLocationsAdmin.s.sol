@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title TransferStorageLocationsAdmin
@@ -20,7 +21,7 @@ contract TransferStorageLocationsAdmin is BaseScript {
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
     calls[0] =
-      Call({to: verifier, value: 0, data: abi.encodeWithSignature("transferStorageLocationsAdmin(address)", newAdmin)});
+      Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.transferStorageLocationsAdmin, (newAdmin))});
   }
 
   function run(

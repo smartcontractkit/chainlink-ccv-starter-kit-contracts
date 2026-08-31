@@ -11,6 +11,7 @@ import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {Ownable2Step} from "@chainlink/contracts/src/v0.8/shared/access/Ownable2Step.sol";
+import {IOwnable} from "@chainlink/contracts/src/v0.8/shared/interfaces/IOwnable.sol";
 
 /// @title OwnershipTest
 /// @notice Covers the ownership + storage-locations-admin ceremonies
@@ -86,7 +87,7 @@ contract OwnershipTest is CommitteeVerifierSetup {
     assertEq(calls.length, 1, "one call");
     assertEq(calls[0].to, address(resolver), "addressed to the requested contract");
     assertEq(calls[0].value, 0, "never sends value");
-    assertEq(calls[0].data, abi.encodeWithSignature("transferOwnership(address)", NEW_OWNER), "calldata");
+    assertEq(calls[0].data, abi.encodeCall(IOwnable.transferOwnership, (NEW_OWNER)), "calldata");
   }
 
   // ===========================================================================
@@ -210,7 +211,7 @@ contract OwnershipTest is CommitteeVerifierSetup {
   function test_transferOwnership_callsFor_targetsFactory() public view {
     BaseScript.Call[] memory calls = transferOwner.callsFor(address(factory), NEW_OWNER);
     assertEq(calls[0].to, address(factory), "addressed to the factory");
-    assertEq(calls[0].data, abi.encodeWithSignature("transferOwnership(address)", NEW_OWNER), "calldata");
+    assertEq(calls[0].data, abi.encodeCall(IOwnable.transferOwnership, (NEW_OWNER)), "calldata");
   }
 
   // ===========================================================================

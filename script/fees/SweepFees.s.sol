@@ -36,11 +36,13 @@ contract SweepFees is BaseScript {
   }
 
   /// @notice Calldata for one contract's sweep.
+  /// @dev Encoded against CommitteeVerifier, but used for the resolver too: both declare
+  ///      `withdrawFeeTokens(address[])` identically, so the selector is the same.
   function callsFor(
     address target,
     address[] memory feeTokens
   ) public pure returns (Call memory call) {
-    return Call({to: target, value: 0, data: abi.encodeWithSignature("withdrawFeeTokens(address[])", feeTokens)});
+    return Call({to: target, value: 0, data: abi.encodeCall(CommitteeVerifier.withdrawFeeTokens, (feeTokens))});
   }
 
   /// @notice Reads the on-chain fee aggregator of both contracts.
