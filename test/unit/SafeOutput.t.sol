@@ -18,12 +18,14 @@ contract Harness is BaseScript {
     _initOutput(OutputMode.SAFE, "test", SAFE);
   }
 
+  /// @dev Deliberately misconfigured (SAFE mode, no executing Safe) to exercise the
+  ///      _flush backstop; real runs cannot reach this state, env-driven init refuses it.
   function initSafeWithoutAddress() external {
-    _initOutput(OutputMode.SAFE, "test");
+    _initOutput(OutputMode.SAFE, "test", address(0));
   }
 
   function initEoa() external {
-    _initOutput(OutputMode.EOA, "");
+    _initOutput(OutputMode.EOA, "", address(0));
   }
 
   function mode() external view returns (OutputMode) {
@@ -91,6 +93,20 @@ contract SafeOutputTest is Test {
 
     vm.expectRevert(bytes("BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)"));
     h.flush("unbound-batch");
+  }
+
+  /// @dev The backstop guards the batch write only: with nothing staged no file is
+  ///      emitted, so an addressless flush stays a clean no-op.
+  function test_flush_withoutSafeAddress_isNoOpWhenNothingStaged() public {
+    Harness h = new Harness();
+    h.initSafeWithoutAddress();
+
+    string memory path = "out/safe/test/unbound-empty-batch.json";
+    if (vm.exists(path)) vm.removeFile(path);
+
+    h.flush("unbound-empty-batch");
+
+    assertFalse(vm.exists(path), "no file written for an empty batch");
   }
 
   /// @dev An empty batch is not signable, so no file should appear at all.

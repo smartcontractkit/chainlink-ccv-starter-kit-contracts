@@ -76,13 +76,7 @@ abstract contract BaseScript is Script {
   /// @notice Explicit-mode variant that bypasses env vars. Prefer this in tests
   ///         (env-driven selection mutates process-global state and is order- and
   ///         parallelism-sensitive) and in callers that already know the mode.
-  function _initOutput(
-    OutputMode mode,
-    string memory chainAlias
-  ) internal {
-    _initOutput(mode, chainAlias, address(0));
-  }
-
+  ///         EOA mode has no executing Safe; pass address(0).
   function _initOutput(
     OutputMode mode,
     string memory chainAlias,
@@ -146,8 +140,6 @@ abstract contract BaseScript is Script {
     // One directory per chain. `block.chainid` is deliberately not used: SAFE mode can
     // run without --rpc-url, where it is 31337 for every chain.
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
-    // Backstop for explicit-mode callers: every emitted batch must name its executing Safe.
-    require(outputSafeAddress != address(0), "BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)");
     string memory dir = string.concat("out/safe/", outputChainAlias);
     string memory file = string.concat(dir, "/", name, ".json");
     // An empty batch is not signable, and writing one leaves an artifact that reads as
@@ -161,6 +153,9 @@ abstract contract BaseScript is Script {
       }
       return;
     }
+    // Backstop for explicit-mode callers: every batch written must name its executing
+    // Safe for the Transaction Builder's import check.
+    require(outputSafeAddress != address(0), "BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)");
 
     // Snapshot, then clear _staged before the file-system calls (checks-effects order).
     string memory json = _buildSafeJson(name);
