@@ -39,7 +39,7 @@ See [`config/README.md`](config/README.md) for the full JSON schema.
 ## Prerequisites
 
 ```bash
-foundryup -v v1.8.0         # match CI; `exclude_lints` in foundry.toml needs >= 1.8.0
+foundryup -v v1.8.1         # match CI; `exclude_lints` in foundry.toml needs >= 1.8.0
 npm install                 # installs @chainlink/contracts-ccip@2.0.0 (pinned) + deps
 forge install foundry-rs/forge-std   # or: git submodule; provides lib/forge-std
 cp .env.example .env        # then fill in RPC URLs, KMS/keys, explorer keys
