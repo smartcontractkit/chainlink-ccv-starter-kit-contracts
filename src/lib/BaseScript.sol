@@ -14,7 +14,8 @@ import {console2} from "forge-std/console2.sol";
 ///             Transaction Builder JSON batch under `out/safe/`, key-free
 ///             (addresses + calldata only), ready for signers to import.
 ///
-///         Select the mode with the `OUTPUT_MODE` env var (`EOA` | `SAFE`).
+///         Select the mode with the `OUTPUT_MODE` env var: exactly `EOA` or `SAFE`,
+///         no default — EOA means live broadcasts, so it must be an explicit opt-in.
 ///
 /// @dev Deploy scripts (BootstrapFactory / DeployResolver / DeployVerifier) do
 ///      NOT use `_stage`: the factory bootstrap is intrinsically EOA-only
@@ -37,16 +38,24 @@ abstract contract BaseScript is Script {
   string internal outputChainAlias;
   Call[] private _staged;
 
-  /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE.
+  /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE and reverts on a
+  ///         missing, empty, or unknown value, no default.
   /// @param chainAlias The chain this run targets. A Safe batch executes on ONE chain, so
   ///        this scopes the output directory; without it two chains overwrite each other.
   function _initOutput(
     string memory chainAlias
   ) internal {
-    string memory modeName = vm.envOr("OUTPUT_MODE", string("EOA"));
-    OutputMode mode =
-      (_stringsEqual(modeName, "SAFE") || _stringsEqual(modeName, "safe")) ? OutputMode.SAFE : OutputMode.EOA;
-    _initOutput(mode, chainAlias);
+    _initOutput(_parseOutputMode(vm.envOr("OUTPUT_MODE", string(""))), chainAlias);
+  }
+
+  /// @dev Case-sensitive exact match on purpose: this decides whether calls go on-chain
+  ///      immediately, so anything else fails closed instead of guessing.
+  function _parseOutputMode(
+    string memory modeName
+  ) internal pure returns (OutputMode) {
+    if (_stringsEqual(modeName, "EOA")) return OutputMode.EOA;
+    if (_stringsEqual(modeName, "SAFE")) return OutputMode.SAFE;
+    revert(string.concat("BaseScript: OUTPUT_MODE must be exactly EOA or SAFE, got \"", modeName, "\""));
   }
 
   /// @notice Explicit-mode variant that bypasses env vars. Prefer this in tests

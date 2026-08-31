@@ -39,6 +39,14 @@ contract Harness is BaseScript {
   function count() external view returns (uint256) {
     return stagedCount();
   }
+
+  /// @dev Exposes the parser, not the env read: env state is process-global and forge
+  ///      memoises vm.env*, so testing through OUTPUT_MODE itself would be order-sensitive.
+  function parseMode(
+    string calldata modeName
+  ) external pure returns (OutputMode) {
+    return _parseOutputMode(modeName);
+  }
 }
 
 /// @notice Unit tests for the shared EOA/Safe output switch and Safe Transaction
@@ -95,6 +103,25 @@ contract SafeOutputTest is Test {
     h.flush("stale-batch");
 
     assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
+  function test_parseOutputMode_acceptsTheTwoExactValues() public {
+    Harness h = new Harness();
+    assertEq(uint256(h.parseMode("EOA")), uint256(BaseScript.OutputMode.EOA));
+    assertEq(uint256(h.parseMode("SAFE")), uint256(BaseScript.OutputMode.SAFE));
+  }
+
+  /// @dev OUTPUT_MODE fails closed: a missing value or any typo reverts rather than
+  ///      defaulting to EOA, where --broadcast would execute live immediately.
+  function test_parseOutputMode_rejectsMissingEmptyOrMistypedValues() public {
+    Harness h = new Harness();
+    string[5] memory bad = ["", "SAEF", "Safe", "safe", "eoa"];
+    for (uint256 i = 0; i < bad.length; ++i) {
+      vm.expectRevert(bytes(string.concat("BaseScript: OUTPUT_MODE must be exactly EOA or SAFE, got \"", bad[i], "\"")));
+      // the expected revert is the assertion; the return never materialises
+      // forge-lint: disable-next-line(unused-return)
+      h.parseMode(bad[i]);
+    }
   }
 
   function test_eoaMode_doesNotBuffer() public {
