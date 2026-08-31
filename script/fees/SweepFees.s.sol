@@ -13,7 +13,8 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Sweeps accrued fee-token balances from the verifier and the resolver to
 ///         their (distinct) fee aggregators via the permissionless withdrawFeeTokens.
 /// @dev Both contracts must be deployed; beyond that each is gated independently -
-///      skipped while its on-chain aggregator is unset, reverted on config drift.
+///      skipped while neither chain nor config/roles names its aggregator, reverted
+///      when the two disagree in any way.
 ///      Reads chain state at build time, so --rpc-url is required even in SAFE mode.
 /// @dev Zero-balance tokens are omitted by default; SKIP_ZERO_BALANCES=false stages
 ///      every configured token, for batches executed long after they are built.
@@ -52,10 +53,10 @@ contract SweepFees is BaseScript {
   }
 
   /// @notice Builds the sweep batch for both contracts from config and chain state.
-  ///         Each contract is gated independently, so one being skipped - no on-chain
-  ///         aggregator yet, nothing held - never blocks the other. Reverts on
-  ///         misconfiguration: a broken token entry, an undeclared or drifted
-  ///         config/roles aggregator.
+  ///         Each contract is gated independently, so one being skipped - not in use,
+  ///         nothing held - never blocks the other. Reverts on misconfiguration: a
+  ///         broken token entry, or an aggregator named on only one side of
+  ///         chain/config or named differently on each.
   function buildSweepBatch(
     Types.Deployment memory deployment,
     Types.RolesConfig memory roles,
@@ -68,17 +69,18 @@ contract SweepFees is BaseScript {
     address[] memory verifierTokens = new address[](0);
     address[] memory resolverTokens = new address[](0);
 
+    _requireAggregatorMatchesConfig("verifier", verifierAggregator, roles.verifier.feeAggregator);
+    _requireAggregatorMatchesConfig("resolver", resolverAggregator, roles.resolver.feeAggregator);
+
     if (verifierAggregator == address(0)) {
-      console2.log("  SKIP verifier: no feeAggregator set on-chain (withdraw would revert)");
+      console2.log("  SKIP verifier: not in use (no feeAggregator on-chain or in config/roles)");
     } else {
-      _requireAggregatorMatchesConfig("verifier", verifierAggregator, roles.verifier.feeAggregator);
       verifierTokens = sweepableTokens(deployment.verifier, feeTokens, skipZeroBalances);
       if (verifierTokens.length == 0) console2.log("  SKIP verifier: no fee-token balance");
     }
     if (resolverAggregator == address(0)) {
-      console2.log("  SKIP resolver: no feeAggregator set on-chain (withdraw would revert)");
+      console2.log("  SKIP resolver: not in use (no feeAggregator on-chain or in config/roles)");
     } else {
-      _requireAggregatorMatchesConfig("resolver", resolverAggregator, roles.resolver.feeAggregator);
       resolverTokens = sweepableTokens(deployment.resolver, feeTokens, skipZeroBalances);
       if (resolverTokens.length == 0) console2.log("  SKIP resolver: no fee-token balance");
     }
@@ -89,18 +91,19 @@ contract SweepFees is BaseScript {
     if (resolverTokens.length != 0) calls[n++] = buildWithdrawCall(deployment.resolver, resolverTokens);
   }
 
-  /// @dev Sweeping would push funds to an address config disagrees with.
+  /// @dev Chain and config/roles must agree on the aggregator. Matching zeros mean the
+  ///      contract is not in use yet (a legitimate skip); any other disagreement is drift.
   function _requireAggregatorMatchesConfig(
     string memory label,
     address onchainAggregator,
     address intendedAggregator
   ) private pure {
+    if (onchainAggregator == intendedAggregator) return;
     require(
       intendedAggregator != address(0),
       string.concat("SweepFees: ", label, " feeAggregator is not declared in config/roles - declare it before sweeping")
     );
-    require(
-      onchainAggregator == intendedAggregator,
+    revert(
       string.concat(
         "SweepFees: ",
         label,
@@ -125,8 +128,9 @@ contract SweepFees is BaseScript {
   /// @notice Reads the on-chain fee aggregator of both contracts.
   /// @dev Guarded on `code.length` before the call: a staticcall to a codeless address
   ///      succeeds with empty returndata and the ABI-decode failure is NOT catchable by
-  ///      try/catch, so the guard - not the catch - is what makes this safe. A getter
-  ///      that reverts reads as a zero aggregator, so buildSweepBatch skips that contract.
+  ///      try/catch, so the guard - not the catch - is what makes this safe. A deployed
+  ///      contract whose getter still reverts is the wrong contract, not an unset
+  ///      aggregator, so the catch fails closed instead of reading zero.
   function readAggregators(
     address verifier,
     address resolver
@@ -136,12 +140,16 @@ contract SweepFees is BaseScript {
         CommitteeVerifier.DynamicConfig memory dynamicConfig
       ) {
         verifierAggregator = dynamicConfig.feeAggregator;
-      } catch {}
+      } catch {
+        revert("SweepFees: verifier getDynamicConfig() reverted - not a CommitteeVerifier at this address?");
+      }
     }
     if (resolver.code.length != 0) {
       try VersionedVerifierResolver(resolver).getFeeAggregator() returns (address agg) {
         resolverAggregator = agg;
-      } catch {}
+      } catch {
+        revert("SweepFees: resolver getFeeAggregator() reverted - not a VersionedVerifierResolver at this address?");
+      }
     }
   }
 

@@ -131,23 +131,23 @@ contract SweepFeesTest is FeeScriptsSetup {
     );
   }
 
-  /// @dev The point of per-contract gating: the verifier losing its aggregator must not
-  ///      block the resolver's accrued fees, and vice versa.
-  function test_batch_zeroVerifierAggregatorDoesNotBlockResolver() public {
+  /// @dev The point of per-contract gating: the verifier not being in use (no aggregator
+  ///      on-chain or in config) must not block the resolver's accrued fees, and vice versa.
+  function test_batch_unusedVerifierDoesNotBlockResolver() public {
     _setVerifierAggregator(address(0));
 
     BaseScript.Call[] memory calls =
-      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), RESOLVER_AGG), _bothTokens(), true);
 
     assertEq(calls.length, 1, "verifier skipped, resolver staged");
     assertEq(calls[0].to, address(resolver));
   }
 
-  function test_batch_zeroResolverAggregatorDoesNotBlockVerifier() public {
+  function test_batch_unusedResolverDoesNotBlockVerifier() public {
     resolver.setFeeAggregator(address(0));
 
     BaseScript.Call[] memory calls =
-      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, address(0)), _bothTokens(), true);
 
     assertEq(calls.length, 1, "resolver skipped, verifier staged");
     assertEq(calls[0].to, address(verifier));
@@ -170,7 +170,7 @@ contract SweepFeesTest is FeeScriptsSetup {
     resolver.setFeeAggregator(address(0));
 
     BaseScript.Call[] memory calls =
-      script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
+      script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), address(0)), _bothTokens(), true);
 
     assertEq(calls.length, 0, "both skipped: nothing sweepable");
   }
@@ -182,6 +182,26 @@ contract SweepFeesTest is FeeScriptsSetup {
     // the expected revert is the assertion; the return never materialises
     // forge-lint: disable-next-line(unused-return)
     script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), RESOLVER_AGG), _bothTokens(), true);
+  }
+
+  /// @dev An unset on-chain aggregator with one intended in config/roles is drift
+  ///      like any other mismatch, not a skippable state.
+  function test_batch_revertsOnIntendedButUnsetAggregator() public {
+    _setVerifierAggregator(address(0));
+
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "SweepFees: verifier feeAggregator on-chain ",
+          vm.toString(address(0)),
+          " does not match config/roles ",
+          vm.toString(VERIFIER_AGG)
+        )
+      )
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), _bothTokens(), true);
   }
 
   function test_batch_revertsOnAggregatorDrift() public {
@@ -198,6 +218,15 @@ contract SweepFeesTest is FeeScriptsSetup {
     // the expected revert is the assertion; the return never materialises
     // forge-lint: disable-next-line(unused-return)
     script.buildSweepBatch(_deployment(), _rolesWithAggregators(VERIFIER_AGG, address(0xD41F7)), _bothTokens(), true);
+  }
+
+  /// @dev A deployed contract whose getter reverts is the wrong contract at the
+  ///      recorded address, not an unset aggregator.
+  function test_readAggregators_revertsOnWrongContract() public {
+    vm.expectRevert(bytes("SweepFees: verifier getDynamicConfig() reverted - not a CommitteeVerifier at this address?"));
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.readAggregators(address(tokenA), address(resolver));
   }
 
   // ---------------------------------------------------------------------------

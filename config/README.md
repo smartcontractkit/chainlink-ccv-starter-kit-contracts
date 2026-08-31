@@ -45,12 +45,10 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > no-op rather than an error. The set of tokens that can actually accrue is governed by
 > CCIP's `FeeQuoter`; this list mirrors it, synced from the CCIP API by
 > `script/config/sync-ccip-config.sh` rather than maintained by hand.
-> The list is *not* filtered by current balance —
-> `SweepFees` builds Safe batches that execute later, and filtering on today's balance
-> would silently drop fees accruing in between. `SKIP_ZERO_BALANCES=1` optionally skips a
-> WHOLE contract whose every listed token reads zero at build time (saves a no-op tx); the
-> list inside the call is never shrunk. Off by default: an unreadable balance counts as
-> zero, so the flag can silently miss a sweep.
+> `SweepFees` filters the list by current balance: tokens reading zero at build time are
+> omitted from the staged call, and a contract with nothing to sweep gets no call at all.
+> Set `SKIP_ZERO_BALANCES=false` to stage every listed token regardless of balance — for
+> Safe batches executed long after they are built, where fees may accrue in between.
 >
 > **Lean append-only; prune deliberately.** Read this field as "every token that could
 > hold a balance here", not "tokens Chainlink supports today" — de-supporting a token does
@@ -61,9 +59,10 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > zero in `BalanceReport`, and no in-flight messages could still pay fees in it. Until
 > then a stale entry costs one `balanceOf` per sweep and is skipped silently at zero.
 >
-> ⚠️ Every entry must be a real ERC20 **with code**. `balanceOf` on a codeless address
-> reverts the whole `withdrawFeeTokens` call, so one typo blocks every future sweep for that
-> chain. `BalanceReport` flags such an entry as `UNREADABLE`.
+> ⚠️ Every entry must be a real ERC20 **with code**. A zero address, a codeless address,
+> or a `balanceOf` that reverts fails the `SweepFees` build with the offending entry named —
+> a broken entry is a misconfiguration, never treated as an empty balance. `BalanceReport`
+> flags such an entry as `UNREADABLE`.
 
 > **`finalityConfig` defaults to `0x00000000`.** It is the `bytes4` ALLOWED finality
 > (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`. Encoding:
