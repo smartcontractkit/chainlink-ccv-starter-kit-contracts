@@ -105,7 +105,7 @@ abstract contract BaseScript is Script {
 
   /// @notice In SAFE mode, write the buffered calls to a Safe Transaction Builder
   ///         batch. One file per batch: the Builder imports one at a time.
-  ///         No-op in EOA mode.
+  ///         No-op in EOA mode, and no file at all when nothing was staged.
   function _flush(
     string memory name
   ) internal {
@@ -115,10 +115,23 @@ abstract contract BaseScript is Script {
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
     string memory dir = string.concat("out/safe/", outputChainAlias);
     string memory file = string.concat(dir, "/", name, ".json");
+    // An empty batch is not signable, and writing one leaves an artifact that reads as
+    // output. Any batch already at this path is from an earlier run and no longer
+    // reflects config, so remove it rather than leave it to be imported as if fresh.
+    if (_staged.length == 0) {
+      console2.log("[BaseScript] nothing staged; no Safe batch written:", file);
+      if (vm.exists(file)) {
+        vm.removeFile(file);
+        console2.log("[BaseScript]   removed a stale batch from an earlier run");
+      }
+      return;
+    }
+
     // Snapshot, then clear _staged before the file-system calls (checks-effects order).
     string memory json = _buildSafeJson(name);
     uint256 stagedTotal = _staged.length;
     delete _staged;
+
     vm.createDir(dir, true); // idempotent; survives a fresh clone
     vm.writeFile(file, json);
     console2.log("[BaseScript] Safe batch written:", file);
