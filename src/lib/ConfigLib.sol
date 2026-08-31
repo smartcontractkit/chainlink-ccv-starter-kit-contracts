@@ -66,6 +66,56 @@ library ConfigLib {
     chainConfig.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
   }
 
+  /// @notice Fail-fast chain-identity preflight: the named chain config must exist,
+  ///         name itself consistently, and — when an RPC backs the run — match the
+  ///         connected network. Call before deployment lookup, reads, or staging.
+  /// @dev A valid config against the wrong RPC can pass every other check, so only the
+  ///      connected network's own chainid settles which chain a run is acting on.
+  function assertChain(
+    string memory aliasName
+  ) internal view {
+    string memory path = chainPath(aliasName);
+    require(vm.exists(path), string.concat("ConfigLib: no chain config at ", path));
+    assertChainMatches(readChainByPath(path), aliasName);
+  }
+
+  /// @dev Split from assertChain for callers that already loaded the config (and tests).
+  function assertChainMatches(
+    Types.ChainConfig memory chainConfig,
+    string memory aliasName
+  ) internal view {
+    require(
+      _stringsEqual(chainConfig.aliasName, aliasName),
+      string.concat("ConfigLib: ", chainPath(aliasName), " declares alias '", chainConfig.aliasName, "'")
+    );
+    require(chainConfig.chainId != 0, string.concat("ConfigLib: ", chainPath(aliasName), " has no chainId"));
+    // Every script requires a live RPC (preflights and batch gating read chain state).
+    // Without --rpc-url forge runs at 31337, so for a config expecting another chain an
+    // unexpected 31337 almost always means the flag is missing — fail with that hint.
+    // A config genuinely FOR 31337 (a local anvil chain) is compared like any other.
+    require(
+      block.chainid != 31337 || chainConfig.chainId == 31337,
+      string.concat(
+        "ConfigLib: chainid is 31337 but ",
+        aliasName,
+        " is chain ",
+        vm.toString(chainConfig.chainId),
+        " - no --rpc-url passed?"
+      )
+    );
+    require(
+      block.chainid == chainConfig.chainId,
+      string.concat(
+        "ConfigLib: connected to chain ",
+        vm.toString(block.chainid),
+        " but ",
+        aliasName,
+        " is chain ",
+        vm.toString(chainConfig.chainId)
+      )
+    );
+  }
+
   // --------------------------------------------------------------------------
   //  lanes
   // --------------------------------------------------------------------------

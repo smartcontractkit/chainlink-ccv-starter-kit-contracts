@@ -42,14 +42,16 @@ abstract contract BaseScript is Script {
   address internal outputSafeAddress;
   Call[] private _staged;
 
-  /// @notice Call once at the top of `run()`. Reads OUTPUT_MODE and reverts on a
-  ///         missing, empty, or unknown value, no default. SAFE mode also requires
-  ///         SAFE_ADDRESS (the executing Safe); EOA mode ignores it with a log.
+  /// @notice Call once at the top of `run()`. Verifies the chain config against the
+  ///         connected network (ConfigLib.assertChain), then reads OUTPUT_MODE and
+  ///         reverts on a missing, empty, or unknown value, no default. SAFE mode also
+  ///         requires SAFE_ADDRESS (the executing Safe); EOA mode ignores it with a log.
   /// @param chainAlias The chain this run targets. A Safe batch executes on ONE chain, so
   ///        this scopes the output directory; without it two chains overwrite each other.
   function _initOutput(
     string memory chainAlias
   ) internal {
+    ConfigLib.assertChain(chainAlias);
     OutputMode mode = _parseOutputMode(vm.envOr("OUTPUT_MODE", string("")));
     // Read as a string first: a malformed value must not abort an EOA run that ignores it.
     string memory safeRaw = vm.envOr("SAFE_ADDRESS", string(""));
@@ -138,8 +140,7 @@ abstract contract BaseScript is Script {
     string memory name
   ) internal {
     if (outputMode != OutputMode.SAFE) return;
-    // One directory per chain. `block.chainid` is deliberately not used: SAFE mode can
-    // run without --rpc-url, where it is 31337 for every chain.
+    // Directory name comes from the supplied chain alias, not block.chainid.
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
     string memory dir = string.concat("out/safe/", outputChainAlias);
     string memory file = string.concat(dir, "/", name, ".json");
@@ -260,9 +261,9 @@ abstract contract BaseScript is Script {
     );
   }
 
-  /// @dev Safe validates chainId on import. `block.chainid` is 31337 whenever SAFE mode
-  ///      runs without --rpc-url — the intended key-free path — so the id comes from the
-  ///      chain config. Falls back only for a scope with no chain file (e.g. tests).
+  /// @dev Safe validates chainId on import. The id comes from the chain config — the
+  ///      declared intent, already verified against the connection by assertChain —
+  ///      falling back to `block.chainid` only for a scope with no chain file (e.g. tests).
   function _outputChainId() private view returns (uint256 chainId) {
     chainId = ConfigLib.readChainOrEmpty(outputChainAlias).chainId;
     if (chainId == 0) chainId = block.chainid;
