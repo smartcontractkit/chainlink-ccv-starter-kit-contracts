@@ -69,6 +69,8 @@ contract Harness is BaseScript {
 contract OwnedStub {
   address public owner;
 
+  // a test stub; zero is as valid an owner fixture as any
+  // forge-lint: disable-next-item(missing-zero-check)
   constructor(
     address owner_
   ) {

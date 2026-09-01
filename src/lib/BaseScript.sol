@@ -196,7 +196,7 @@ abstract contract BaseScript is Script {
     address expectedExecutor,
     address currentHolder,
     string memory rolePhrase
-  ) internal view {
+  ) internal pure {
     require(
       expectedExecutor == currentHolder,
       string.concat(

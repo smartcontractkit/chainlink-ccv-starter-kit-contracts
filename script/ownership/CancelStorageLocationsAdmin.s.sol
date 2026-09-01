@@ -56,7 +56,7 @@ contract CancelStorageLocationsAdmin is BaseScript {
   function requireExecutorIsCurrentAdmin(
     address verifier,
     address expectedExecutor
-  ) public pure {
+  ) public view {
     _requireExecutorHoldsRole(
       verifier,
       expectedExecutor,
