@@ -15,6 +15,8 @@
 # else byte-for-byte: alias, chainSelector, versionTag, finalityConfig, storageLocations,
 # resolverSalt. The immutable chainSelector is a GUARD (source.chainSelector must equal the file's).
 # A core field the source serves as null (explorerAddressPath is nullable) is skipped, not zeroed.
+# feeTokens is APPEND-ONLY: upstream additions merge in, but a token upstream drops is kept (and
+# NOTEd, not drift) so accrued fees stay sweepable — sweep, then hand-edit to retire it.
 #
 # JSON-parsing rule: all read/compare/merge goes through jq, which preserves uint64 literals.
 # Selectors and chainIds are compared as opaque text, never coerced to numbers.
