@@ -8,6 +8,7 @@ import {CancelStorageLocationsAdmin} from "../../script/ownership/CancelStorageL
 import {TransferOwnership} from "../../script/ownership/TransferOwnership.s.sol";
 import {TransferStorageLocationsAdmin} from "../../script/ownership/TransferStorageLocationsAdmin.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
@@ -298,15 +299,33 @@ contract OwnershipTest is CommitteeVerifierSetup {
   /// @dev Until this leg exists the deployer EOA stays factory owner, and
   ///      applyAllowListUpdates is onlyOwner — so the deployer key cannot be revoked
   ///      without giving up control of who may claim CREATE2 addresses.
-  function test_acceptOwnership_completesFactoryHandover() public {
+  function test_acceptOwnership_run_completesFactoryHandover() public {
     factory.transferOwnership(DEFAULT_SENDER);
     assertEq(factory.owner(), address(this), "propose does not move ownership");
 
-    BaseScript.Call[] memory accept = acceptOwner.callsFor(address(factory));
-    vm.prank(DEFAULT_SENDER);
-    _exec1(accept[0]);
+    // run() asserts chain identity, so the alias has a COMMITTED chain fixture
+    // (config/chains/zz-scratch-ownership-factory.json) declaring the test EVM's 31337.
+    ConfigLib.writeDeployment(
+      Types.Deployment({
+        aliasName: ALIAS_FACTORY, factory: address(factory), resolver: address(resolver), verifier: address(verifier)
+      })
+    );
+
+    // run() reads OUTPUT_MODE, which deliberately has no default. setEnv is process-global
+    // and memoised by forge, but this is the suite's only env-path run() call.
+    vm.setEnv("OUTPUT_MODE", "EOA");
+    acceptOwner.run(ALIAS_FACTORY, "factory");
 
     assertEq(factory.owner(), DEFAULT_SENDER, "factory ownership accepted");
+  }
+
+
+  function test_acceptOwnership_run_revertsOnWrongNetwork() public {
+    vm.chainId(11155111);
+    vm.expectRevert(
+      bytes(string.concat("ConfigLib: connected to chain 11155111 but ", ALIAS_FACTORY, " is chain 31337"))
+    );
+    acceptOwner.run(ALIAS_FACTORY, "factory");
   }
 
   function test_transferOwnership_callsFor_targetsFactory() public view {
@@ -331,6 +350,7 @@ contract OwnershipTest is CommitteeVerifierSetup {
   ///      zz-scratch- prefix the governance tooling skips.
   string internal constant ALIAS_DISPATCH = "zz-scratch-ownership-dispatch";
   string internal constant ALIAS_REJECT = "zz-scratch-ownership-reject";
+  string internal constant ALIAS_FACTORY = "zz-scratch-ownership-factory";
 
   function _deployment() internal view returns (Types.Deployment memory deployment) {
     deployment.aliasName = ALIAS;
