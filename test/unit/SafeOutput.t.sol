@@ -9,14 +9,23 @@ import {Test} from "forge-std/Test.sol";
 ///      Uses the explicit-mode initializer so tests never depend on process-global
 ///      env state (which is order- and parallelism-sensitive).
 contract Harness is BaseScript {
+  /// @dev Stands in for the executing Safe; only its presence in the batch JSON matters.
+  address public constant SAFE = address(0x5AFE);
+
   /// @dev Scoped to "test" so the batch lands in out/safe/test/, which .gitignore
   ///      excludes as a directory. Everything else under out/safe/ is committed.
   function initSafe() external {
-    _initOutput(OutputMode.SAFE, "test");
+    _initOutput(OutputMode.SAFE, "test", SAFE);
+  }
+
+  /// @dev Deliberately misconfigured (SAFE mode, no executing Safe) to exercise the
+  ///      _flush backstop; real runs cannot reach this state, env-driven init refuses it.
+  function initSafeWithoutAddress() external {
+    _initOutput(OutputMode.SAFE, "test", address(0));
   }
 
   function initEoa() external {
-    _initOutput(OutputMode.EOA, "");
+    _initOutput(OutputMode.EOA, "", address(0));
   }
 
   function mode() external view returns (OutputMode) {
@@ -70,8 +79,34 @@ contract SafeOutputTest is Test {
 
     assertEq(vm.parseJsonString(json, ".version"), "1.0");
     assertEq(vm.parseJsonString(json, ".chainId"), vm.toString(block.chainid));
+    assertEq(vm.parseJsonAddress(json, ".meta.createdFromSafeAddress"), h.SAFE(), "batch bound to the executing Safe");
     assertEq(vm.parseJsonAddress(json, ".transactions[0].to"), target);
     assertEq(vm.parseJsonString(json, ".transactions[0].value"), "0");
+  }
+
+  /// @dev A batch that names no executing Safe cannot be checked at import time, so
+  ///      flushing without SAFE_ADDRESS is refused even via the explicit-mode seam.
+  function test_flush_withoutSafeAddress_reverts() public {
+    Harness h = new Harness();
+    h.initSafeWithoutAddress();
+    h.stage(address(0xABCD), abi.encodeWithSignature("acceptOwnership()"));
+
+    vm.expectRevert(bytes("BaseScript: SAFE output needs SAFE_ADDRESS (the executing Safe)"));
+    h.flush("unbound-batch");
+  }
+
+  /// @dev The backstop guards the batch write only: with nothing staged no file is
+  ///      emitted, so an addressless flush stays a clean no-op.
+  function test_flush_withoutSafeAddress_isNoOpWhenNothingStaged() public {
+    Harness h = new Harness();
+    h.initSafeWithoutAddress();
+
+    string memory path = "out/safe/test/unbound-empty-batch.json";
+    if (vm.exists(path)) vm.removeFile(path);
+
+    h.flush("unbound-empty-batch");
+
+    assertFalse(vm.exists(path), "no file written for an empty batch");
   }
 
   /// @dev An empty batch is not signable, so no file should appear at all.

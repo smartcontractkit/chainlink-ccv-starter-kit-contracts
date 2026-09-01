@@ -86,6 +86,10 @@ forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)"
 # -> writes out/safe/sepolia/a-transfer-owner-verifier.json
 ```
 
+`SAFE_ADDRESS` is required in SAFE mode and recorded in each batch as
+`meta.createdFromSafeAddress`, so the Transaction Builder flags a batch imported
+into a different Safe. In EOA mode the variable is ignored (with a log).
+
 Multi-step ceremonies are split into **ordered** batch files (`a-` then `b-`, one
 directory per chain alias) so a signer can't execute steps out of order and permanently
 lock a contract. Handover order is **grant-new-before-revoke-old**; revoke the old
