@@ -319,7 +319,6 @@ contract OwnershipTest is CommitteeVerifierSetup {
     assertEq(factory.owner(), DEFAULT_SENDER, "factory ownership accepted");
   }
 
-
   function test_acceptOwnership_run_revertsOnWrongNetwork() public {
     vm.chainId(11155111);
     vm.expectRevert(
