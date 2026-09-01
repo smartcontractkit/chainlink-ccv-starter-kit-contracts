@@ -34,9 +34,8 @@ contract DeployResolver is Script {
     string calldata chainAlias
   ) external returns (address resolver) {
     // CREATE2 makes a wrong-chain deploy succeed at the expected address, so verify first.
-    ConfigLib.assertChain(chainAlias);
-
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    ConfigLib.assertChainMatches(chainConfig, chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
 

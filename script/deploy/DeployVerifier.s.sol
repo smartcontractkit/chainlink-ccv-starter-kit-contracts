@@ -31,9 +31,8 @@ contract DeployVerifier is Script {
     string calldata chainAlias
   ) external returns (address verifier) {
     // A wrong-chain deploy succeeds cleanly and pollutes the deployment record, so verify first.
-    ConfigLib.assertChain(chainAlias);
-
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    ConfigLib.assertChainMatches(chainConfig, chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
