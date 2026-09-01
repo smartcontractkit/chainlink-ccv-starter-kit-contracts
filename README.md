@@ -105,7 +105,9 @@ holder executes the `b-` (accept) leg — or simply calls `acceptOwnership()` fr
 their own tooling, since the propose leg already made them the pending holder.
 
 1. Owners — `TransferOwnership` / `AcceptOwnership`, target `verifier`, `resolver`
-   or `factory`.
+   or `factory`. `TransferOwnership` reads chain state, so `--rpc-url` is required
+   even in SAFE mode, where the batch is refused unless `SAFE_ADDRESS` is the
+   current on-chain owner.
 2. `storageLocationsAdmin` — `TransferStorageLocationsAdmin` /
    `AcceptStorageLocationsAdmin`; a **separate** admin role from the owner.
 3. Transitional `DynamicConfig` roles (allowlistAdmin / feeAggregator) are not
