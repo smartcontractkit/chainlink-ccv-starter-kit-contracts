@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {ConfigLib} from "./ConfigLib.sol";
+import {Ownable2Step} from "@chainlink/contracts/src/v0.8/shared/access/Ownable2Step.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -170,6 +171,61 @@ abstract contract BaseScript is Script {
 
   function stagedCount() internal view returns (uint256) {
     return _staged.length;
+  }
+
+  // ---------------------------------------------------------------------------
+  //  SAFE-mode executor preflight
+  //
+  //  The staged calls are role-gated on-chain, so a batch from any other Safe is
+  //  dead on arrival: fail at build time, before signatures are collected. EOA runs
+  //  need none of this — forge's pre-broadcast simulation already reverts there.
+  // ---------------------------------------------------------------------------
+
+  /// @notice Reverts unless expectedExecutor is the target's current owner.
+  function requireExecutorIsCurrentOwner(
+    address target,
+    address expectedExecutor
+  ) public view {
+    _requireExecutorHoldsRole(target, expectedExecutor, Ownable2Step(target).owner(), "current owner");
+  }
+
+  /// @dev Role-agnostic core: the caller reads the holder, so roles BaseScript has no
+  ///      business importing (e.g. CommitteeVerifier's admin) reuse the same assertion.
+  function _requireExecutorHoldsRole(
+    address target,
+    address expectedExecutor,
+    address currentHolder,
+    string memory rolePhrase
+  ) internal pure {
+    require(
+      expectedExecutor == currentHolder,
+      string.concat(
+        "BaseScript: SAFE_ADDRESS ",
+        vm.toString(expectedExecutor),
+        " is not the ",
+        rolePhrase,
+        " of ",
+        vm.toString(target),
+        "; the ",
+        rolePhrase,
+        " is ",
+        vm.toString(currentHolder)
+      )
+    );
+  }
+
+  /// @dev Preflights read chain state; against a codeless address the getter would fail
+  ///      undecodably instead of pointing at the real problem. Zero is refused too, with
+  ///      a config-shaped message: a caller that tolerates unrecorded targets guards first.
+  function _assertReachable(
+    address target,
+    string memory label
+  ) internal view {
+    require(target != address(0), string.concat("BaseScript: ", label, " is unset - not recorded in config?"));
+    require(
+      target.code.length != 0,
+      string.concat("BaseScript: no code at ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?")
+    );
   }
 
   // ---------------------------------------------------------------------------

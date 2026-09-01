@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {IERC20} from "@openzeppelin/contracts@5.3.0/token/ERC20/IERC20.sol";
-import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title BalanceReport
@@ -14,11 +14,12 @@ import {console2} from "forge-std/console2.sol";
 ///         resolver. Also reads each contract's configured feeAggregator ADDRESS (no
 ///         aggregator balances): zero means withdrawFeeTokens would revert, a mismatch
 ///         vs config/roles means a sweep would pay out to an unintended destination.
-/// @dev Read-only: no broadcasting, no Safe output. Run without --broadcast.
+/// @dev Read-only: no broadcasting, no Safe output. Run without --broadcast. Extends
+///      BaseScript for its shared preflights only; the staging plumbing goes unused.
 ///
 /// Usage:
 ///   forge script script/fees/BalanceReport.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
-contract BalanceReport is Script {
+contract BalanceReport is BaseScript {
   /// @notice Result for one (contract, token) pair. Returned so tests can assert on
   ///         the report instead of scraping console output.
   struct TokenBalance {
@@ -95,6 +96,7 @@ contract BalanceReport is Script {
     console2.log("  verifier:", deployment.verifier);
     console2.log("  resolver:", deployment.resolver);
 
+    // Both contracts must be recorded and reachable; a partial deployment is an error.
     _assertReachable(deployment.verifier, "verifier");
     _assertReachable(deployment.resolver, "resolver");
 
@@ -146,21 +148,5 @@ contract BalanceReport is Script {
         console2.log("    resolver balance: UNREADABLE (not an ERC20 at this address?)");
       }
     }
-  }
-
-  /// @dev A recorded address with no code means the wrong RPC (or none), not an empty
-  ///      balance. Without this the reads below silently yield zero and the sweep looks
-  ///      like a clean no-op. Unrecorded (zero) targets are a real state, so they pass.
-  function _assertReachable(
-    address target,
-    string memory label
-  ) private view {
-    if (target == address(0)) return;
-    require(
-      target.code.length != 0,
-      string.concat(
-        "BalanceReport: no code at recorded ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?"
-      )
-    );
   }
 }

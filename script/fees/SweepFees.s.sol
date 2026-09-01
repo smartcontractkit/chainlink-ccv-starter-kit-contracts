@@ -191,19 +191,4 @@ contract SweepFees is BaseScript {
       kept[i] = buf[i];
     }
   }
-
-  /// @dev A recorded address with no code means the wrong RPC (or none), not an empty
-  ///      balance. Without this the reads below silently yield zero and the sweep looks
-  ///      like a clean no-op. Callers require a recorded (non-zero) target first.
-  function _assertReachable(
-    address target,
-    string memory label
-  ) private view {
-    require(
-      target.code.length != 0,
-      string.concat(
-        "SweepFees: no code at recorded ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?"
-      )
-    );
-  }
 }

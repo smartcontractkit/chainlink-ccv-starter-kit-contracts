@@ -56,10 +56,30 @@ contract Harness is BaseScript {
   ) external pure returns (OutputMode) {
     return _parseOutputMode(modeName);
   }
+
+  function assertReachable(
+    address target,
+    string calldata label
+  ) external view {
+    _assertReachable(target, label);
+  }
 }
 
-/// @notice Unit tests for the shared EOA/Safe output switch and Safe Transaction
-///         Builder JSON emitter.
+/// @dev Minimal Ownable2Step stand-in: the preflight only reads owner().
+contract OwnedStub {
+  address public owner;
+
+  // a test stub; zero is as valid an owner fixture as any
+  // forge-lint: disable-next-item(missing-zero-check)
+  constructor(
+    address owner_
+  ) {
+    owner = owner_;
+  }
+}
+
+/// @notice Unit tests for the shared EOA/Safe output switch, the Safe Transaction
+///         Builder JSON emitter, and the SAFE-mode executor preflights.
 contract SafeOutputTest is Test {
   function test_safeMode_buffersAndEmitsValidBatch() public {
     Harness h = new Harness();
@@ -166,5 +186,60 @@ contract SafeOutputTest is Test {
     // In EOA mode _stage would broadcast + call immediately; here we only assert the
     // buffer stays empty (no Safe batch is produced). See fork tests for broadcast paths.
     assertEq(h.count(), 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  //  SAFE-mode executor preflight — shared by every role-transfer script; the
+  //  per-script wrappers are covered where their role getters live (Ownership.t.sol).
+  // ---------------------------------------------------------------------------
+
+  address internal constant INTERLOPER = address(0xBAD);
+  address internal constant OWNER = address(0x0117);
+
+  function test_executorPreflight_acceptsCurrentOwner() public {
+    Harness h = new Harness();
+    OwnedStub target = new OwnedStub(OWNER);
+    h.requireExecutorIsCurrentOwner(address(target), OWNER);
+  }
+
+  function test_executorPreflight_rejectsNonOwner() public {
+    Harness h = new Harness();
+    OwnedStub target = new OwnedStub(OWNER);
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "BaseScript: SAFE_ADDRESS ",
+          vm.toString(INTERLOPER),
+          " is not the current owner of ",
+          vm.toString(address(target)),
+          "; the current owner is ",
+          vm.toString(OWNER)
+        )
+      )
+    );
+    h.requireExecutorIsCurrentOwner(address(target), INTERLOPER);
+  }
+
+  function test_assertReachable_passesContract() public {
+    Harness h = new Harness();
+    h.assertReachable(address(h), "harness");
+  }
+
+  /// @dev Strict on zero: a caller that tolerates unrecorded targets guards before calling.
+  function test_assertReachable_rejectsZeroAddress() public {
+    Harness h = new Harness();
+    vm.expectRevert(bytes("BaseScript: verifier is unset - not recorded in config?"));
+    h.assertReachable(address(0), "verifier");
+  }
+
+  function test_assertReachable_rejectsCodelessAddress() public {
+    Harness h = new Harness();
+    address codeless = address(0xC0DE1E55);
+    vm.expectRevert(
+      bytes(
+        string.concat("BaseScript: no code at verifier ", vm.toString(codeless), " - wrong --rpc-url, or none passed?")
+      )
+    );
+    h.assertReachable(codeless, "verifier");
   }
 }

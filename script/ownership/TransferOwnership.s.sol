@@ -15,6 +15,9 @@ import {console2} from "forge-std/console2.sol";
 /// @dev HANDOVER ORDER: grant-new-before-revoke-old; only revoke the old holder
 ///      AFTER on-chain acceptance is confirmed (DriftCheck goes clean on the new owner).
 ///      The accept leg is prepared and executed by the incoming holder, not here.
+/// @dev Preflight reads chain state, so --rpc-url is required even in SAFE mode. In SAFE
+///      mode the batch is refused unless SAFE_ADDRESS is the current on-chain owner; EOA
+///      runs get the same guarantee from forge's pre-broadcast simulation reverting.
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/ownership/TransferOwnership.s.sol \
@@ -41,6 +44,10 @@ contract TransferOwnership is BaseScript {
     address newOwner = ConfigLib.targetOwner(roles, target);
     require(to != address(0), string.concat("TransferOwnership: ", target, " not recorded for ", chainAlias));
     require(newOwner != address(0), string.concat("TransferOwnership: ", target, " owner role unset"));
+    _assertReachable(to, target);
+    // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already
+    // reverts on a non-owner sender.
+    if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentOwner(to, outputSafeAddress);
 
     console2.log("[TransferOwnership]", target);
     console2.log("  target:", to);
