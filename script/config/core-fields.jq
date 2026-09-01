@@ -25,14 +25,20 @@ def norm(k; v):
 # Human-readable value: strings bare, everything else as JSON.
 def render(v): if (v | type) == "string" then v else (v | tojson) end;
 
-# feeTokens is APPEND-ONLY: the effective source is source ∪ config (config order first,
-# case-insensitive dedupe), so a token upstream drops is never removed locally — it stays
-# sweepable until the operator sweeps and hand-edits it out. Only upstream ADDITIONS diff.
+# Case-insensitive dedupe: first occurrence wins and keeps its casing; order preserved.
+def dedupe_case_insensitive:
+    reduce .[] as $t ({seen: {}, out: []};
+        ($t | ascii_downcase) as $k
+        | if .seen[$k] then . else .seen[$k] = true | .out += [$t] end)
+    | .out;
+
+# feeTokens is APPEND-ONLY: the effective source is config + source, deduped case-
+# insensitively (first occurrence wins), so a token upstream drops is never removed
+# locally — it stays sweepable until the operator sweeps and hand-edits it out.
+# Upstream additions diff; a case-variant duplicate inside the config diffs too, and sync collapses it.
 def with_fee_union($cfg; $src):
     if ($cfg | has("feeTokens")) and ($src.feeTokens != null)
-    then (($cfg.feeTokens // []) | map(ascii_downcase)) as $have
-       | $src + {feeTokens:
-           (($cfg.feeTokens // []) + [ $src.feeTokens[] | select((ascii_downcase) as $t | ($have | index($t)) == null) ])}
+    then $src + {feeTokens: ((($cfg.feeTokens // []) + $src.feeTokens) | dedupe_case_insensitive)}
     else $src end;
 
 # Core fields the target carries, the source supplies, and the two disagree on.
@@ -57,5 +63,5 @@ def seeded($tpl; $src):
 def fee_tokens_upstream_dropped($cfg; $src):
     if ($cfg | has("feeTokens")) and ($src.feeTokens != null)
     then (($src.feeTokens // []) | map(ascii_downcase)) as $kept
-       | [ ($cfg.feeTokens // [])[] | select((ascii_downcase) as $t | ($kept | index($t)) == null) ]
+       | [ (($cfg.feeTokens // []) | dedupe_case_insensitive)[] | select((ascii_downcase) as $t | ($kept | index($t)) == null) ]
     else [] end;

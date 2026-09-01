@@ -167,6 +167,18 @@ check "union written: local kept, upstream appended" \
 # restore agreement with the source for the sections below
 edit '.feeTokens = ["0xTTTT000000000000000000000000000000000001"]'
 
+echo "feeTokens: a case-variant duplicate in the config is drift and sync collapses it"
+edit '.feeTokens = ["0xTTTT000000000000000000000000000000000001","0xtttt000000000000000000000000000000000001"]'
+out="$(run check fixture)"
+rc=$?
+check "check exits 1" "$rc" "1"
+check "names the field" "$(echo "$out" | grep -c 'feeTokens:')" "1"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "duplicate collapsed to one entry" "$(jq -r '.feeTokens|length' "$CFG")" "1"
+check "first casing kept" "$(jq -r '.feeTokens[0]' "$CFG")" "0xTTTT000000000000000000000000000000000001"
+
 # ---------------------------------------------------------------- explorer path
 echo "explorerAddressPath: a changed explorer is drift like any other core field"
 edit '.explorerAddressPath = "https://old-explorer.example/address"'
