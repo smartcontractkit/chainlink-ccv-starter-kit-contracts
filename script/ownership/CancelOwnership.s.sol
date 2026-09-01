@@ -4,7 +4,6 @@ pragma solidity 0.8.26;
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
-import {Ownable2Step} from "@chainlink/contracts/src/v0.8/shared/access/Ownable2Step.sol";
 import {IOwnable} from "@chainlink/contracts/src/v0.8/shared/interfaces/IOwnable.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -51,38 +50,5 @@ contract CancelOwnership is BaseScript {
 
     _stageMany(callsFor(to));
     _flush(string.concat("cancel-owner-", target));
-  }
-
-  /// @notice Reverts unless expectedExecutor is the target's current owner.
-  /// @dev The cancel call is onlyOwner: a batch from any other Safe is dead on arrival,
-  ///      so a mismatch fails here at build time, before signatures are collected.
-  function requireExecutorIsCurrentOwner(
-    address target,
-    address expectedExecutor
-  ) public view {
-    address currentOwner = Ownable2Step(target).owner();
-    require(
-      expectedExecutor == currentOwner,
-      string.concat(
-        "CancelOwnership: SAFE_ADDRESS ",
-        vm.toString(expectedExecutor),
-        " is not the current owner ",
-        vm.toString(currentOwner)
-      )
-    );
-  }
-
-  /// @dev The executor preflight reads chain state; against a codeless address the
-  ///      owner() read would fail undecodably instead of pointing at the real problem.
-  function _assertReachable(
-    address target,
-    string memory label
-  ) private view {
-    require(
-      target.code.length != 0,
-      string.concat(
-        "CancelOwnership: no code at ", label, " ", vm.toString(target), " - wrong --rpc-url, or none passed?"
-      )
-    );
   }
 }

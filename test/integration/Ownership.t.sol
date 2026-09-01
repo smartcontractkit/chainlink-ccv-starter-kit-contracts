@@ -240,38 +240,23 @@ contract OwnershipTest is CommitteeVerifierSetup {
     assertEq(verifier.getPendingStorageLocationsAdmin(), NEW_ADMIN, "proposal survives an unauthorized cancel");
   }
 
-  // ---- SAFE-mode executor preflight: the batch is refused at build time unless ----
-  // ---- the declared executing Safe holds the role the cancel call requires.    ----
+  // ---- SAFE-mode executor preflight: the generic mechanism is BaseScript's and ----
+  // ---- unit-tested in SafeOutput.t.sol; here only the CancelStorageLocations-  ----
+  // ---- Admin wrapper, whose role getter is verifier-specific.                  ----
 
-  function test_cancelOwnership_executorPreflight_acceptsCurrentOwner() public view {
-    cancelOwner.requireExecutorIsCurrentOwner(address(verifier), address(this));
-  }
-
-  function test_cancelOwnership_executorPreflight_rejectsNonOwner() public {
-    vm.expectRevert(
-      bytes(
-        string.concat(
-          "CancelOwnership: SAFE_ADDRESS ",
-          vm.toString(INTERLOPER),
-          " is not the current owner ",
-          vm.toString(address(this))
-        )
-      )
-    );
-    cancelOwner.requireExecutorIsCurrentOwner(address(verifier), INTERLOPER);
-  }
-
-  function test_cancelStorageLocationsAdmin_executorPreflight_acceptsCurrentAdmin() public view {
+  function test_executorPreflight_acceptsCurrentAdmin() public view {
     cancelSla.requireExecutorIsCurrentAdmin(address(verifier), address(this));
   }
 
-  function test_cancelStorageLocationsAdmin_executorPreflight_rejectsNonAdmin() public {
+  function test_executorPreflight_rejectsNonAdmin() public {
     vm.expectRevert(
       bytes(
         string.concat(
-          "CancelStorageLocationsAdmin: SAFE_ADDRESS ",
+          "BaseScript: SAFE_ADDRESS ",
           vm.toString(INTERLOPER),
-          " is not the current storageLocationsAdmin ",
+          " is not the current storageLocationsAdmin of ",
+          vm.toString(address(verifier)),
+          "; the current storageLocationsAdmin is ",
           vm.toString(address(this))
         )
       )

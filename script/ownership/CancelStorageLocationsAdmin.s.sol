@@ -38,7 +38,7 @@ contract CancelStorageLocationsAdmin is BaseScript {
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     require(deployment.verifier != address(0), "CancelStorageLocationsAdmin: verifier unset");
-    _assertReachable(deployment.verifier);
+    _assertReachable(deployment.verifier, "verifier");
     // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already
     // reverts on a non-admin sender. Only a deferred batch can hide the mismatch.
     if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentAdmin(deployment.verifier, outputSafeAddress);
@@ -51,36 +51,17 @@ contract CancelStorageLocationsAdmin is BaseScript {
   }
 
   /// @notice Reverts unless expectedExecutor is the verifier's current storageLocationsAdmin.
-  /// @dev The cancel call is admin-gated: a batch from any other Safe is dead on arrival,
-  ///      so a mismatch fails here at build time, before signatures are collected.
+  /// @dev Thin wrapper: only the role getter is CommitteeVerifier-specific, the
+  ///      assertion itself is BaseScript's.
   function requireExecutorIsCurrentAdmin(
     address verifier,
     address expectedExecutor
   ) public view {
-    address currentAdmin = CommitteeVerifier(verifier).getStorageLocationsAdmin();
-    require(
-      expectedExecutor == currentAdmin,
-      string.concat(
-        "CancelStorageLocationsAdmin: SAFE_ADDRESS ",
-        vm.toString(expectedExecutor),
-        " is not the current storageLocationsAdmin ",
-        vm.toString(currentAdmin)
-      )
-    );
-  }
-
-  /// @dev The executor preflight reads chain state; against a codeless address the
-  ///      getter read would fail undecodably instead of pointing at the real problem.
-  function _assertReachable(
-    address verifier
-  ) private view {
-    require(
-      verifier.code.length != 0,
-      string.concat(
-        "CancelStorageLocationsAdmin: no code at verifier ",
-        vm.toString(verifier),
-        " - wrong --rpc-url, or none passed?"
-      )
+    _requireExecutorHoldsRole(
+      verifier,
+      expectedExecutor,
+      CommitteeVerifier(verifier).getStorageLocationsAdmin(),
+      "current storageLocationsAdmin"
     );
   }
 }
