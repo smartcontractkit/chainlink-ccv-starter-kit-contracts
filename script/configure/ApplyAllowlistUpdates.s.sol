@@ -112,7 +112,9 @@ contract ApplyAllowlistUpdates is BaseScript {
       return;
     }
     console2.log("[ApplyAllowlistUpdates] staged lanes:", staged, "of", matched);
-    _flush(string.concat("apply-allowlist-updates-", chainAlias));
+    // The tag is part of the batch name: per-tag runs on the same chain must not
+    // overwrite each other's Safe batch.
+    _flush(string.concat("apply-allowlist-updates-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 
   /// @notice True when the config already matches on-chain: the flag matches, every

@@ -100,6 +100,6 @@ contract SetAllowedFinalityConfig is BaseScript {
     validateFinalityPolicy(chainConfig.finalityConfig);
 
     _stageMany(callsFor(verifier, chainConfig.finalityConfig));
-    _flush("set-allowed-finality-config");
+    _flush(string.concat("set-allowed-finality-config-", ConfigLib.tagToString(versionTag)));
   }
 }

@@ -143,7 +143,9 @@ contract ApplySignatureConfigs is BaseScript {
       return;
     }
     console2.log("[ApplySignatureConfigs] staged lanes:", staged, "of", matched);
-    _flush(string.concat("apply-signature-configs-", chainAlias));
+    // The tag is part of the batch name: per-tag runs on the same chain must not
+    // overwrite each other's Safe batch.
+    _flush(string.concat("apply-signature-configs-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 
   /// @notice True when the config already matches on-chain: the verifier holds this

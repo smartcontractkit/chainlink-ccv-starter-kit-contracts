@@ -36,7 +36,13 @@ contract DeployVerifier is Script {
     string calldata chainAlias,
     bytes4 versionTag
   ) external returns (address verifier) {
-    // A wrong-chain deploy succeeds cleanly and pollutes the deployment record, so verify first.
+    // Validate the tag before any tag-keyed lookup, so a bad argument fails on
+    // itself rather than inside a config read.
+    require(versionTag != bytes4(0), "DeployVerifier: versionTag must be non-zero");
+    // The repo-wide catalog is the spelling authority for tags (they must match across
+    // chains); an uncataloged tag is a typo or an undeclared verifier.
+    ConfigLib.requireKnownTag(versionTag, "deploy argument");
+
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     ConfigLib.assertChainMatches(chainConfig, chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
@@ -46,10 +52,6 @@ contract DeployVerifier is Script {
     Types.VerifierRoles memory verifierRoles = ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag);
 
     require(chainConfig.rmn != address(0), "DeployVerifier: rmn must be non-zero");
-    require(versionTag != bytes4(0), "DeployVerifier: versionTag must be non-zero");
-    // The repo-wide catalog is the spelling authority for tags (they must match across
-    // chains); an uncataloged tag is a typo or an undeclared verifier.
-    ConfigLib.requireKnownTag(versionTag, "deploy argument");
     require(verifierRoles.owner != address(0), "DeployVerifier: verifier.owner role unset");
     require(
       verifierRoles.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset"

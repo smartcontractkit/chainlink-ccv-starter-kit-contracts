@@ -82,7 +82,7 @@ contract ApplyInboundImplementationUpdates is BaseScript {
   function _inboundTags(
     string[] memory lanePaths,
     string memory chainAlias
-  ) private view returns (bytes4[] memory tags) {
+  ) internal view returns (bytes4[] memory tags) {
     bytes4[] memory buf = new bytes4[](lanePaths.length);
     uint256 n = 0;
     for (uint256 i = 0; i < lanePaths.length; ++i) {

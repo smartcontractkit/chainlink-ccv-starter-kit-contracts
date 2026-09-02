@@ -33,6 +33,6 @@ contract AcceptStorageLocationsAdmin is BaseScript {
     console2.log("  verifier:", verifier);
 
     _stageMany(callsFor(verifier));
-    _flush("accept-storage-locations-admin");
+    _flush(string.concat("accept-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 }

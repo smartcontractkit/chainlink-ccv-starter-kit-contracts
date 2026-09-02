@@ -48,6 +48,6 @@ contract UpdateStorageLocations is BaseScript {
     }
 
     _stageMany(callsFor(verifier, chainConfig.storageLocations));
-    _flush("update-storage-locations");
+    _flush(string.concat("update-storage-locations-", ConfigLib.tagToString(versionTag)));
   }
 }

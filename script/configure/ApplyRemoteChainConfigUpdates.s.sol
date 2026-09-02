@@ -115,7 +115,9 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
       return;
     }
     console2.log("[ApplyRemoteChainConfigUpdates] staged lanes:", staged, "of", matched);
-    _flush(string.concat("apply-remote-chain-config-", chainAlias));
+    // The tag is part of the batch name: per-tag runs on the same chain must not
+    // overwrite each other's Safe batch.
+    _flush(string.concat("apply-remote-chain-config-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 
   /// @notice True when the config already matches on-chain: every field this script

@@ -45,6 +45,6 @@ contract TransferStorageLocationsAdmin is BaseScript {
     console2.log("  (must acceptStorageLocationsAdmin() to take effect)");
 
     _stageMany(callsFor(verifier, proposedAdmin));
-    _flush("transfer-storage-locations-admin");
+    _flush(string.concat("transfer-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 }

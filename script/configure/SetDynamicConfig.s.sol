@@ -58,6 +58,6 @@ contract SetDynamicConfig is BaseScript {
     }
 
     _stageMany(callsFor(verifier, toDynamicConfig(verifierRoles)));
-    _flush("set-dynamic-config");
+    _flush(string.concat("set-dynamic-config-", ConfigLib.tagToString(versionTag)));
   }
 }

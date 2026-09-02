@@ -49,7 +49,7 @@ contract CancelStorageLocationsAdmin is BaseScript {
     console2.log("  clearing any pending storageLocationsAdmin (re-proposing address(0))");
 
     _stageMany(callsFor(verifier));
-    _flush("cancel-storage-locations-admin");
+    _flush(string.concat("cancel-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 
   /// @notice Reverts unless expectedExecutor is the verifier's current storageLocationsAdmin.
