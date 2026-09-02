@@ -137,6 +137,48 @@ check "exit 0" "$rc" "0"
 check "reports MATCH" "$(echo "$out" | grep -c MATCH)" "1"
 check "file unchanged" "$(hash_of "$CFG")" "$before"
 
+# ---------------------------------------------------------------- feeTokens append-only
+echo "feeTokens: a token the upstream dropped is kept - NOTE, not drift"
+edit '.feeTokens += ["0xAAAA000000000000000000000000000000000001"]'
+before="$(hash_of "$CFG")"
+out="$(run check fixture)"
+rc=$?
+check "check exits 0" "$rc" "0"
+check "check reports the NOTE" "$(echo "$out" | grep -c 'upstream no longer serves fee token')" "1"
+check "check still reports MATCH" "$(echo "$out" | grep -c MATCH)" "1"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "sync writes nothing" "$(hash_of "$CFG")" "$before"
+check "local token kept" "$(jq -r '.feeTokens|length' "$CFG")" "2"
+
+echo "feeTokens: an upstream addition is drift and syncs in as an APPEND (union)"
+edit '.feeTokens = ["0xAAAA000000000000000000000000000000000001"]' # source token missing, local-only token kept
+out="$(run check fixture)"
+rc=$?
+check "check exits 1" "$rc" "1"
+check "names the field" "$(echo "$out" | grep -c 'feeTokens:')" "1"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "union written: local kept, upstream appended" \
+    "$(jq -c '.feeTokens | sort' "$CFG")" \
+    '["0xAAAA000000000000000000000000000000000001","0xTTTT000000000000000000000000000000000001"]'
+# restore agreement with the source for the sections below
+edit '.feeTokens = ["0xTTTT000000000000000000000000000000000001"]'
+
+echo "feeTokens: a case-variant duplicate in the config is drift and sync collapses it"
+edit '.feeTokens = ["0xTTTT000000000000000000000000000000000001","0xtttt000000000000000000000000000000000001"]'
+out="$(run check fixture)"
+rc=$?
+check "check exits 1" "$rc" "1"
+check "names the field" "$(echo "$out" | grep -c 'feeTokens:')" "1"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "duplicate collapsed to one entry" "$(jq -r '.feeTokens|length' "$CFG")" "1"
+check "first casing kept" "$(jq -r '.feeTokens[0]' "$CFG")" "0xTTTT000000000000000000000000000000000001"
+
 # ---------------------------------------------------------------- explorer path
 echo "explorerAddressPath: a changed explorer is drift like any other core field"
 edit '.explorerAddressPath = "https://old-explorer.example/address"'

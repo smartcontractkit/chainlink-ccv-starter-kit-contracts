@@ -56,6 +56,10 @@ authoritative about what it serves. Naming such a chain explicitly (`check <alia
 still fails, because a direct question deserves the real answer: it may equally be a
 typo'd selector.
 
+A fee token kept locally that the upstream no longer serves is a `NOTE`, not drift —
+`feeTokens` is append-only (see `sync`), so a local superset is the expected state
+until the operator sweeps and retires the token by hand.
+
 ## `sync` — accept upstream changes
 
 ```bash
@@ -64,6 +68,13 @@ typo'd selector.
 
 The only writer. Overwrites the core fields and preserves every other key
 byte-for-byte, atomically (temp file, validate, rename).
+
+`feeTokens` is the one **append-only** core field: upstream additions merge in, but a
+token the upstream drops is kept — removing it from the config would make the fee
+scripts skip any balance still accrued in it. Both `check` and `sync` print a `NOTE`
+naming such tokens. To retire one: sweep its fees (`SweepFees` reads this config, so
+sweep while the token is still listed), then hand-edit it out — the sync will not
+re-add a token the upstream no longer serves.
 
 There is deliberately **no `sync --all`**: accepting upstream values is a per-chain
 decision, and `rmn` is immutable in a deployed verifier — the config is the only record

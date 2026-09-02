@@ -46,6 +46,16 @@ if [ -n "$API_NAME" ] && [ "$API_NAME" != "$NAME" ]; then
 fi
 
 # ---- compare -------------------------------------------------------------------
+# feeTokens is append-only (core-fields.jq unions source with config), so a token
+# upstream drops is kept, never counted as drift. Informational NOTE either way:
+# to retire one, sweep its accrued fees first, then hand-edit it out of the config.
+DROPPED_TOKENS="$(jqlib -r --slurpfile src "$FLAT_PATH" \
+    'include "core-fields"; fee_tokens_upstream_dropped(.; $src[0]) | join(", ")' "$CONFIG_PATH")"
+if [ -n "$DROPPED_TOKENS" ]; then
+    echo "  NOTE $NAME: upstream no longer serves fee token(s): $DROPPED_TOKENS"
+    echo "      kept locally (feeTokens is append-only); sweep (SweepFees), then hand-edit to retire"
+fi
+
 DIFF_LINES="$(jqlib -r --slurpfile src "$FLAT_PATH" \
     'include "core-fields"; diff_lines(.; $src[0])' "$CONFIG_PATH")"
 
