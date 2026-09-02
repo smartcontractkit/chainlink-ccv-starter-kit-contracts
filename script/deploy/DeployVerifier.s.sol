@@ -49,7 +49,7 @@ contract DeployVerifier is Script {
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
     // Roles are per verifier and precede the deploy: reverts unless
     // config/roles/<alias>.json declares a verifiers entry for this tag.
-    Types.VerifierRoles memory verifierRoles = ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag);
+    Types.VerifierRoles memory verifierRoles = ConfigLib.verifierRolesByTag(roles, versionTag);
 
     require(chainConfig.rmn != address(0), "DeployVerifier: rmn must be non-zero");
     require(verifierRoles.owner != address(0), "DeployVerifier: verifier.owner role unset");
