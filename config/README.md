@@ -39,25 +39,18 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 ```
 
 > `feeTokens` drives `BalanceReport` (reads `balanceOf` for the verifier and resolver)
-> and `SweepFees` (passes the list to `withdrawFeeTokens`). The key is **optional by
-> design**: fee sweeping is opt-in per chain, so a chain whose list is not decided yet still
-> loads for every other script — an absent or empty list makes both fee scripts a logged
-> no-op rather than an error. The set of tokens that can actually accrue is governed by
-> CCIP's `FeeQuoter`; this list mirrors it, synced from the CCIP API by
-> `script/config/sync-ccip-config.sh` rather than maintained by hand.
-> `SweepFees` filters the list by current balance: tokens reading zero at build time are
-> omitted from the staged call, and a contract with nothing to sweep gets no call at all.
-> Set `SKIP_ZERO_BALANCES=false` to stage every listed token regardless of balance — for
-> Safe batches executed long after they are built, where fees may accrue in between.
+> and `SweepFees` (passes the list to `withdrawFeeTokens`). Optional by design: an absent
+> or empty list makes both fee scripts a logged no-op, so a chain whose list is not
+> decided yet still loads for every other script. Zero-balance tokens are omitted from
+> the staged sweep by default; `SKIP_ZERO_BALANCES=false` stages every listed token — for
+> Safe batches executed long after they are built, where fees accrue in between.
 >
-> **Lean append-only; prune deliberately.** Read this field as "every token that could
-> hold a balance here", not "tokens Chainlink supports today" — de-supporting a token does
-> not zero a balance already sitting on the verifier, and `withdrawFeeTokens` is its only
-> exit. Removing an entry is reversible (re-add it and sweep), but any balance arriving
-> after removal sits unswept and invisible until someone remembers to. Prune a token only
-> once nothing more can arrive: the FeeQuoter no longer supports it, both contracts read
-> zero in `BalanceReport`, and no in-flight messages could still pay fees in it. Until
-> then a stale entry costs one `balanceOf` per sweep and is skipped silently at zero.
+> The list mirrors CCIP's `FeeQuoter` and is maintained by the sync tooling,
+> **append-only**: `sync` merges upstream additions in, and a token the upstream drops is
+> kept and flagged as a `NOTE` — de-supporting a token does not zero a balance already
+> sitting on the contracts, and `withdrawFeeTokens` is its only exit. Pruning is the one
+> manual step: once the upstream no longer serves the token and both contracts read zero
+> in `BalanceReport`, sweep and hand-edit it out — the sync will not re-add it.
 >
 > ⚠️ Every entry must be a real ERC20 **with code**. A zero address, a codeless address,
 > or a `balanceOf` that reverts fails the `SweepFees` build with the offending entry named —
@@ -78,10 +71,10 @@ Notes:
 - `resolverSalt` must be the **same value on every chain** for the resolver to get
   the same address everywhere. The factory itself gets address parity from a
   fresh nonce-0 deployer (CREATE, not CREATE2) — it has no salt.
-- `versionTag` is NOT chain state. It is a deploy input: `DeployVerifier` takes the tag
-  as an argument (`--sig "run(string,bytes4)" <alias> 0x00010001`) and appends the new
-  verifier to `deployments/<alias>.json`. Each lane pins the verifier serving it via
-  its own mandatory `versionTag`.
+- `DeployVerifier` takes `versionTag` as an argument (`--sig "run(string,bytes4)" <alias>
+  0x00010001`) and appends the new verifier to `deployments/<alias>.json`. Each lane pins
+  the verifier serving it via its own mandatory `versionTag` field; the catalog lives in
+  `config/version-tags.json`.
 
 ## `lanes/<source>-to-<dest>.json`
 
@@ -127,17 +120,12 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
 }
 ```
 
-> ⚠️ **Direction mapping is an OPEN ITEM to confirm against Chainlink's own Go
-> sequence** `configure_committee_verifier_for_lanes.go`. The mapping above
-> (signature config keyed by source, remote/allowlist keyed by dest) is the
-> working assumption; verify which side each call is executed on before a real run.
-
 ## `roles/<alias>.json`
 
-Machine-checkable intent for the drift-check script (outline step 16). Verifier roles
-are PER DEPLOYMENT, keyed by `versionTag` like the deployment record — declare a new
-verifier's entry BEFORE deploying it (`DeployVerifier` reads it to set DynamicConfig
-and propose the handovers, and refuses a tag with no entry).
+Machine-checkable intent for the drift-check script. Verifier roles are per deployment,
+keyed by `versionTag` like the deployment record — declare a new verifier's entry BEFORE
+deploying it (`DeployVerifier` reads it to set DynamicConfig and propose the handovers,
+and refuses a tag with no entry).
 
 ```jsonc
 {
