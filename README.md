@@ -43,6 +43,7 @@ foundryup -v v1.8.1         # match CI; `exclude_lints` in foundry.toml needs >=
 npm install                 # installs @chainlink/contracts-ccip@2.0.0 (pinned) + deps
 forge install foundry-rs/forge-std   # or: git submodule; provides lib/forge-std
 cp .env.example .env        # then fill in RPC URLs, KMS/keys, explorer keys
+cp config/version-tags.example.json config/version-tags.json  # tag catalog
 ```
 
 Compiler settings are pinned in `foundry.toml` (`solc 0.8.26`, `evm_version paris`,

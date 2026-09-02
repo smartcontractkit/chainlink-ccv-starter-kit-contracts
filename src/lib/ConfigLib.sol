@@ -270,8 +270,8 @@ library ConfigLib {
     lane.dest.chainSelector =
       _toUint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")), ".dest.chainSelector");
 
-    // Mandatory: the lane pins the verifier serving it (both legs — the
-    // contract forces source tag == dest tag). No inheritance, no sole-verifier default.
+    // Mandatory: the lane pins the verifier serving it (both legs — the contract forces
+    // source tag == dest tag).
     require(
       vm.keyExistsJson(json, ".versionTag"),
       string.concat("ConfigLib: lane ", lane.name, " has no versionTag - add \"versionTag\": \"0x00010001\" (bytes4)")
