@@ -27,20 +27,36 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
     Types.RolesConfig memory roles = script.snapshot(_deployment());
 
     assertEq(roles.aliasName, ALIAS, "alias carried through");
-    assertEq(roles.verifier.owner, address(this), "verifier owner");
-    assertEq(roles.verifier.storageLocationsAdmin, address(this), "storageLocationsAdmin (constructor: deployer)");
-    assertEq(roles.verifier.allowlistAdmin, address(this), "allowlistAdmin from DynamicConfig");
-    assertEq(roles.verifier.feeAggregator, FEE_AGGREGATOR, "feeAggregator from DynamicConfig");
+    assertEq(roles.verifiers.length, 1, "one entry per recorded verifier");
+    assertEq(roles.verifiers[0].versionTag, VERSION_TAG, "entry keyed by the recorded tag");
+    assertEq(roles.verifiers[0].owner, address(this), "verifier owner");
+    assertEq(roles.verifiers[0].storageLocationsAdmin, address(this), "storageLocationsAdmin (constructor: deployer)");
+    assertEq(roles.verifiers[0].allowlistAdmin, address(this), "allowlistAdmin from DynamicConfig");
+    assertEq(roles.verifiers[0].feeAggregator, FEE_AGGREGATOR, "feeAggregator from DynamicConfig");
     assertEq(roles.resolver.owner, address(this), "resolver owner");
     assertEq(roles.resolver.feeAggregator, RESOLVER_FEE_AGGREGATOR, "resolver feeAggregator");
     assertEq(roles.factoryOwner, address(this), "factory owner");
+  }
+
+  /// @dev Every recorded verifier gets its own entry, read from ITS contract.
+  function test_snapshot_readsEveryVerifier() public {
+    _deploySecondVerifier();
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    Types.RolesConfig memory roles = script.snapshot(deployment);
+    assertEq(roles.verifiers.length, 2, "one entry per verifier");
+    assertEq(roles.verifiers[1].versionTag, VERSION_TAG_V2, "second entry keyed by its tag");
+    assertEq(roles.verifiers[1].owner, address(this), "second verifier's owner read from its contract");
   }
 
   /// @dev The verifier and resolver aggregators are distinct storage on distinct
   ///      contracts; the snapshot must not conflate them.
   function test_snapshot_keepsFeeAggregatorsDistinct() public view {
     Types.RolesConfig memory roles = script.snapshot(_deployment());
-    assertTrue(roles.verifier.feeAggregator != roles.resolver.feeAggregator, "aggregators read independently");
+    assertTrue(roles.verifiers[0].feeAggregator != roles.resolver.feeAggregator, "aggregators read independently");
   }
 
   function test_snapshot_absentFactory_leavesOwnerZero() public view {
@@ -59,10 +75,14 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
     Types.RolesConfig memory reloaded = ConfigLib.readRolesByPath(path);
 
     assertEq(reloaded.aliasName, snapped.aliasName, "alias");
-    assertEq(reloaded.verifier.owner, snapped.verifier.owner, "verifier owner");
-    assertEq(reloaded.verifier.storageLocationsAdmin, snapped.verifier.storageLocationsAdmin, "storageLocationsAdmin");
-    assertEq(reloaded.verifier.allowlistAdmin, snapped.verifier.allowlistAdmin, "allowlistAdmin");
-    assertEq(reloaded.verifier.feeAggregator, snapped.verifier.feeAggregator, "verifier feeAggregator");
+    assertEq(reloaded.verifiers.length, snapped.verifiers.length, "verifier count");
+    assertEq(reloaded.verifiers[0].versionTag, snapped.verifiers[0].versionTag, "versionTag");
+    assertEq(reloaded.verifiers[0].owner, snapped.verifiers[0].owner, "verifier owner");
+    assertEq(
+      reloaded.verifiers[0].storageLocationsAdmin, snapped.verifiers[0].storageLocationsAdmin, "storageLocationsAdmin"
+    );
+    assertEq(reloaded.verifiers[0].allowlistAdmin, snapped.verifiers[0].allowlistAdmin, "allowlistAdmin");
+    assertEq(reloaded.verifiers[0].feeAggregator, snapped.verifiers[0].feeAggregator, "verifier feeAggregator");
     assertEq(reloaded.resolver.owner, snapped.resolver.owner, "resolver owner");
     assertEq(reloaded.resolver.feeAggregator, snapped.resolver.feeAggregator, "resolver feeAggregator");
     assertEq(reloaded.factoryOwner, snapped.factoryOwner, "factory owner");
@@ -73,7 +93,9 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
   ///      If one script grows a field the other ignores, this fails.
   function test_snapshotThenDriftCheck_isClean() public {
     Types.RolesConfig memory snapped = script.snapshot(_deployment());
-    string memory path = script.writeSnapshot(ALIAS, snapped);
+    // A distinct alias per writing test: the snapshot path is alias+block, forge runs
+    // tests concurrently against a shared filesystem, and same path == a read/write race.
+    string memory path = script.writeSnapshot(string.concat(ALIAS, "-drift"), snapped);
     Types.RolesConfig memory promoted = ConfigLib.readRolesByPath(path);
 
     DriftCheck drift = new DriftCheck();
@@ -84,6 +106,6 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
     deployment.aliasName = ALIAS;
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
-    deployment.verifier = address(verifier);
+    deployment.verifiers = _verifiersOf(address(verifier));
   }
 }

@@ -103,7 +103,9 @@ contract SweepFeesTest is FeeScriptsSetup {
     address verifierAggregator,
     address resolverAggregator
   ) private pure returns (Types.RolesConfig memory roles) {
-    roles.verifier.feeAggregator = verifierAggregator;
+    roles.verifiers = new Types.VerifierRoles[](1);
+    roles.verifiers[0].versionTag = VERSION_TAG;
+    roles.verifiers[0].feeAggregator = verifierAggregator;
     roles.resolver.feeAggregator = resolverAggregator;
   }
 
@@ -175,9 +177,68 @@ contract SweepFeesTest is FeeScriptsSetup {
     assertEq(calls.length, 0, "both skipped: nothing sweepable");
   }
 
+  /// @dev Fees accrue on old verifiers from in-flight messages while they drain, so
+  ///      the batch must cover EVERY recorded verifier, each with the filtered token
+  ///      list it actually holds.
+  function test_batch_sweepsEveryVerifier() public {
+    _deploySecondVerifier(); // its constructor aggregator is FEE_AGGREGATOR
+    tokenA.mint(address(verifierV2), 5e18); // gen 2 holds only tokenA
+
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    Types.RolesConfig memory roles = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
+    roles.verifiers = new Types.VerifierRoles[](2);
+    roles.verifiers[0].versionTag = VERSION_TAG;
+    roles.verifiers[0].feeAggregator = VERIFIER_AGG;
+    roles.verifiers[1].versionTag = VERSION_TAG_V2;
+    roles.verifiers[1].feeAggregator = FEE_AGGREGATOR;
+
+    BaseScript.Call[] memory calls = script.buildSweepBatch(deployment, roles, _bothTokens(), true);
+
+    assertEq(calls.length, 3, "verifier 1 + verifier 2 + resolver");
+    assertEq(calls[0].to, address(verifier), "verifier 1 first");
+    assertEq(calls[1].to, address(verifierV2), "verifier 2 second");
+    assertEq(calls[2].to, address(resolver), "resolver last");
+
+    address[] memory onlyA = new address[](1);
+    onlyA[0] = address(tokenA);
+    assertEq(
+      keccak256(calls[1].data),
+      keccak256(script.buildWithdrawCall(address(verifierV2), onlyA).data),
+      "verifier 2 sweeps only the token it holds"
+    );
+  }
+
+  /// @dev A recorded verifier with no roles entry cannot be aggregator-checked, so the
+  ///      whole sweep fails closed rather than skipping it silently.
+  function test_batch_revertsWhenVerifierHasNoRolesEntry() public {
+    _deploySecondVerifier();
+
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    Types.RolesConfig memory roles = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
+    roles.aliasName = "test_fee_chain"; // only verifier 1 declared
+
+    vm.expectRevert(
+      bytes(
+        "ConfigLib: no verifier roles for versionTag 0x00010002 in config/roles/test_fee_chain.json"
+        " - declare that verifier's roles first"
+      )
+    );
+    // the expected revert is the assertion; the return never materialises
+    // forge-lint: disable-next-line(unused-return)
+    script.buildSweepBatch(deployment, roles, _bothTokens(), true);
+  }
+
   function test_batch_revertsOnUndeclaredIntent() public {
     vm.expectRevert(
-      bytes("SweepFees: verifier feeAggregator is not declared in config/roles - declare it before sweeping")
+      bytes("SweepFees: verifier 0x00010001 feeAggregator is not declared in config/roles - declare it before sweeping")
     );
     // the expected revert is the assertion; the return never materialises
     // forge-lint: disable-next-line(unused-return)
@@ -192,7 +253,7 @@ contract SweepFeesTest is FeeScriptsSetup {
     vm.expectRevert(
       bytes(
         string.concat(
-          "SweepFees: verifier feeAggregator on-chain ",
+          "SweepFees: verifier 0x00010001 feeAggregator on-chain ",
           vm.toString(address(0)),
           " does not match config/roles ",
           vm.toString(VERIFIER_AGG)

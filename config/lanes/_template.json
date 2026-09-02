@@ -8,6 +8,7 @@
     "alias": "",
     "chainSelector": ""
   },
+  "versionTag": "0x00000000",
   "signatureConfig": {
     "threshold": 0,
     "signers": []

@@ -13,9 +13,9 @@ import {console2} from "forge-std/console2.sol";
 ///         CALLER MUST BE THE storageLocationsAdmin, NOT the owner (else reverts
 ///         OnlyCallableByStorageLocationsAdmin).
 ///
-/// Usage:
+/// Usage (versionTag selects which recorded verifier to update):
 ///   OUTPUT_MODE=SAFE forge script script/configure/UpdateStorageLocations.s.sol \
-///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 contract UpdateStorageLocations is BaseScript {
   /// @notice Single source of truth for the updateStorageLocations calldata.
   function callsFor(
@@ -28,25 +28,26 @@ contract UpdateStorageLocations is BaseScript {
   }
 
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
     _initOutput(chainAlias);
 
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    require(
-      deployment.verifier != address(0), string.concat("UpdateStorageLocations: verifier not recorded for ", chainAlias)
-    );
+    address verifier = ConfigLib.verifierByTag(deployment, versionTag);
+    _assertReachable(verifier, "verifier");
 
     console2.log("[UpdateStorageLocations] chain:", chainAlias);
-    console2.log("  target verifier:", deployment.verifier);
+    console2.log("  versionTag:", ConfigLib.tagToString(versionTag));
+    console2.log("  target verifier:", verifier);
     console2.log("  storageLocations count:", chainConfig.storageLocations.length);
 
     if (chainConfig.storageLocations.length == 0) {
       console2.log("  WARN storageLocations is empty (clears the on-chain record)");
     }
 
-    _stageMany(callsFor(deployment.verifier, chainConfig.storageLocations));
+    _stageMany(callsFor(verifier, chainConfig.storageLocations));
     _flush("update-storage-locations");
   }
 }

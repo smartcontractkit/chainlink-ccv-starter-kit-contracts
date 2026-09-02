@@ -18,9 +18,9 @@ import {console2} from "forge-std/console2.sol";
 ///        0x00010000  WAIT_FOR_SAFE flag (bit 16)
 ///      From config/chains/<alias>.json `finalityConfig`; bounds what a SENDER may request.
 ///
-/// Usage:
+/// Usage (versionTag selects which recorded verifier to configure):
 ///   OUTPUT_MODE=SAFE forge script script/configure/SetAllowedFinalityConfig.s.sol \
-///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 contract SetAllowedFinalityConfig is BaseScript {
   bytes4 public constant WAIT_FOR_FINALITY = FinalityCodec.WAIT_FOR_FINALITY_FLAG;
 
@@ -81,25 +81,25 @@ contract SetAllowedFinalityConfig is BaseScript {
   }
 
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
     _initOutput(chainAlias);
     allowWeakFinality = vm.envOr("ALLOW_WEAK_FINALITY", false);
 
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    require(
-      deployment.verifier != address(0),
-      string.concat("SetAllowedFinalityConfig: verifier not recorded for ", chainAlias)
-    );
+    address verifier = ConfigLib.verifierByTag(deployment, versionTag);
+    _assertReachable(verifier, "verifier");
 
     console2.log("[SetAllowedFinalityConfig] chain:", chainAlias);
-    console2.log("  target verifier:", deployment.verifier);
+    console2.log("  versionTag:", ConfigLib.tagToString(versionTag));
+    console2.log("  target verifier:", verifier);
     console2.log("  finalityConfig:", vm.toString(chainConfig.finalityConfig));
 
     validateFinalityPolicy(chainConfig.finalityConfig);
 
-    _stageMany(callsFor(deployment.verifier, chainConfig.finalityConfig));
+    _stageMany(callsFor(verifier, chainConfig.finalityConfig));
     _flush("set-allowed-finality-config");
   }
 }

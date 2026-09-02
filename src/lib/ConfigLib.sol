@@ -20,6 +20,84 @@ library ConfigLib {
   string private constant LANES_DIR = "config/lanes/";
   string private constant ROLES_DIR = "config/roles/";
   string private constant DEPLOYMENTS_DIR = "config/deployments/";
+  string private constant VERSION_TAGS_PATH = "config/version-tags.json";
+
+  string internal constant BARE_VERIFIER_TARGET_ERROR =
+    "ConfigLib: target 'verifier' needs a versionTag - use verifier:<versionTag> (e.g. verifier:0x00010001)";
+
+  // --------------------------------------------------------------------------
+  //  version tags (the repo-wide catalog)
+  // --------------------------------------------------------------------------
+  /// @notice Every versionTag this repo uses, from config/version-tags.json. Tags are
+  ///         CROSS-CHAIN identities (a lane's tag must match on both endpoints), so the
+  ///         catalog is repo-wide, not per chain: one spelling everywhere.
+  function readVersionTags() internal view returns (bytes4[] memory tags) {
+    require(vm.exists(VERSION_TAGS_PATH), string.concat("ConfigLib: missing ", VERSION_TAGS_PATH));
+    string memory json = vm.readFile(VERSION_TAGS_PATH);
+    uint256 count = 0;
+    while (vm.keyExistsJson(json, string.concat(".versionTags[", vm.toString(count), "]"))) {
+      ++count;
+    }
+    tags = new bytes4[](count);
+    for (uint256 i = 0; i < count; ++i) {
+      bytes4 tag = _parseVersionTag(json, string.concat(".versionTags[", vm.toString(i), "].tag"), VERSION_TAGS_PATH);
+      for (uint256 j = 0; j < i; ++j) {
+        require(
+          tags[j] != tag, string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", VERSION_TAGS_PATH)
+        );
+      }
+      tags[i] = tag;
+    }
+  }
+
+  /// @dev Parses a versionTag field and enforces the documented scheme: 2 bytes operator
+  ///      id + 2 bytes version, both halves non-zero. The scheme lives here (not in
+  ///      `_parseBytes4`) because other bytes4 fields have different rules —
+  ///      finalityConfig 0x00000000 is the legitimate production default.
+  function _parseVersionTag(
+    string memory json,
+    string memory key,
+    string memory source
+  ) private pure returns (bytes4 tag) {
+    tag = _parseBytes4(json, key);
+    // truncating to 'bytes2' is deliberate: each half of the tag is inspected separately
+    // forge-lint: disable-next-item(unsafe-typecast)
+    bool wellFormed = bytes2(tag) != bytes2(0) && bytes2(tag << 16) != bytes2(0);
+    require(
+      wellFormed,
+      string.concat(
+        "ConfigLib: versionTag ",
+        tagToString(tag),
+        " in ",
+        source,
+        " is malformed - scheme is 2-byte operator id + 2-byte version, both non-zero"
+      )
+    );
+  }
+
+  /// @notice Reverts unless `tag` is catalogued. Applied where a HUMAN introduces a tag
+  ///         (the DeployVerifier argument, lane files); machine-written records are
+  ///         cross-checked against the chain by DriftCheck instead.
+  function requireKnownTag(
+    bytes4 tag,
+    string memory context
+  ) internal view {
+    bytes4[] memory tags = readVersionTags();
+    for (uint256 i = 0; i < tags.length; ++i) {
+      if (tags[i] == tag) return;
+    }
+    revert(
+      string.concat(
+        "ConfigLib: versionTag ",
+        tagToString(tag),
+        " (",
+        context,
+        ") is not catalogued in ",
+        VERSION_TAGS_PATH,
+        " - add it there first"
+      )
+    );
+  }
 
   // --------------------------------------------------------------------------
   //  chains
@@ -55,7 +133,6 @@ library ConfigLib {
     chainConfig.rmn = vm.parseJsonAddress(json, ".rmn");
     // Optional while older configs predate the field; the sync tooling maintains it.
     chainConfig.router = vm.keyExistsJson(json, ".router") ? vm.parseJsonAddress(json, ".router") : address(0);
-    chainConfig.versionTag = _parseBytes4(json, ".versionTag");
     chainConfig.finalityConfig = _parseBytes4(json, ".finalityConfig");
     chainConfig.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
     // Optional by design: fee sweeping is opt-in per chain, and the token list mirrors a
@@ -193,6 +270,15 @@ library ConfigLib {
     lane.dest.chainSelector =
       _toUint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")), ".dest.chainSelector");
 
+    // Mandatory: the lane pins the verifier serving it (both legs — the
+    // contract forces source tag == dest tag). No inheritance, no sole-verifier default.
+    require(
+      vm.keyExistsJson(json, ".versionTag"),
+      string.concat("ConfigLib: lane ", lane.name, " has no versionTag - add \"versionTag\": \"0x00010001\" (bytes4)")
+    );
+    lane.versionTag = _parseVersionTag(json, ".versionTag", path);
+    requireKnownTag(lane.versionTag, string.concat("lane ", lane.name));
+
     lane.signatureConfig.threshold =
       _toUint8(vm.parseJsonUint(json, ".signatureConfig.threshold"), ".signatureConfig.threshold");
     lane.signatureConfig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
@@ -252,35 +338,99 @@ library ConfigLib {
   ) internal view returns (Types.RolesConfig memory roles) {
     string memory json = vm.readFile(path);
     roles.aliasName = vm.parseJsonString(json, ".alias");
-    roles.verifier.owner = vm.parseJsonAddress(json, ".verifier.owner");
-    roles.verifier.storageLocationsAdmin = vm.parseJsonAddress(json, ".verifier.storageLocationsAdmin");
-    roles.verifier.allowlistAdmin = vm.parseJsonAddress(json, ".verifier.allowlistAdmin");
-    roles.verifier.feeAggregator = vm.parseJsonAddress(json, ".verifier.feeAggregator");
+
+    // Absent array == no verifiers declared yet (factory-only chains).
+    uint256 count = 0;
+    while (vm.keyExistsJson(json, _rolesEntryKey(count, ""))) {
+      ++count;
+    }
+    roles.verifiers = new Types.VerifierRoles[](count);
+    for (uint256 i = 0; i < count; ++i) {
+      bytes4 tag = _parseVersionTag(json, _rolesEntryKey(i, ".versionTag"), path);
+      for (uint256 j = 0; j < i; ++j) {
+        require(
+          roles.verifiers[j].versionTag != tag,
+          string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", path)
+        );
+      }
+      roles.verifiers[i] = Types.VerifierRoles({
+        versionTag: tag,
+        owner: vm.parseJsonAddress(json, _rolesEntryKey(i, ".owner")),
+        storageLocationsAdmin: vm.parseJsonAddress(json, _rolesEntryKey(i, ".storageLocationsAdmin")),
+        allowlistAdmin: vm.parseJsonAddress(json, _rolesEntryKey(i, ".allowlistAdmin")),
+        feeAggregator: vm.parseJsonAddress(json, _rolesEntryKey(i, ".feeAggregator"))
+      });
+    }
+
     roles.resolver.owner = vm.parseJsonAddress(json, ".resolver.owner");
     roles.resolver.feeAggregator = vm.parseJsonAddress(json, ".resolver.feeAggregator");
     roles.factoryOwner = vm.parseJsonAddress(json, ".factory.owner");
   }
 
+  function _rolesEntryKey(
+    uint256 index,
+    string memory field
+  ) private pure returns (string memory) {
+    return string.concat(".verifiers[", vm.toString(index), "]", field);
+  }
+
+  /// @notice The role holders declared for `tag`. Reverts when that tag has no
+  ///         entry — roles are intent and precede the deploy, so declare them first.
+  function verifierRolesByTag(
+    Types.RolesConfig memory roles,
+    bytes4 tag
+  ) internal pure returns (Types.VerifierRoles memory) {
+    for (uint256 i = 0; i < roles.verifiers.length; ++i) {
+      if (roles.verifiers[i].versionTag == tag) return roles.verifiers[i];
+    }
+    revert(
+      string.concat(
+        "ConfigLib: no verifier roles for versionTag ",
+        tagToString(tag),
+        " in config/roles/",
+        roles.aliasName,
+        ".json - declare that verifier's roles first"
+      )
+    );
+  }
+
+  function hasVerifierRolesTag(
+    Types.RolesConfig memory roles,
+    bytes4 tag
+  ) internal pure returns (bool) {
+    for (uint256 i = 0; i < roles.verifiers.length; ++i) {
+      if (roles.verifiers[i].versionTag == tag) return true;
+    }
+    return false;
+  }
+
   // --------------------------------------------------------------------------
-  //  target resolution ("verifier" | "resolver" | "factory")
+  //  target resolution ("verifier:<versionTag>" | "resolver" | "factory")
   // --------------------------------------------------------------------------
   /// @notice Maps a target name to its address in the deployment record.
+  /// @dev A verifier is always addressed by versionTag: `verifier:0x00010001`. A bare
+  ///      `verifier` is rejected — several verifiers can be live at once, and nothing
+  ///      may silently pick one.
   function targetAddress(
     Types.Deployment memory deployment,
     string memory target
   ) internal pure returns (address) {
-    if (_stringsEqual(target, "verifier")) return deployment.verifier;
+    if (_stringsEqual(target, "verifier")) revert(BARE_VERIFIER_TARGET_ERROR);
+    if (_hasPrefix(target, "verifier:")) return verifierByTag(deployment, _tagSuffix(target));
     if (_stringsEqual(target, "resolver")) return deployment.resolver;
     if (_stringsEqual(target, "factory")) return deployment.factory;
     revert(_unknownTarget(target));
   }
 
   /// @notice Maps a target name to the owner declared for it in `config/roles`.
+  /// @dev Role holders are per verifier; `verifier:<tag>` selects that verifier's
+  ///      owner (same grammar as `targetAddress`).
   function targetOwner(
     Types.RolesConfig memory roles,
     string memory target
   ) internal pure returns (address) {
-    if (_stringsEqual(target, "verifier")) return roles.verifier.owner;
+    if (_stringsEqual(target, "verifier")) revert(BARE_VERIFIER_TARGET_ERROR);
+    if (_hasPrefix(target, "verifier:")) return verifierRolesByTag(roles, _tagSuffix(target)).owner;
     if (_stringsEqual(target, "resolver")) return roles.resolver.owner;
     if (_stringsEqual(target, "factory")) return roles.factoryOwner;
     revert(_unknownTarget(target));
@@ -289,7 +439,21 @@ library ConfigLib {
   function _unknownTarget(
     string memory target
   ) private pure returns (string memory) {
-    return string.concat("ConfigLib: unknown target '", target, "' (expected verifier|resolver|factory)");
+    return string.concat("ConfigLib: unknown target '", target, "' (expected verifier:<versionTag>|resolver|factory)");
+  }
+
+  /// @dev Parses the bytes4 after "verifier:", e.g. "verifier:0x00010001".
+  function _tagSuffix(
+    string memory target
+  ) private pure returns (bytes4) {
+    bytes memory targetBytes = bytes(target);
+    bytes memory suffix = new bytes(targetBytes.length - 9); // len("verifier:") == 9
+    for (uint256 i = 0; i < suffix.length; ++i) {
+      suffix[i] = targetBytes[i + 9];
+    }
+    bytes memory raw = vm.parseBytes(string(suffix));
+    require(raw.length == 4, string.concat("ConfigLib: '", target, "' must carry a 4-byte hex versionTag"));
+    return _toBytes4(raw);
   }
 
   function _stringsEqual(
@@ -321,7 +485,62 @@ library ConfigLib {
     deployment.aliasName = vm.parseJsonString(json, ".alias");
     deployment.factory = vm.parseJsonAddress(json, ".factory");
     deployment.resolver = vm.parseJsonAddress(json, ".resolver");
-    deployment.verifier = vm.parseJsonAddress(json, ".verifier");
+
+    // Absent array == nothing deployed yet (records are written one contract at a time).
+    uint256 count = 0;
+    while (vm.keyExistsJson(json, _verifierEntryKey(count, ""))) {
+      ++count;
+    }
+    deployment.verifiers = new Types.VerifierDeployment[](count);
+    for (uint256 i = 0; i < count; ++i) {
+      bytes4 tag = _parseVersionTag(json, _verifierEntryKey(i, ".versionTag"), path);
+      address addr = vm.parseJsonAddress(json, _verifierEntryKey(i, ".address"));
+      require(addr != address(0), string.concat("ConfigLib: zero verifier address in ", path));
+      for (uint256 j = 0; j < i; ++j) {
+        require(
+          deployment.verifiers[j].versionTag != tag,
+          string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", path)
+        );
+      }
+      deployment.verifiers[i] = Types.VerifierDeployment({versionTag: tag, addr: addr});
+    }
+  }
+
+  function _verifierEntryKey(
+    uint256 index,
+    string memory field
+  ) private pure returns (string memory) {
+    return string.concat(".verifiers[", vm.toString(index), "]", field);
+  }
+
+  /// @notice The verifier deployed for `tag`. Reverts when that tag is not
+  ///         recorded — deploy it first (DeployVerifier appends it to the record).
+  function verifierByTag(
+    Types.Deployment memory deployment,
+    bytes4 tag
+  ) internal pure returns (address) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (deployment.verifiers[i].versionTag == tag) return deployment.verifiers[i].addr;
+    }
+    revert(
+      string.concat(
+        "ConfigLib: no verifier with versionTag ",
+        tagToString(tag),
+        " recorded for ",
+        deployment.aliasName,
+        " - deploy that verifier first"
+      )
+    );
+  }
+
+  function hasVerifierTag(
+    Types.Deployment memory deployment,
+    bytes4 tag
+  ) internal pure returns (bool) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (deployment.verifiers[i].versionTag == tag) return true;
+    }
+    return false;
   }
 
   /// @notice Read the deployment record, or a zeroed struct (with alias set) if the
@@ -347,11 +566,28 @@ library ConfigLib {
     string memory path,
     Types.Deployment memory deployment
   ) internal {
-    string memory objectKey = "ccv_deployment";
-    vm.serializeString(objectKey, "alias", deployment.aliasName);
-    vm.serializeAddress(objectKey, "factory", deployment.factory);
-    vm.serializeAddress(objectKey, "resolver", deployment.resolver);
-    string memory json = vm.serializeAddress(objectKey, "verifier", deployment.verifier);
+    string memory entries = "";
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      string memory entry = string.concat(
+        "{\"versionTag\":\"",
+        tagToString(deployment.verifiers[i].versionTag),
+        "\",\"address\":\"",
+        vm.toString(deployment.verifiers[i].addr),
+        "\"}"
+      );
+      entries = string.concat(entries, i == 0 ? "" : ",", entry);
+    }
+    string memory json = string.concat(
+      "{\"alias\":\"",
+      deployment.aliasName,
+      "\",\"factory\":\"",
+      vm.toString(deployment.factory),
+      "\",\"resolver\":\"",
+      vm.toString(deployment.resolver),
+      "\",\"verifiers\":[",
+      entries,
+      "]}"
+    );
     vm.writeJson(json, path);
   }
 
@@ -364,14 +600,32 @@ library ConfigLib {
   function _parseBytes4(
     string memory json,
     string memory key
-  ) private pure returns (bytes4 result) {
+  ) private pure returns (bytes4) {
     bytes memory raw = vm.parseJsonBytes(json, key);
     require(raw.length == 4, "ConfigLib: expected a 4-byte hex value");
+    return _toBytes4(raw);
+  }
+
+  function _toBytes4(
+    bytes memory raw
+  ) private pure returns (bytes4 result) {
     uint32 accumulated = 0;
     for (uint256 i = 0; i < 4; ++i) {
       accumulated = (accumulated << 8) | uint32(uint8(raw[i]));
     }
     result = bytes4(accumulated);
+  }
+
+  /// @notice Renders a versionTag as "0x00010001". `vm.toString(bytes4)` is a trap: the
+  ///         argument widens to bytes32 and prints 64 hex chars.
+  function tagToString(
+    bytes4 tag
+  ) internal pure returns (string memory) {
+    bytes memory raw = new bytes(4);
+    for (uint256 i = 0; i < 4; ++i) {
+      raw[i] = tag[i];
+    }
+    return vm.toString(raw);
   }
 
   // --------------------------------------------------------------------------
@@ -424,6 +678,19 @@ library ConfigLib {
   // --------------------------------------------------------------------------
   //  small string helpers
   // --------------------------------------------------------------------------
+  function _hasPrefix(
+    string memory text,
+    string memory prefix
+  ) private pure returns (bool) {
+    bytes memory textBytes = bytes(text);
+    bytes memory prefixBytes = bytes(prefix);
+    if (prefixBytes.length > textBytes.length) return false;
+    for (uint256 i = 0; i < prefixBytes.length; ++i) {
+      if (textBytes[i] != prefixBytes[i]) return false;
+    }
+    return true;
+  }
+
   function _hasSuffix(
     string memory text,
     string memory suffix

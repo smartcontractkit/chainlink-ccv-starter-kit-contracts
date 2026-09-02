@@ -10,6 +10,7 @@
 
 CHAIN   ?=
 LANE    ?=
+TAG     ?=
 RPC_URL ?=
 SOURCE_RPC ?=
 DEST_RPC   ?=
@@ -66,10 +67,11 @@ deploy-resolver:
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
 deploy-verifier:
-	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-verifier CHAIN=sepolia"; exit 2; }
+	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-verifier CHAIN=sepolia TAG=0x00010001"; exit 2; }
+	@test -n "$(TAG)"     || { echo "TAG is required (bytes4 versionTag for this generation, e.g. TAG=0x00010001)"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
 	@OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
-		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
+		--sig "run(string,bytes4)" $(CHAIN) $(TAG) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
 # ---- governance ----
 snapshot:

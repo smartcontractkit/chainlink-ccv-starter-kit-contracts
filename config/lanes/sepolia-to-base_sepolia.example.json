@@ -1,7 +1,14 @@
 {
   "name": "sepolia-to-base_sepolia",
-  "source": { "alias": "sepolia", "chainSelector": "16015286601757825753" },
-  "dest": { "alias": "base_sepolia", "chainSelector": "10344971235874465080" },
+  "source": {
+    "alias": "sepolia",
+    "chainSelector": "16015286601757825753"
+  },
+  "dest": {
+    "alias": "base_sepolia",
+    "chainSelector": "10344971235874465080"
+  },
+  "versionTag": "0x00010001",
   "signatureConfig": {
     "threshold": 7,
     "signers": [

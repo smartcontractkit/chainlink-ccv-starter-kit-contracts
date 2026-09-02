@@ -12,7 +12,7 @@
 #
 # The sync OWNS (overwrites) only the CCIP-core fields the source provides that the target already
 # carries: router, rmn, feeTokens, explorerAddressPath (+ chainId refresh). It PRESERVES everything
-# else byte-for-byte: alias, chainSelector, versionTag, finalityConfig, storageLocations,
+# else byte-for-byte: alias, chainSelector, finalityConfig, storageLocations,
 # resolverSalt. The immutable chainSelector is a GUARD (source.chainSelector must equal the file's).
 # A core field the source serves as null (explorerAddressPath is nullable) is skipped, not zeroed.
 # feeTokens is APPEND-ONLY: upstream additions merge in, but a token upstream drops is kept (and
@@ -100,7 +100,7 @@ run_one() { # <name> <mode:check|sync> <sweep:0|1>
 # Seeds config/chains/<alias>.json from _template.json with the CCIP-core values the API
 # serves (router, rmn, chainId, feeTokens, explorerAddressPath). NEVER overwrites: if the file already exists
 # it only compares and WARNS, so a bootstrap can be re-run safely at any time. Fields the
-# API cannot know (versionTag, resolverSalt, storageLocations) keep their template
+# API cannot know (resolverSalt, storageLocations) keep their template
 # placeholders for the operator to fill in.
 cmd_bootstrap() {
     local n="${1:?usage: bootstrap <chainAlias> <chainSelector>}"

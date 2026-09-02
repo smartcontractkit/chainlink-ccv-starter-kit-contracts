@@ -44,6 +44,9 @@ contract SetFeeAggregatorTest is CommitteeVerifierSetup {
     Types.RolesConfig memory roles = ConfigLib.readRolesByPath("config/roles/sepolia.example.json");
     // The resolver fee aggregator is DISTINCT from the verifier's (see roles example).
     assertEq(roles.resolver.feeAggregator, address(0x2000000000000000000000000000000000000005), "resolver fee agg");
-    assertTrue(roles.resolver.feeAggregator != roles.verifier.feeAggregator, "two distinct fee destinations");
+    assertTrue(
+      roles.resolver.feeAggregator != ConfigLib.verifierRolesByTag(roles, VERSION_TAG).feeAggregator,
+      "two distinct fee destinations"
+    );
   }
 }

@@ -57,19 +57,14 @@ contract LaneParityCheck is Script {
   }
 
   /// @notice Run with `--rpc-url` pointing at the lane's DEST chain.
-  /// @dev The expected tag comes from the SOURCE chain config: the inbound map is keyed
-  ///      by the source generation's tag, not by whatever the dest declares.
+  /// @dev The expected tag is the LANE's: the inbound map is keyed by the versionTag the
+  ///      lane pins, which the contract forces to be identical on both legs.
   function runDest(
     string calldata laneName
   ) external view {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
     _header(lane);
-    _finish(
-      lane,
-      checkDestSide(
-        lane, ConfigLib.readChain(lane.source.aliasName).versionTag, ConfigLib.readDeployment(lane.dest.aliasName)
-      )
-    );
+    _finish(lane, checkDestSide(lane, lane.versionTag, ConfigLib.readDeployment(lane.dest.aliasName)));
   }
 
   function _header(
@@ -110,12 +105,6 @@ contract LaneParityCheck is Script {
     );
     mismatches += _diffUint("dest selector: lane vs chain config", destChain.chainSelector, lane.dest.chainSelector);
 
-    // The tag in `verifierResults` originates on the source, and the dest verifier
-    // rejects any tag != its own immutable tag.
-    mismatches += _diffBytes4(
-      "versionTag must be identical on both chains", sourceChain.versionTag, destChain.versionTag
-    );
-
     // Identical salt is necessary but not sufficient (factory address and initcode must
     // match too), so the recorded addresses are compared as well.
     mismatches += _diffBytes32(
@@ -125,8 +114,19 @@ contract LaneParityCheck is Script {
       "recorded resolver address must be identical", sourceDeployment.resolver, destDeployment.resolver
     );
 
-    if (sourceDeployment.verifier == address(0)) mismatches += _report("source verifier not recorded");
-    if (destDeployment.verifier == address(0)) mismatches += _report("dest verifier not recorded");
+    // The lane's verifier must be deployed on BOTH endpoints: the tag in
+    // `verifierResults` originates on the source, and the dest verifier rejects any tag
+    // != its own immutable tag — so each side needs a verifier deployed for THIS tag.
+    if (!ConfigLib.hasVerifierTag(sourceDeployment, lane.versionTag)) {
+      mismatches += _report(
+        string.concat("source records no verifier for lane versionTag ", ConfigLib.tagToString(lane.versionTag))
+      );
+    }
+    if (!ConfigLib.hasVerifierTag(destDeployment, lane.versionTag)) {
+      mismatches += _report(
+        string.concat("dest records no verifier for lane versionTag ", ConfigLib.tagToString(lane.versionTag))
+      );
+    }
     if (sourceDeployment.resolver == address(0)) mismatches += _report("source resolver not recorded");
     if (destDeployment.resolver == address(0)) mismatches += _report("dest resolver not recorded");
 
@@ -143,21 +143,23 @@ contract LaneParityCheck is Script {
   //  TIER 2 — on-chain, one chain per leg
   // ===========================================================================
 
-  /// @notice Source-side invariants, keyed by DEST selector.
+  /// @notice Source-side invariants, keyed by DEST selector. All checks target the
+  ///         verifier serving the LANE's versionTag.
   function checkSourceSide(
     Types.LaneConfig memory lane,
     Types.Deployment memory sourceDeployment
   ) public view returns (uint256 mismatches) {
-    _assertReachable(sourceDeployment, "source");
+    address verifier = ConfigLib.verifierByTag(sourceDeployment, lane.versionTag);
+    _assertReachable(verifier, sourceDeployment.resolver, "source");
 
     address outbound = _outboundImplementation(sourceDeployment.resolver, lane.dest.chainSelector);
-    mismatches += _diffAddress("source outbound implementation for dest selector", sourceDeployment.verifier, outbound);
+    mismatches += _diffAddress("source outbound implementation for dest selector", verifier, outbound);
 
     (
       BaseVerifier.RemoteChainConfigArgs memory remote,
       // the other return values are deliberately ignored
       // forge-lint: disable-next-line(unused-return)
-    ) = CommitteeVerifier(sourceDeployment.verifier).getRemoteChainConfig(lane.dest.chainSelector);
+    ) = CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
     mismatches += _diffAddress("source remoteChainConfig.router", lane.remote.router, address(remote.router));
     mismatches += _diffUint(
       "source remoteChainConfig.gasForVerification", lane.remote.gasForVerification, remote.gasForVerification
@@ -169,27 +171,29 @@ contract LaneParityCheck is Script {
   }
 
   /// @notice Destination-side invariants. The signer set is keyed by source selector and
-  ///         the inbound implementation by the source generation's `versionTag`.
+  ///         the inbound implementation by the lane's `versionTag`; both live on the
+  ///         dest verifier recorded for that tag.
   function checkDestSide(
     Types.LaneConfig memory lane,
-    bytes4 sourceVersionTag,
+    bytes4 versionTag,
     Types.Deployment memory destDeployment
   ) public view returns (uint256 mismatches) {
-    _assertReachable(destDeployment, "dest");
+    address verifier = ConfigLib.verifierByTag(destDeployment, versionTag);
+    _assertReachable(verifier, destDeployment.resolver, "dest");
 
-    address inbound = _inboundImplementation(destDeployment.resolver, sourceVersionTag);
-    mismatches += _diffAddress("dest inbound implementation for SOURCE versionTag", destDeployment.verifier, inbound);
+    address inbound = _inboundImplementation(destDeployment.resolver, versionTag);
+    mismatches += _diffAddress("dest inbound implementation for lane versionTag", verifier, inbound);
 
-    bytes4 destTag = CommitteeVerifier(destDeployment.verifier).versionTag();
-    if (destTag != sourceVersionTag) {
-      console2.log("DRIFT_DETECTED dest verifier tag != source tag (IMMUTABLE - every message would fail)");
-      console2.log("  source:", vm.toString(sourceVersionTag));
-      console2.log("  dest:  ", vm.toString(destTag));
+    bytes4 destTag = CommitteeVerifier(verifier).versionTag();
+    if (destTag != versionTag) {
+      console2.log("DRIFT_DETECTED dest verifier tag != lane tag (IMMUTABLE - every message would fail)");
+      console2.log("  lane:", ConfigLib.tagToString(versionTag));
+      console2.log("  dest:", ConfigLib.tagToString(destTag));
       ++mismatches;
     }
 
     (address[] memory signers, uint8 threshold) =
-      CommitteeVerifier(destDeployment.verifier).getSignatureConfig(lane.source.chainSelector);
+      CommitteeVerifier(verifier).getSignatureConfig(lane.source.chainSelector);
     if (threshold == 0) {
       mismatches += _report("dest signatureConfig for source selector is UNSET (threshold 0)");
     } else {
@@ -203,17 +207,12 @@ contract LaneParityCheck is Script {
   // ===========================================================================
 
   function _assertReachable(
-    Types.Deployment memory deployment,
+    address verifier,
+    address resolver,
     string memory side
   ) private view {
-    require(
-      deployment.verifier.code.length != 0,
-      string.concat("LaneParityCheck: no code at ", side, " verifier (wrong RPC?)")
-    );
-    require(
-      deployment.resolver.code.length != 0,
-      string.concat("LaneParityCheck: no code at ", side, " resolver (wrong RPC?)")
-    );
+    require(verifier.code.length != 0, string.concat("LaneParityCheck: no code at ", side, " verifier (wrong RPC?)"));
+    require(resolver.code.length != 0, string.concat("LaneParityCheck: no code at ", side, " resolver (wrong RPC?)"));
   }
 
   function _outboundImplementation(
@@ -268,18 +267,6 @@ contract LaneParityCheck is Script {
     console2.log(string.concat("DRIFT_DETECTED ", label));
     console2.log("  expected:", expected);
     console2.log("  actual:  ", actual);
-    return 1;
-  }
-
-  function _diffBytes4(
-    string memory label,
-    bytes4 expected,
-    bytes4 actual
-  ) private pure returns (uint256) {
-    if (expected == actual) return 0;
-    console2.log(string.concat("DRIFT_DETECTED ", label));
-    console2.log("  expected:", vm.toString(expected));
-    console2.log("  actual:  ", vm.toString(actual));
     return 1;
   }
 

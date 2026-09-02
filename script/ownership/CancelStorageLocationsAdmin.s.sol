@@ -18,9 +18,9 @@ import {console2} from "forge-std/console2.sol";
 ///      mode the batch is refused unless SAFE_ADDRESS is the current on-chain admin; EOA
 ///      runs get the same guarantee from forge's pre-broadcast simulation reverting.
 ///
-/// Usage:
+/// Usage (versionTag selects which recorded verifier):
 ///   OUTPUT_MODE=SAFE forge script script/ownership/CancelStorageLocationsAdmin.s.sol \
-///     --sig "run(string)" sepolia
+///     --sig "run(string,bytes4)" sepolia 0x00010001
 contract CancelStorageLocationsAdmin is BaseScript {
   function callsFor(
     address verifier
@@ -32,21 +32,23 @@ contract CancelStorageLocationsAdmin is BaseScript {
   }
 
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
     _initOutput(chainAlias);
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    require(deployment.verifier != address(0), "CancelStorageLocationsAdmin: verifier unset");
-    _assertReachable(deployment.verifier, "verifier");
+    address verifier = ConfigLib.verifierByTag(deployment, versionTag);
+    _assertReachable(verifier, "verifier");
     // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already
     // reverts on a non-admin sender. Only a deferred batch can hide the mismatch.
-    if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentAdmin(deployment.verifier, outputSafeAddress);
+    if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentAdmin(verifier, outputSafeAddress);
 
-    console2.log("[CancelStorageLocationsAdmin] verifier:", deployment.verifier);
+    console2.log("[CancelStorageLocationsAdmin] versionTag:", ConfigLib.tagToString(versionTag));
+    console2.log("  verifier:", verifier);
     console2.log("  clearing any pending storageLocationsAdmin (re-proposing address(0))");
 
-    _stageMany(callsFor(deployment.verifier));
+    _stageMany(callsFor(verifier));
     _flush("cancel-storage-locations-admin");
   }
 

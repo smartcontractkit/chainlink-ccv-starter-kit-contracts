@@ -11,7 +11,7 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Called BY the pending owner to complete a two-step ownership transfer.
 ///         Each party prepares its own leg: this script is run by the INCOMING holder
 ///         themselves, never generated on their behalf by the proposer.
-/// @dev Generic over target ("verifier" | "resolver" | "factory"). The factory leg
+/// @dev Generic over target ("verifier[:<versionTag>]" | "resolver" | "factory"). The factory leg
 ///      completes the transfer BootstrapFactory proposes; until it runs, the deployer
 ///      key keeps the factory (and with it the CREATE2 allowlist).
 /// @dev Needs no roles file: acceptance is authorised by msg.sender being the pending
@@ -36,7 +36,8 @@ contract AcceptOwnership is BaseScript {
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     address to = ConfigLib.targetAddress(deployment, target);
-    require(to != address(0), string.concat("AcceptOwnership: ", target, " not recorded for ", chainAlias));
+    // A call to a codeless address SUCCEEDS silently, hence the reachability preflight.
+    _assertReachable(to, target);
 
     console2.log("[AcceptOwnership]", target, "->", to);
 

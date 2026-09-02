@@ -9,7 +9,8 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title ApplyOutboundImplementationUpdates
 /// @notice Points each destination chain
-///         selector at the verifier that handles OUTBOUND traffic for it. Batched per
+///         selector at the verifier serving that lane's `versionTag` — the outbound map
+///         is COMPILED FROM LANES, so a lane's tag is its outbound entry. Batched per
 ///         chain: ONE call covers every outbound lane originating on this chain, and
 ///         destinations already matching on-chain are left out of it — so --rpc-url is
 ///         required in BOTH output modes.
@@ -36,32 +37,19 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     _initOutput(chainAlias);
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    require(
-      deployment.resolver != address(0),
-      string.concat("ApplyOutboundImplementationUpdates: resolver not recorded for ", chainAlias)
-    );
-    require(
-      deployment.verifier != address(0),
-      string.concat("ApplyOutboundImplementationUpdates: verifier not recorded for ", chainAlias)
-    );
-
     // The diff below reads the resolver, so an unreachable one must fail here with a
     // legible reason rather than as a bare revert inside the first getter call.
-    require(
-      deployment.resolver.code.length != 0,
-      "ApplyOutboundImplementationUpdates: no code at recorded resolver (wrong --rpc-url?)"
-    );
+    _assertReachable(deployment.resolver, "resolver");
 
     console2.log("[ApplyOutboundImplementationUpdates] chain:", chainAlias);
     console2.log("  target resolver:", deployment.resolver);
-    console2.log("  local verifier:", deployment.verifier);
 
     // Collect every outbound lane whose SOURCE is this chain; map its dest selector to
-    // this chain's local verifier. Destinations already mapped to it are left out, so
-    // re-running after adding a lane stages only the lane that changed.
+    // the local verifier serving the lane's versionTag. Destinations already mapped to
+    // it are left out, so re-running after adding a lane stages only the lane that changed.
     string[] memory lanePaths = ConfigLib.listLanes();
     (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
-      _buildOutboundArgs(lanePaths, chainAlias, deployment.resolver, deployment.verifier);
+      _buildOutboundArgs(lanePaths, chainAlias, deployment);
     require(matched > 0, string.concat("ApplyOutboundImplementationUpdates: no outbound lanes for ", chainAlias));
 
     if (args.length == 0) {
@@ -92,15 +80,15 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
   function _buildOutboundArgs(
     string[] memory lanePaths,
     string memory chainAlias,
-    address resolver,
-    address verifier
+    Types.Deployment memory deployment
   ) internal view returns (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) {
     uint256 count = 0;
     for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       ++matched;
-      if (!isCurrent(resolver, lane.dest.chainSelector, verifier)) count++;
+      address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
+      if (!isCurrent(deployment.resolver, lane.dest.chainSelector, verifier)) count++;
     }
 
     args = new VersionedVerifierResolver.OutboundImplementationArgs[](count);
@@ -110,11 +98,13 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
       if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       require(lane.dest.chainSelector != 0, "ApplyOutboundImplementationUpdates: destChainSelector cannot be zero");
 
-      if (isCurrent(resolver, lane.dest.chainSelector, verifier)) {
+      address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
+      if (isCurrent(deployment.resolver, lane.dest.chainSelector, verifier)) {
         console2.log("  lane UNCHANGED:", lane.name);
         continue;
       }
       console2.log("  lane STAGED:", lane.name);
+      console2.log("    versionTag / verifier:", ConfigLib.tagToString(lane.versionTag), verifier);
       args[j++] = VersionedVerifierResolver.OutboundImplementationArgs({
         destChainSelector: lane.dest.chainSelector, verifier: verifier
       });

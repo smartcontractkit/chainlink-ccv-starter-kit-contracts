@@ -4,7 +4,8 @@
 #
 #  Reads config/deployments/<alias>.json + config/chains/<alias>.json and emits a
 #  per-network table of deployed addresses plus the config that produced them
-#  (chainId, selector, RMN, versionTag, resolver salt).
+#  (chainId, selector, RMN, resolver salt). Verifiers are listed per versionTag: a
+#  chain can run several at once, and each rides with its own tag.
 #
 #  Also asserts the cross-chain invariant while it is here: the resolver must be at
 #  the SAME address on every chain. A divergence is flagged in the output and sets
@@ -119,30 +120,39 @@ render() {
 
     echo "## Contracts"
     echo
-    echo "| Chain | Factory | Resolver | Verifier |"
+    echo "Verifiers are listed as \`versionTag\` → address: a chain can run several at once"
+    echo "(each lane pins the one serving it), and the tag is an immutable constructor argument."
+    echo
+    echo "| Chain | Factory | Resolver | Verifiers (versionTag → address) |"
     echo "|---|---|---|---|"
     for n in $names; do
         f="$(jq -r '.factory  // empty' "$DEPLOYMENTS_DIR/$n.json")"
         r="$(jq -r '.resolver // empty' "$DEPLOYMENTS_DIR/$n.json")"
-        v="$(jq -r '.verifier // empty' "$DEPLOYMENTS_DIR/$n.json")"
         resolvers="$resolvers$r"$'\n'
-        printf '| `%s` | %s | %s | %s |\n' "$n" "$(link "$n" "$f")" "$(link "$n" "$r")" "$(link "$n" "$v")"
+        v_cell=""
+        while IFS=$'\t' read -r tag addr; do
+            [ -n "$tag" ] || continue
+            v_cell="$v_cell${v_cell:+<br>}\`$tag\` → $(link "$n" "$addr")"
+        done < <(jq -r '.verifiers[]? | "\(.versionTag)\t\(.address)"' "$DEPLOYMENTS_DIR/$n.json")
+        [ -n "$v_cell" ] || v_cell="not recorded"
+        printf '| `%s` | %s | %s | %s |\n' "$n" "$(link "$n" "$f")" "$(link "$n" "$r")" "$v_cell"
     done
     echo
 
     echo "## Deploy-time inputs"
     echo
-    echo "\`rmn\` and \`versionTag\` are CommitteeVerifier constructor arguments, both immutable"
-    echo "after deployment. \`resolverSalt\` is the CREATE2 salt that fixes the resolver's address"
+    echo "\`rmn\` is a CommitteeVerifier constructor argument, immutable after deployment"
+    echo "(each verifier's immutable \`versionTag\` is shown next to its address above)."
+    echo "\`resolverSalt\` is the CREATE2 salt that fixes the resolver's address"
     echo "(the resolver itself takes no constructor arguments)."
     echo
-    echo "| Chain | Chain ID | Selector | Verifier: rmn | Verifier: versionTag | Resolver: CREATE2 salt |"
-    echo "|---|---:|---|---|---|---|"
+    echo "| Chain | Chain ID | Selector | Verifier: rmn | Resolver: CREATE2 salt |"
+    echo "|---|---:|---|---|---|"
     for n in $names; do
         jq -r --arg n "$n" '
           def cell(v): if v == null or v == "" then "not recorded" else "`\(v)`" end;
           "| `\($n)` | \(.chainId // "not recorded") | \(cell(.chainSelector)) | \(cell(.rmn))"
-          + " | \(cell(.versionTag)) | \(cell(.resolverSalt)) |"
+          + " | \(cell(.resolverSalt)) |"
         ' "$CHAINS_DIR/$n.json"
     done
     echo

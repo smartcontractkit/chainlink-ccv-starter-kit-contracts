@@ -9,7 +9,7 @@
 # =============================================================================
 
 # The fields a config source owns. Everything else in a chain config is operator
-# input the source cannot know (versionTag, resolverSalt, storageLocations, ...).
+# input the source cannot know (resolverSalt, storageLocations, ...).
 def core: ["router", "rmn", "chainId", "feeTokens", "explorerAddressPath"];
 
 # Per-field equality. Addresses are case-insensitive; feeTokens is an unordered set;

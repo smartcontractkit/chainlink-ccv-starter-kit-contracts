@@ -3,7 +3,7 @@
 `sync-ccip-config.sh` pulls per-chain CCIP-core values — `router`, `rmn`,
 `chainId`, `feeTokens`, `explorerAddressPath` — from the public CCIP REST API into `config/chains/<alias>.json`,
 and keeps them verifiable afterwards. It never touches the operator-owned fields
-(`versionTag`, `finalityConfig`, `resolverSalt`, `storageLocations`, roles), and `chainSelector` is an
+(`finalityConfig`, `resolverSalt`, `storageLocations`, roles), and `chainSelector` is an
 immutable join guard: a source whose selector disagrees with the file is refused.
 There is no per-file source setting: the API is the single upstream, and a chain it
 does not serve is simply skipped by sweeps.
@@ -32,7 +32,7 @@ filled in from the API, and lists what is left for you to fill by hand:
 
 ```
 CREATED config/chains/sepolia.json from api: router, rmn, chainId, feeTokens, explorerAddressPath
-    still to fill in: versionTag, finalityConfig, storageLocations, resolverSalt
+    still to fill in: finalityConfig, storageLocations, resolverSalt
 ```
 
 **Bootstrap never overwrites.** Re-running against an existing file prints `OK` when it

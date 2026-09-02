@@ -10,11 +10,11 @@ import {IERC20} from "@openzeppelin/contracts@5.3.0/token/ERC20/IERC20.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title SweepFees
-/// @notice Sweeps accrued fee-token balances from the verifier and the resolver to
-///         their (distinct) fee aggregators via the permissionless withdrawFeeTokens.
-/// @dev Both contracts must be deployed; beyond that each is gated independently -
-///      skipped while neither chain nor config/roles names its aggregator, reverted
-///      when the two disagree in any way.
+/// @notice Sweeps accrued fee-token balances from EVERY recorded verifier and
+///         the resolver to their (distinct) fee aggregators via the permissionless
+///         withdrawFeeTokens.
+/// @dev Each contract is gated independently - skipped while neither chain nor
+///      config/roles names its aggregator, reverted when the two disagree in any way.
 ///      Reads chain state at build time, so --rpc-url is required even in SAFE mode.
 /// @dev Zero-balance tokens are omitted by default; SKIP_ZERO_BALANCES=false stages
 ///      every configured token, for batches executed long after they are built.
@@ -36,10 +36,15 @@ contract SweepFees is BaseScript {
     }
     console2.log("  fee tokens configured:", chainConfig.feeTokens.length);
 
-    // Both contracts must be deployed and reachable; a partial deployment is an error.
-    require(deployment.verifier != address(0), "SweepFees: no verifier recorded in config/deployments");
+    // Everything recorded must be deployed and reachable; a partial deployment is an error.
+    require(deployment.verifiers.length > 0, "SweepFees: no verifier recorded in config/deployments");
     require(deployment.resolver != address(0), "SweepFees: no resolver recorded in config/deployments");
-    _assertReachable(deployment.verifier, "verifier");
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      _assertReachable(
+        deployment.verifiers[i].addr,
+        string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag))
+      );
+    }
     _assertReachable(deployment.resolver, "resolver");
 
     Call[] memory calls = buildSweepBatch(deployment, roles, chainConfig.feeTokens, skipZeroBalances);
@@ -52,43 +57,58 @@ contract SweepFees is BaseScript {
     _flush("sweep-fees");
   }
 
-  /// @notice Builds the sweep batch for both contracts from config and chain state.
-  ///         Each contract is gated independently, so one being skipped - not in use,
-  ///         nothing held - never blocks the other. Reverts on misconfiguration: a
-  ///         broken token entry, or an aggregator named on only one side of
-  ///         chain/config or named differently on each.
+  /// @notice Builds the sweep batch: one withdraw call per verifier holding
+  ///         fees, plus one for the resolver. Each contract is gated independently, so
+  ///         one being skipped - not in use, nothing held - never blocks the others.
+  ///         Reverts on misconfiguration: a broken token entry, or an aggregator named
+  ///         on only one side of chain/config or named differently on each.
   function buildSweepBatch(
     Types.Deployment memory deployment,
     Types.RolesConfig memory roles,
     address[] memory feeTokens,
     bool skipZeroBalances
   ) public view returns (Call[] memory calls) {
-    (address verifierAggregator, address resolverAggregator) = readAggregators(deployment.verifier, deployment.resolver);
+    Call[] memory buf = new Call[](deployment.verifiers.length + 1);
+    uint256 n = 0;
 
-    // An empty token list is the natural "nothing to stage" signal for a contract.
-    address[] memory verifierTokens = new address[](0);
-    address[] memory resolverTokens = new address[](0);
+    // ---- every recorded verifier, each against ITS roles entry ----
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      string memory label = string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag));
+      (address aggregator,) = readAggregators(deployment.verifiers[i].addr, address(0));
+      _requireAggregatorMatchesConfig(
+        label, aggregator, ConfigLib.verifierRolesByTag(roles, deployment.verifiers[i].versionTag).feeAggregator
+      );
 
-    _requireAggregatorMatchesConfig("verifier", verifierAggregator, roles.verifier.feeAggregator);
-    _requireAggregatorMatchesConfig("resolver", resolverAggregator, roles.resolver.feeAggregator);
-
-    if (verifierAggregator == address(0)) {
-      console2.log("  SKIP verifier: not in use (no feeAggregator on-chain or in config/roles)");
-    } else {
-      verifierTokens = sweepableTokens(deployment.verifier, feeTokens, skipZeroBalances);
-      if (verifierTokens.length == 0) console2.log("  SKIP verifier: no fee-token balance");
+      if (aggregator == address(0)) {
+        console2.log(string.concat("  SKIP ", label, ": not in use (no feeAggregator on-chain or in config/roles)"));
+        continue;
+      }
+      address[] memory tokens = sweepableTokens(deployment.verifiers[i].addr, feeTokens, skipZeroBalances);
+      if (tokens.length == 0) {
+        console2.log(string.concat("  SKIP ", label, ": no fee-token balance"));
+        continue;
+      }
+      buf[n++] = buildWithdrawCall(deployment.verifiers[i].addr, tokens);
     }
+
+    // ---- resolver ----
+    (, address resolverAggregator) = readAggregators(address(0), deployment.resolver);
+    _requireAggregatorMatchesConfig("resolver", resolverAggregator, roles.resolver.feeAggregator);
     if (resolverAggregator == address(0)) {
       console2.log("  SKIP resolver: not in use (no feeAggregator on-chain or in config/roles)");
     } else {
-      resolverTokens = sweepableTokens(deployment.resolver, feeTokens, skipZeroBalances);
-      if (resolverTokens.length == 0) console2.log("  SKIP resolver: no fee-token balance");
+      address[] memory resolverTokens = sweepableTokens(deployment.resolver, feeTokens, skipZeroBalances);
+      if (resolverTokens.length == 0) {
+        console2.log("  SKIP resolver: no fee-token balance");
+      } else {
+        buf[n++] = buildWithdrawCall(deployment.resolver, resolverTokens);
+      }
     }
 
-    calls = new Call[]((verifierTokens.length != 0 ? 1 : 0) + (resolverTokens.length != 0 ? 1 : 0));
-    uint256 n = 0;
-    if (verifierTokens.length != 0) calls[n++] = buildWithdrawCall(deployment.verifier, verifierTokens);
-    if (resolverTokens.length != 0) calls[n++] = buildWithdrawCall(deployment.resolver, resolverTokens);
+    calls = new Call[](n);
+    for (uint256 i = 0; i < n; ++i) {
+      calls[i] = buf[i];
+    }
   }
 
   /// @dev Chain and config/roles must agree on the aggregator. Matching zeros mean the

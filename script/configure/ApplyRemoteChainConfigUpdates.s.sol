@@ -12,7 +12,8 @@ import {console2} from "forge-std/console2.sol";
 /// @title ApplyRemoteChainConfigUpdates
 /// @notice Per destination: local router + verification fee + gas +
 ///         payload size + allowlist toggle on the CommitteeVerifier.
-///         Runs every lane whose SOURCE is the given chain, one call each, and skips the
+///         Runs every lane whose SOURCE is the given chain AND whose versionTag matches the
+///         given one (one verifier per run), one call each, and skips the
 ///         lanes already matching on-chain — so --rpc-url is required in BOTH output
 ///         modes.
 ///
@@ -22,7 +23,7 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage (chainAlias is the lane's SOURCE chain — outbound gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyRemoteChainConfigUpdates.s.sol \
-///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 ///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyRemoteChainConfigUpdates is BaseScript {
   /// @notice Which deployment a lane's remote-chain config targets: the SOURCE chain.
@@ -58,22 +59,20 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     });
   }
 
+  /// @notice The lanes with this chain as source that are pinned to `versionTag` — ONE
+  ///         verifier per run. Different verifiers can have different owners, and a
+  ///         Safe batch is all-or-nothing, so calls needing different
+  ///         executors must never share one batch.
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
+    require(versionTag != bytes4(0), "ApplyRemoteChainConfigUpdates: versionTag cannot be zero");
     _initOutput(chainAlias);
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    require(
-      deployment.verifier != address(0),
-      string.concat("ApplyRemoteChainConfigUpdates: verifier not recorded for ", chainAlias)
-    );
-    // The diff below reads the verifier, so an unreachable one must fail here with a
-    // legible reason rather than as a bare revert inside the first getter call.
-    require(
-      deployment.verifier.code.length != 0,
-      "ApplyRemoteChainConfigUpdates: no code at recorded verifier (wrong --rpc-url?)"
-    );
+    address verifier = ConfigLib.verifierByTag(deployment, versionTag);
+    _assertReachable(verifier, "verifier");
 
     string[] memory lanePaths = ConfigLib.listLanes();
     uint256 matched = 0;
@@ -82,26 +81,35 @@ contract ApplyRemoteChainConfigUpdates is BaseScript {
     for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      if (lane.versionTag != versionTag) continue;
       ++matched;
 
       _assertValidConfig(lane);
 
       // Every field this script writes already matches.
-      if (isCurrent(deployment.verifier, lane)) {
+      if (isCurrent(verifier, lane)) {
         console2.log("[ApplyRemoteChainConfigUpdates] lane UNCHANGED:", lane.name);
         continue;
       }
 
       console2.log("[ApplyRemoteChainConfigUpdates] lane STAGED:", lane.name);
-      console2.log("  target verifier:", deployment.verifier);
+      console2.log("  target verifier:", verifier);
       console2.log("  remote (dest) selector:", lane.dest.chainSelector);
       console2.log("  router:", lane.remote.router);
 
-      _stageMany(callsFor(deployment.verifier, toRemoteChainConfigArgs(lane)));
+      _stageMany(callsFor(verifier, toRemoteChainConfigArgs(lane)));
       ++staged;
     }
 
-    require(matched > 0, string.concat("ApplyRemoteChainConfigUpdates: no lanes with source ", chainAlias));
+    require(
+      matched > 0,
+      string.concat(
+        "ApplyRemoteChainConfigUpdates: no lanes with source ",
+        chainAlias,
+        " pinned to versionTag ",
+        ConfigLib.tagToString(versionTag)
+      )
+    );
     if (staged == 0) {
       console2.log("[ApplyRemoteChainConfigUpdates] nothing to do: every lane is already current:", matched);
       return;

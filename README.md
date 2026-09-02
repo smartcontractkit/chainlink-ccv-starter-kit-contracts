@@ -63,10 +63,10 @@ export OUTPUT_MODE=EOA
 forge script script/deploy/BootstrapFactory.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
 # 4) resolver via CREATE2 (assert address parity vs other chains)
 forge script script/deploy/DeployResolver.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
-# 5) verifier
-forge script script/deploy/DeployVerifier.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
-# 6-12) configure (looped over config/lanes and config/chains)
-forge script script/configure/ApplySignatureConfigs.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
+# 5) verifier — the bytes4 versionTag names this verifier and is appended to the deployment record
+forge script script/deploy/DeployVerifier.s.sol --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
+# 6-12) configure (looped over config/lanes and config/chains; the versionTag selects one verifier per run)
+forge script script/configure/ApplySignatureConfigs.s.sol --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
 # ... remaining configure scripts ...
 ```
 
@@ -82,8 +82,8 @@ of broadcasting — same script, different mode:
 ```bash
 export OUTPUT_MODE=SAFE
 export SAFE_ADDRESS=0x<the executing Safe>
-forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)" sepolia verifier --rpc-url $SEPOLIA_RPC_URL
-# -> writes out/safe/sepolia/a-transfer-owner-verifier.json
+forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)" sepolia verifier:0x00010001 --rpc-url $SEPOLIA_RPC_URL
+# -> writes out/safe/sepolia/transfer-owner-verifier-0x00010001.json
 ```
 
 `--rpc-url` is required in every mode: each run first verifies the connected
@@ -109,12 +109,14 @@ with its own `SAFE_ADDRESS`; an EOA runs the same script in EOA mode with
 holder executes the `b-` (accept) leg — or simply calls `acceptOwnership()` from
 their own tooling, since the propose leg already made them the pending holder.
 
-1. Owners — `TransferOwnership` / `AcceptOwnership`, target `verifier`, `resolver`
-   or `factory`. `TransferOwnership` reads chain state, so `--rpc-url` is required
+1. Owners — `TransferOwnership` / `AcceptOwnership`, target `verifier:<versionTag>`,
+   `resolver` or `factory` (a verifier is always addressed by its versionTag).
+   `TransferOwnership` reads chain state, so `--rpc-url` is required
    even in SAFE mode, where the batch is refused unless `SAFE_ADDRESS` is the
    current on-chain owner.
 2. `storageLocationsAdmin` — `TransferStorageLocationsAdmin` /
-   `AcceptStorageLocationsAdmin`; a **separate** admin role from the owner.
+   `AcceptStorageLocationsAdmin` (both take the verifier's `versionTag` as their second
+   argument); a **separate** admin role from the owner.
 3. Transitional `DynamicConfig` roles (allowlistAdmin / feeAggregator) are not
    two-step: re-point them via `SetDynamicConfig` only AFTER acceptance is confirmed
    on-chain.
@@ -134,8 +136,11 @@ holder of the role.
 - **Emergency lever asymmetry.** There is **no pause function**. The only emergency
   lever is **outbound**: set `router = 0` for a destination via
   `applyRemoteChainConfigUpdates`. There is **no inbound halt** — don't hunt for one.
-- **`versionTag`** is `bytes4`, non-zero, immutable. A new tag ⇒ a new verifier
-  deployment + resolver re-wiring. Scheme: 2 bytes operator id + 2 bytes version.
+- **`versionTag`** is `bytes4`, non-zero, immutable — a DEPLOY input, not chain state.
+  Each `DeployVerifier` run takes a tag and appends that verifier to
+  `config/deployments/<alias>.json`; several verifiers stay live at once (the old one
+  keeps verifying in-flight messages during an upgrade). Every lane pins the verifier
+  serving it via its own mandatory `versionTag`. Scheme: 2 bytes operator id + 2 bytes version.
 - **`storageLocations`** is the operator's own aggregator endpoint URL — a per-deployment
   input from the off-chain/infra workstream, updatable later by the `storageLocationsAdmin`.
 
