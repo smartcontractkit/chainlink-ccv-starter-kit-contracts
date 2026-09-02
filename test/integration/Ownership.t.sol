@@ -307,7 +307,10 @@ contract OwnershipTest is CommitteeVerifierSetup {
     // (config/chains/zz-scratch-ownership-factory.json) declaring the test EVM's 31337.
     ConfigLib.writeDeployment(
       Types.Deployment({
-        aliasName: ALIAS_FACTORY, factory: address(factory), resolver: address(resolver), verifier: address(verifier)
+        aliasName: ALIAS_FACTORY,
+        factory: address(factory),
+        resolver: address(resolver),
+        verifiers: _verifiersOf(address(verifier))
       })
     );
 
@@ -337,10 +340,6 @@ contract OwnershipTest is CommitteeVerifierSetup {
   //  helpers
   // ===========================================================================
 
-  /// @dev In-memory only — the handover seams take structs, so this alias never hits disk.
-  ///      Named like the rest for uniformity; zz-scratch-* is the repo-wide fixture marker.
-  string internal constant ALIAS = "zz-scratch-ownership-chain";
-
   /// @dev Any test that calls `ConfigLib.writeDeployment` needs its OWN alias. Foundry
   ///      runs test functions concurrently against a shared filesystem, so two tests
   ///      writing `config/deployments/<alias>.json` race: one overwrites the other's
@@ -350,21 +349,6 @@ contract OwnershipTest is CommitteeVerifierSetup {
   string internal constant ALIAS_DISPATCH = "zz-scratch-ownership-dispatch";
   string internal constant ALIAS_REJECT = "zz-scratch-ownership-reject";
   string internal constant ALIAS_FACTORY = "zz-scratch-ownership-factory";
-
-  function _deployment() internal view returns (Types.Deployment memory deployment) {
-    deployment.aliasName = ALIAS;
-    deployment.factory = address(factory);
-    deployment.resolver = address(resolver);
-    deployment.verifier = address(verifier);
-  }
-
-  function _roles() internal pure returns (Types.RolesConfig memory roles) {
-    roles.aliasName = ALIAS;
-    roles.verifier.owner = NEW_OWNER;
-    roles.verifier.storageLocationsAdmin = NEW_ADMIN;
-    roles.resolver.owner = NEW_OWNER;
-    roles.factoryOwner = NEW_OWNER;
-  }
 
   /// @dev Executes staged calls in order. NOTE: `vm.prank` applies to the next EXTERNAL
   ///      call, and a `script.callsFor(...)` in an argument position is itself external —

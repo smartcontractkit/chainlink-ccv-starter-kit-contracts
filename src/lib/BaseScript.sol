@@ -143,7 +143,7 @@ abstract contract BaseScript is Script {
     // Directory name comes from the supplied chain alias, not block.chainid.
     require(bytes(outputChainAlias).length != 0, "BaseScript: SAFE output needs a chain alias");
     string memory dir = string.concat("out/safe/", outputChainAlias);
-    string memory file = string.concat(dir, "/", name, ".json");
+    string memory file = string.concat(dir, "/", _fileSafe(name), ".json");
     // An empty batch is not signable, and writing one leaves an artifact that reads as
     // output. Any batch already at this path is from an earlier run and no longer
     // reflects config, so remove it rather than leave it to be imported as if fresh.
@@ -168,6 +168,18 @@ abstract contract BaseScript is Script {
     vm.writeFile(file, json);
     console2.log("[BaseScript] Safe batch written:", file);
     console2.log("[BaseScript]   transactions:", stagedTotal);
+  }
+
+  /// @dev Batch names can embed a target like "verifier:0x00010001", and ':' is not a
+  ///      portable filename character — it becomes '-'.
+  function _fileSafe(
+    string memory name
+  ) private pure returns (string memory) {
+    bytes memory raw = bytes(name);
+    for (uint256 i = 0; i < raw.length; ++i) {
+      if (raw[i] == bytes1(0x3A)) raw[i] = bytes1(0x2D); // ':' -> '-'
+    }
+    return string(raw);
   }
 
   function stagedCount() internal view returns (uint256) {

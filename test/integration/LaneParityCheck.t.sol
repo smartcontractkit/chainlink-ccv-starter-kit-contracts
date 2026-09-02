@@ -62,7 +62,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     });
     verifier.applyRemoteChainConfigUpdates(remotes);
 
-    // Dest side: inbound impl keyed by the SOURCE generation's versionTag + signer set
+    // Dest side: inbound impl keyed by the lane's versionTag + signer set
     // keyed by SOURCE selector.
     VersionedVerifierResolver.InboundImplementationArgs[] memory inbound =
       new VersionedVerifierResolver.InboundImplementationArgs[](1);
@@ -85,13 +85,36 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkConfigParity(_lane(), _srcChain(), _dstChain(), _dep(), _dep()), 0, "clean lane");
   }
 
-  /// @dev The headline invariant. Each chain matches its own config, so `DriftCheck`
-  ///      passes on both sides — and every message from source to dest reverts
-  ///      `InvalidCCVVersion` on arrival.
-  function test_configParity_versionTagDivergence() public view {
-    Types.ChainConfig memory dst = _dstChain();
-    dst.versionTag = 0x00010002;
-    assertEq(script.checkConfigParity(_lane(), _srcChain(), dst, _dep(), _dep()), 1, "tag divergence is a mismatch");
+  /// @dev The headline invariant, re-keyed to lanes: the lane's verifier must be
+  ///      deployed on BOTH endpoints, or every message reverts `InvalidCCVVersion` on
+  ///      arrival while `DriftCheck` passes on both sides.
+  function test_configParity_laneTagMissingOnDest() public view {
+    Types.Deployment memory destDeployment = _dep();
+    destDeployment.verifiers[0].versionTag = VERSION_TAG_V2; // dest only has another versionTag
+    assertEq(
+      script.checkConfigParity(_lane(), _srcChain(), _dstChain(), _dep(), destDeployment),
+      1,
+      "dest lacks the lane's verifier"
+    );
+  }
+
+  /// @dev Regression for the DELETED chain-level tag-equality rule: with per-lane tags,
+  ///      a lane may pin a DIFFERENT versionTag than other lanes on the same pair, as
+  ///      long as both endpoints record it.
+  function test_configParity_lanePinnedToSecondVerifierPasses() public {
+    _deploySecondVerifier();
+    Types.Deployment memory deployment = _dep();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    Types.LaneConfig memory lane = _lane();
+    lane.versionTag = VERSION_TAG_V2;
+    assertEq(
+      script.checkConfigParity(lane, _srcChain(), _dstChain(), deployment, deployment),
+      0,
+      "a lane on the second verifier is valid parity"
+    );
   }
 
   /// @dev Apps hardcode one resolver address in `requiredCCVs`; divergence forces
@@ -146,13 +169,15 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
 
   function test_configParity_countsEveryMismatchInOnePass() public view {
     Types.ChainConfig memory dst = _dstChain();
-    dst.versionTag = 0x00010002;
     dst.resolverSalt = bytes32(uint256(999));
+
+    Types.Deployment memory destDeployment = _dep();
+    destDeployment.verifiers[0].versionTag = VERSION_TAG_V2; // lane's verifier missing on dest
 
     Types.LaneConfig memory lane = _lane();
     lane.remote.gasForVerification = 0;
 
-    assertEq(script.checkConfigParity(lane, _srcChain(), dst, _dep(), _dep()), 3, "no short-circuit");
+    assertEq(script.checkConfigParity(lane, _srcChain(), dst, _dep(), destDeployment), 3, "no short-circuit");
   }
 
   // ===========================================================================
@@ -193,11 +218,26 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkDestSide(_lane(), VERSION_TAG, _dep()), 0, "dest side wired");
   }
 
-  /// @dev The inbound map is keyed by the SOURCE generation's tag. Passing a different
-  ///      tag models a lane whose source runs a generation this dest never registered:
-  ///      one miss for the inbound lookup, one for the immutable tag comparison.
-  function test_destSide_sourceTagNotRegistered() public view {
-    assertEq(script.checkDestSide(_lane(), 0x00010002, _dep()), 2, "unregistered source generation");
+  /// @dev A verifier recorded on the dest but never registered on its resolver's
+  ///      inbound map: one miss for the inbound lookup, one for the unset signer set on
+  ///      that verifier. In-flight messages tagged with it would not verify.
+  function test_destSide_recordedTagNotRegisteredInbound() public {
+    _deploySecondVerifier();
+    Types.Deployment memory deployment = _dep();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    assertEq(script.checkDestSide(_lane(), VERSION_TAG_V2, deployment), 2, "unregistered verifier");
+  }
+
+  /// @dev A tag the dest deployment does not record at all cannot be checked on-chain;
+  ///      it reverts with the deploy-first message (tier 1 flags it as a mismatch).
+  function test_destSide_unrecordedTagReverts() public {
+    vm.expectRevert("ConfigLib: no verifier with versionTag 0x00010002 recorded for  - deploy that verifier first");
+    // called for its expected revert; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
+    script.checkDestSide(_lane(), VERSION_TAG_V2, _dep());
   }
 
   function test_destSide_unsetSignatureConfig() public view {
@@ -243,7 +283,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
 
   function test_sourceSide_unreachableReverts() public {
     Types.Deployment memory deployment = _dep();
-    deployment.verifier = address(0xC0DE1E55);
+    deployment.verifiers[0].addr = address(0xC0DE1E55);
     vm.expectRevert("LaneParityCheck: no code at source verifier (wrong RPC?)");
     // called for its expected revert; the return is irrelevant
     // forge-lint: disable-next-line(unused-return)
@@ -267,6 +307,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     lane.name = "src_to_dst";
     lane.source = Types.LaneEndpoint({aliasName: SOURCE_ALIAS, chainSelector: SOURCE_SELECTOR});
     lane.dest = Types.LaneEndpoint({aliasName: DEST_ALIAS, chainSelector: DEST_SELECTOR});
+    lane.versionTag = VERSION_TAG;
     lane.signatureConfig.threshold = THRESHOLD;
     lane.signatureConfig.signers = signers;
     lane.remote = Types.RemoteChainConfig({
@@ -280,14 +321,12 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   function _srcChain() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = SOURCE_ALIAS;
     chainConfig.chainSelector = SOURCE_SELECTOR;
-    chainConfig.versionTag = VERSION_TAG;
     chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
   function _dstChain() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = DEST_ALIAS;
     chainConfig.chainSelector = DEST_SELECTOR;
-    chainConfig.versionTag = VERSION_TAG;
     chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
@@ -296,6 +335,6 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   function _dep() internal view returns (Types.Deployment memory deployment) {
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
-    deployment.verifier = address(verifier);
+    deployment.verifiers = _verifiersOf(address(verifier));
   }
 }

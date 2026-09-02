@@ -17,28 +17,34 @@ contract TransferStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the transfer-storageLocationsAdmin calldata.
   function callsFor(
     address verifier,
-    address newAdmin
+    address proposedAdmin
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] =
-      Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.transferStorageLocationsAdmin, (newAdmin))});
+    calls[0] = Call({
+      to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.transferStorageLocationsAdmin, (proposedAdmin))
+    });
   }
 
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
     _initOutput(chainAlias);
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
-    require(deployment.verifier != address(0), "target verifier unset");
-    require(roles.verifier.storageLocationsAdmin != address(0), "storageLocationsAdmin role unset");
+    address verifier = ConfigLib.verifierByTag(deployment, versionTag);
+    _assertReachable(verifier, "verifier");
+    address proposedAdmin =
+      ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag).storageLocationsAdmin;
+    require(proposedAdmin != address(0), "storageLocationsAdmin role unset");
 
-    console2.log("[TransferStorageLocationsAdmin] verifier:", deployment.verifier);
-    console2.log("  newAdmin:", roles.verifier.storageLocationsAdmin);
+    console2.log("[TransferStorageLocationsAdmin] versionTag:", ConfigLib.tagToString(versionTag));
+    console2.log("  verifier:", verifier);
+    console2.log("  storageLocationsAdmin PROPOSED to:", proposedAdmin);
+    console2.log("  (must acceptStorageLocationsAdmin() to take effect)");
 
-    _stageMany(callsFor(deployment.verifier, roles.verifier.storageLocationsAdmin));
-    _flush("transfer-storage-locations-admin");
+    _stageMany(callsFor(verifier, proposedAdmin));
+    _flush(string.concat("transfer-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 }

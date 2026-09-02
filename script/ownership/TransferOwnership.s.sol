@@ -10,8 +10,9 @@ import {console2} from "forge-std/console2.sol";
 /// @title TransferOwnership
 /// @notice Outline step 13 (propose leg). Two-step ownable: the CURRENT owner
 ///         proposes the transfer; the new owner accepts separately (AcceptOwnership).
-/// @dev Generic over target ("verifier" | "resolver" | "factory"). New owner is read from
-///      config/roles/<alias>.json.
+/// @dev Generic over target ("verifier[:<versionTag>]" | "resolver" | "factory"); the tag
+///      form selects a verifier when several are recorded. New owner is read
+///      from config/roles/<alias>.json.
 /// @dev HANDOVER ORDER: grant-new-before-revoke-old; only revoke the old holder
 ///      AFTER on-chain acceptance is confirmed (DriftCheck goes clean on the new owner).
 ///      The accept leg is prepared and executed by the incoming holder, not here.
@@ -25,10 +26,10 @@ import {console2} from "forge-std/console2.sol";
 contract TransferOwnership is BaseScript {
   function callsFor(
     address to,
-    address newOwner
+    address proposedOwner
   ) public pure returns (Call[] memory calls) {
     calls = new Call[](1);
-    calls[0] = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (newOwner))});
+    calls[0] = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (proposedOwner))});
   }
 
   function run(
@@ -41,9 +42,8 @@ contract TransferOwnership is BaseScript {
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
     address to = ConfigLib.targetAddress(deployment, target);
-    address newOwner = ConfigLib.targetOwner(roles, target);
-    require(to != address(0), string.concat("TransferOwnership: ", target, " not recorded for ", chainAlias));
-    require(newOwner != address(0), string.concat("TransferOwnership: ", target, " owner role unset"));
+    address proposedOwner = ConfigLib.targetOwner(roles, target);
+    require(proposedOwner != address(0), string.concat("TransferOwnership: ", target, " owner role unset"));
     _assertReachable(to, target);
     // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already
     // reverts on a non-owner sender.
@@ -51,9 +51,10 @@ contract TransferOwnership is BaseScript {
 
     console2.log("[TransferOwnership]", target);
     console2.log("  target:", to);
-    console2.log("  newOwner:", newOwner);
+    console2.log("  owner PROPOSED to:", proposedOwner);
+    console2.log("  (must acceptOwnership() to take effect)");
 
-    _stageMany(callsFor(to, newOwner));
+    _stageMany(callsFor(to, proposedOwner));
     _flush(string.concat("transfer-owner-", target));
   }
 }

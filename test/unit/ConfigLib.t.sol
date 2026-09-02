@@ -35,12 +35,96 @@ contract ConfigLibTest is Test {
     assertEq(lane.source.chainSelector, 16015286601757825753);
     assertEq(lane.dest.aliasName, "base_sepolia");
     assertEq(lane.dest.chainSelector, 10344971235874465080);
+    assertEq(lane.versionTag, bytes4(0x00010001), "mandatory versionTag parsed");
 
     // Signature config must respect the "not 1-of-1, threshold > 2/3" constraint.
     assertEq(lane.signatureConfig.threshold, 7);
     assertEq(lane.signatureConfig.signers.length, 10);
     assertGt(lane.signatureConfig.threshold, 1); // not 1-of-1
     assertGt(uint256(lane.signatureConfig.threshold) * 3, lane.signatureConfig.signers.length * 2); // > 2/3
+  }
+
+  /// @dev The versionTag is mandatory: a lane without one must fail with a message that
+  ///      shows the expected key, not a bare "key not found".
+  function test_readLaneByPath_revertsWhenVersionTagMissing() public {
+    _expectLaneRevert("missing-tag", _laneJsonWithVersionTagLine(""), "has no versionTag");
+  }
+
+  function test_readLaneByPath_revertsOnZeroVersionTag() public {
+    _expectLaneRevert("zero-tag", _laneJsonWithVersionTagLine("\"versionTag\": \"0x00000000\","), "is malformed");
+  }
+
+  /// @dev Tags are cross-chain identities, so lanes may only pin tags enumerated in the
+  ///      repo-wide catalog — a typo here would otherwise name a verifier that exists nowhere.
+  function test_readLaneByPath_revertsOnUncatalogedVersionTag() public {
+    _expectLaneRevert(
+      "unknown-tag", _laneJsonWithVersionTagLine("\"versionTag\": \"0xdeadbeef\","), "not catalogued in"
+    );
+  }
+
+  function test_readVersionTags_parsesTheCommittedCatalog() public view {
+    bytes4[] memory tags = ConfigLib.readVersionTags();
+    bool found = false;
+    for (uint256 i = 0; i < tags.length; ++i) {
+      if (tags[i] == bytes4(0x00010001)) found = true;
+    }
+    assertTrue(found, "the current versionTag is catalogued");
+  }
+
+  function test_requireKnownTag_acceptsCataloguedTag() public view {
+    ConfigLib.requireKnownTag(bytes4(0x00010001), "test");
+  }
+
+  function test_requireKnownTag_revertsOnUnknownTag() public {
+    try this.callRequireKnownTag(0xdeadbeef) {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, "not catalogued in config/version-tags.json"), reason);
+    }
+  }
+
+  /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
+  function callRequireKnownTag(
+    bytes4 tag
+  ) external view {
+    ConfigLib.requireKnownTag(tag, "test");
+  }
+
+  function _laneJsonWithVersionTagLine(
+    string memory versionTagLine
+  ) private pure returns (string memory) {
+    return string.concat(
+      '{"name":"tmp-lane",',
+      '"source":{"alias":"a","chainSelector":"1"},',
+      '"dest":{"alias":"b","chainSelector":"2"},',
+      versionTagLine,
+      '"signatureConfig":{"threshold":1,"signers":[]}}'
+    );
+  }
+
+  /// @dev Forge runs tests concurrently against a shared filesystem, so each test
+  ///      writing a fixture file must use its OWN path.
+  function _expectLaneRevert(
+    string memory caseName,
+    string memory json,
+    string memory reasonFragment
+  ) private {
+    string memory path = string.concat("out/governance/lane-", caseName, ".local.json");
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, json);
+    try this.callReadLane(path) {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, reasonFragment), string.concat("reason names the problem: ", reason));
+    }
+    vm.removeFile(path);
+  }
+
+  /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
+  function callReadLane(
+    string calldata path
+  ) external view returns (Types.LaneConfig memory) {
+    return ConfigLib.readLaneByPath(path);
   }
 
   function test_listLanes_skipsTemplatesAndExamples() public view {

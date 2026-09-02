@@ -34,7 +34,10 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     // `laneCalls` reads the record for the alias it resolves, so the target needs one.
     ConfigLib.writeDeployment(
       Types.Deployment({
-        aliasName: DEST_ALIAS, factory: address(factory), resolver: address(resolver), verifier: address(verifier)
+        aliasName: DEST_ALIAS,
+        factory: address(factory),
+        resolver: address(resolver),
+        verifiers: _verifiersOf(address(verifier))
       })
     );
   }
@@ -178,18 +181,27 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     lane.source.chainSelector = SOURCE_SELECTOR;
     lane.dest.aliasName = destAlias;
     lane.dest.chainSelector = 10344971235874465080;
+    lane.versionTag = VERSION_TAG;
     lane.signatureConfig.threshold = threshold;
     lane.signatureConfig.signers = signers;
   }
 
   function test_reverts_whenTargetVerifierNotYetDeployed() public {
-    ConfigLib.writeDeployment(
-      Types.Deployment({
-        aliasName: PARTIAL_ALIAS, factory: address(factory), resolver: address(resolver), verifier: address(0)
-      })
-    );
+    Types.Deployment memory partialRecord;
+    partialRecord.aliasName = PARTIAL_ALIAS;
+    partialRecord.factory = address(factory);
+    partialRecord.resolver = address(resolver);
+    ConfigLib.writeDeployment(partialRecord);
 
-    vm.expectRevert(bytes(string.concat("ApplySignatureConfigs: verifier not recorded for ", PARTIAL_ALIAS)));
+    vm.expectRevert(
+      bytes(
+        string.concat(
+          "ConfigLib: no verifier with versionTag 0x00010001 recorded for ",
+          PARTIAL_ALIAS,
+          " - deploy that verifier first"
+        )
+      )
+    );
     // the expected revert is the assertion; the call returns no value
     // forge-lint: disable-next-line(unused-return)
     script.laneCalls(_lane(PARTIAL_ALIAS, 3, _generateSigners(4)));

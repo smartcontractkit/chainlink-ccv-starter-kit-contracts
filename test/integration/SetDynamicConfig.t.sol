@@ -52,7 +52,8 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
 
   function test_toDynamicConfig_fromExampleRoles() public view {
     Types.RolesConfig memory roles = ConfigLib.readRolesByPath("config/roles/sepolia.example.json");
-    CommitteeVerifier.DynamicConfig memory dynamicConfig = script.toDynamicConfig(roles);
+    CommitteeVerifier.DynamicConfig memory dynamicConfig =
+      script.toDynamicConfig(ConfigLib.verifierRolesByTag(roles, VERSION_TAG));
     assertEq(dynamicConfig.feeAggregator, address(0x2000000000000000000000000000000000000004), "fee agg from roles");
     assertEq(
       dynamicConfig.allowlistAdmin, address(0x2000000000000000000000000000000000000003), "allowlist admin from roles"

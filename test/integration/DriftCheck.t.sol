@@ -97,7 +97,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function test_drift_verifierOwner() public view {
     Types.RolesConfig memory roles = _roles();
-    roles.verifier.owner = address(0xBAD);
+    roles.verifiers[0].owner = address(0xBAD);
     assertEq(script.checkRoles(_deployment(), roles), 1, "verifier owner mismatch");
   }
 
@@ -109,14 +109,14 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function test_drift_storageLocationsAdmin() public view {
     Types.RolesConfig memory roles = _roles();
-    roles.verifier.storageLocationsAdmin = address(0xBAD);
+    roles.verifiers[0].storageLocationsAdmin = address(0xBAD);
     assertEq(script.checkRoles(_deployment(), roles), 1, "storageLocationsAdmin mismatch");
   }
 
   function test_drift_dynamicConfigRoles() public view {
     Types.RolesConfig memory roles = _roles();
-    roles.verifier.feeAggregator = address(0xBAD);
-    roles.verifier.allowlistAdmin = address(0xBAD);
+    roles.verifiers[0].feeAggregator = address(0xBAD);
+    roles.verifiers[0].allowlistAdmin = address(0xBAD);
     assertEq(script.checkRoles(_deployment(), roles), 2, "both DynamicConfig roles counted separately");
   }
 
@@ -141,14 +141,22 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkRoles(deployment, _roles()), 0, "absent factory must not count as drift");
   }
 
+  /// @dev Roles are per verifier: a recorded verifier with no roles entry has no
+  ///      machine-checkable intent, which is drift, not a skip.
+  function test_drift_recordedVerifierWithoutRolesEntry() public view {
+    Types.RolesConfig memory roles = _roles();
+    roles.verifiers[0].versionTag = VERSION_TAG_V2; // entry no longer matches the recorded tag
+    assertEq(script.checkRoles(_deployment(), roles), 1, "missing roles entry is one drift");
+  }
+
   // ===========================================================================
   //  chain-scoped verifier config
   // ===========================================================================
 
   function test_drift_versionTag() public view {
-    Types.ChainConfig memory chainConfig = _chainConfig();
-    chainConfig.versionTag = 0xDEADBEEF;
-    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "immutable versionTag mismatch");
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers[0].versionTag = 0xDEADBEEF; // record disagrees with the immutable on-chain tag
+    assertEq(script.checkVerifierConfig(deployment, _chainConfig()), 1, "immutable versionTag mismatch");
   }
 
   function test_drift_finalityConfig() public view {
@@ -277,14 +285,90 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   }
 
   /// @dev Direction lock-in for the resolver: outbound entries are only expected for
-  ///      lanes whose SOURCE is this chain.
+  ///      lanes whose SOURCE is this chain. With only the dest-side lane declared, the
+  ///      single drift is the setUp-wired outbound entry no lane declares any more
+  ///      (closed world), NOT a missing entry for the dest-side lane.
   function test_direction_outboundImplementationCheckedOnSourceOnly() public view {
     Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
     lanes[0] = _inboundLane();
     assertEq(
       script.checkResolverImplementations(_deployment(), _chainConfig(), lanes),
-      0,
-      "dest-side lane must not expect an outbound entry"
+      1,
+      "dest-side lane expects no outbound entry; only the undeclared on-chain entry is flagged"
+    );
+  }
+
+  /// @dev CLOSED WORLD, inbound: an on-chain registration whose tag is not in the
+  ///      deployment record is attack surface and must be drift.
+  function test_drift_unknownInboundRegistration() public {
+    VersionedVerifierResolver.InboundImplementationArgs[] memory rogue =
+      new VersionedVerifierResolver.InboundImplementationArgs[](1);
+    rogue[0] = VersionedVerifierResolver.InboundImplementationArgs({version: 0xDEADBEEF, verifier: address(0xBAD)});
+    resolver.applyInboundImplementationUpdates(rogue);
+
+    assertEq(
+      script.checkResolverImplementations(_deployment(), _chainConfig(), _lanes()),
+      1,
+      "unknown registered inbound verifier must be drift"
+    );
+  }
+
+  /// @dev CLOSED WORLD, inbound: a recorded verifier the resolver does not serve is
+  ///      drift (its in-flight messages would stop verifying).
+  function test_drift_recordedTagNotRegisteredInbound() public {
+    _deploySecondVerifier();
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    assertEq(
+      script.checkResolverImplementations(deployment, _chainConfig(), _lanes()),
+      1,
+      "recorded-but-unregistered verifier must be drift"
+    );
+  }
+
+  /// @dev CLOSED WORLD, outbound: an on-chain outbound entry no lane declares is drift.
+  function test_drift_outboundEntryNoLaneDeclares() public view {
+    assertEq(
+      script.checkResolverImplementations(_deployment(), _chainConfig(), new Types.LaneConfig[](0)),
+      1,
+      "the setUp-wired outbound entry is undeclared once no lane names it"
+    );
+  }
+
+  /// @dev A lane pinned to a versionTag that was never deployed here cannot be checked;
+  ///      it must be reported as drift, not revert the whole run.
+  function test_drift_lanePinnedToUnrecordedTag() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
+    lanes[0] = _outboundLane();
+    lanes[0].versionTag = VERSION_TAG_V2; // never deployed in this fixture
+    // One drift from the resolver map (no verifier for the tag) is counted; the wired
+    // outbound entry stays declared by the lane's dest selector, so no undeclared hit.
+    assertEq(script.checkResolverImplementations(_deployment(), _chainConfig(), lanes), 1, "resolver tier");
+    assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 1, "lane tier");
+  }
+
+  /// @dev Two verifiers live at once, each fully wired, must be CLEAN — the whole
+  ///      point of the multi-verifier record.
+  function test_twoVerifiers_cleanState() public {
+    _deploySecondVerifier();
+
+    // Register the second verifier inbound (upgrade ceremony step one).
+    VersionedVerifierResolver.InboundImplementationArgs[] memory inbound =
+      new VersionedVerifierResolver.InboundImplementationArgs[](1);
+    inbound[0] =
+      VersionedVerifierResolver.InboundImplementationArgs({version: VERSION_TAG_V2, verifier: address(verifierV2)});
+    resolver.applyInboundImplementationUpdates(inbound);
+
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    assertEq(
+      script.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), _lanes()), 0, "two live verifiers, no drift"
     );
   }
 
@@ -294,8 +378,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function test_unreachableVerifier_revertsWithoutMarker() public {
     Types.Deployment memory deployment = _deployment();
-    deployment.verifier = address(0xC0DE1E55); // recorded, but no code here
-    vm.expectRevert("DriftCheck: no code at recorded verifier (wrong --rpc-url?)");
+    deployment.verifiers[0].addr = address(0xC0DE1E55); // recorded, but no code here
+    vm.expectRevert("DriftCheck: no code at recorded verifier for versionTag 0x00010001 (wrong --rpc-url?)");
     // called for its expected revert; the return is irrelevant
     // forge-lint: disable-next-line(unused-return)
     script.checkAll(deployment, _chainConfig(), _roles(), _lanes());
@@ -318,7 +402,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   ///      one run, not a fix-one-rerun loop.
   function test_multipleDrifts_areAllCounted() public view {
     Types.RolesConfig memory roles = _roles();
-    roles.verifier.owner = address(0xBAD);
+    roles.verifiers[0].owner = address(0xBAD);
     roles.resolver.feeAggregator = address(0xBAD);
 
     Types.ChainConfig memory chainConfig = _chainConfig();
@@ -338,14 +422,13 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     deployment.aliasName = ALIAS;
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
-    deployment.verifier = address(verifier);
+    deployment.verifiers = _verifiersOf(address(verifier));
   }
 
   function _chainConfig() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = ALIAS;
     chainConfig.chainSelector = LOCAL_SELECTOR;
     chainConfig.rmn = RMN;
-    chainConfig.versionTag = VERSION_TAG;
     chainConfig.finalityConfig = 0x00000000; // constructor default; never set in the fixture
     chainConfig.storageLocations = new string[](1);
     chainConfig.storageLocations[0] = STORAGE_LOCATION;
@@ -354,13 +437,18 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
   function _roles() internal view returns (Types.RolesConfig memory roles) {
     roles.aliasName = ALIAS;
-    roles.verifier.owner = address(this);
-    roles.verifier.storageLocationsAdmin = address(this); // constructor sets deployer
-    roles.verifier.allowlistAdmin = address(this);
-    roles.verifier.feeAggregator = FEE_AGGREGATOR;
+    // constructor sets the deployer as owner/admin, so the fixture entry matches
+    roles.verifiers = _singleVerifierRoles(_fixtureVerifierRoles(VERSION_TAG));
     roles.resolver.owner = address(this);
     roles.resolver.feeAggregator = RESOLVER_FEE_AGGREGATOR;
     roles.factoryOwner = address(this);
+  }
+
+  function _rolesBothVerifiers() internal view returns (Types.RolesConfig memory roles) {
+    roles = _roles();
+    roles.verifiers = new Types.VerifierRoles[](2);
+    roles.verifiers[0] = _fixtureVerifierRoles(VERSION_TAG);
+    roles.verifiers[1] = _fixtureVerifierRoles(VERSION_TAG_V2);
   }
 
   /// @dev Index 0 is the SOURCE-side lane, index 1 is the DEST-side lane. Tests index
@@ -375,6 +463,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     lane.name = "local_to_remote";
     lane.source = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SELECTOR});
     lane.dest = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SELECTOR});
+    lane.versionTag = VERSION_TAG;
     lane.remote = Types.RemoteChainConfig({
       router: ROUTER,
       feeUSDCents: FEE_USD_CENTS,
@@ -390,6 +479,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     lane.name = "remote_to_local";
     lane.source = Types.LaneEndpoint({aliasName: REMOTE_ALIAS, chainSelector: REMOTE_SELECTOR});
     lane.dest = Types.LaneEndpoint({aliasName: ALIAS, chainSelector: LOCAL_SELECTOR});
+    lane.versionTag = VERSION_TAG;
     lane.signatureConfig.threshold = THRESHOLD;
     lane.signatureConfig.signers = signers;
     // Remote chain config for this lane is applied on the SOURCE chain, not here.

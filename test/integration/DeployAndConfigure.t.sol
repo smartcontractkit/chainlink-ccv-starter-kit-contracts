@@ -6,7 +6,9 @@ import {ApplyOutboundImplementationUpdates} from "../../script/configure/ApplyOu
 import {ApplyRemoteChainConfigUpdates} from "../../script/configure/ApplyRemoteChainConfigUpdates.s.sol";
 import {ApplySignatureConfigs} from "../../script/configure/ApplySignatureConfigs.s.sol";
 import {SetFeeAggregator} from "../../script/configure/SetFeeAggregator.s.sol";
+import {DeployVerifier} from "../../script/deploy/DeployVerifier.s.sol";
 import {DriftCheck} from "../../script/governance/DriftCheck.s.sol";
+import {LaneParityCheck} from "../../script/governance/LaneParityCheck.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {MockRMN} from "../mocks/MockRMN.sol";
@@ -161,6 +163,124 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   }
 
   // ===========================================================================
+  //  deployment record — one entry per verifier, append-only
+  // ===========================================================================
+
+  function test_recordVerifier_appendsEachTag() public {
+    Types.Deployment memory deployment;
+    deployment.aliasName = "local";
+
+    DeployVerifierHarness harness = new DeployVerifierHarness();
+    deployment = harness.record(deployment, VERSION_TAG, address(verifier), false);
+    deployment = harness.record(deployment, VERSION_TAG_V2, address(0xBEEF), false);
+
+    assertEq(deployment.verifiers.length, 2, "one entry per verifier");
+    assertEq(deployment.verifiers[0].versionTag, VERSION_TAG, "verifier 1 kept");
+    assertEq(deployment.verifiers[0].addr, address(verifier));
+    assertEq(deployment.verifiers[1].versionTag, VERSION_TAG_V2, "verifier 2 appended");
+    assertEq(deployment.verifiers[1].addr, address(0xBEEF));
+  }
+
+  /// @dev A re-deploy under an existing tag would silently orphan the previous verifier;
+  ///      it must refuse unless explicitly waived.
+  function test_recordVerifier_duplicateTagRevertsWithoutWaiver() public {
+    Types.Deployment memory deployment;
+    deployment.aliasName = "local";
+
+    DeployVerifierHarness harness = new DeployVerifierHarness();
+    deployment = harness.record(deployment, VERSION_TAG, address(verifier), false);
+
+    vm.expectRevert(
+      "DeployVerifier: versionTag 0x00010001 already recorded for local"
+      " - pick a new tag, or set ALLOW_TAG_REPLACE=true to replace a deploy nothing references yet"
+    );
+    // the expected revert is the assertion; the return is irrelevant
+    // forge-lint: disable-next-line(unused-return)
+    harness.record(deployment, VERSION_TAG, address(0xBEEF), false);
+  }
+
+  function test_recordVerifier_waiverReplacesTheEntryInPlace() public {
+    Types.Deployment memory deployment;
+    deployment.aliasName = "local";
+
+    DeployVerifierHarness harness = new DeployVerifierHarness();
+    deployment = harness.record(deployment, VERSION_TAG, address(verifier), false);
+    deployment = harness.record(deployment, VERSION_TAG, address(0xBEEF), true);
+
+    assertEq(deployment.verifiers.length, 1, "replaced, not appended");
+    assertEq(deployment.verifiers[0].addr, address(0xBEEF), "new address under the same tag");
+  }
+
+  // ===========================================================================
+  //  upgrade ceremony — the multi-verifier acceptance test
+  // ===========================================================================
+
+  /// @notice Wire verifier 1, deploy verifier 2, pin the lane to it, wire, and cut
+  ///         over. Verifier 1 keeps verifying in-flight messages (its inbound entry
+  ///         survives) while verifier 2 takes new traffic (outbound flipped), and both
+  ///         governance checks read the two-verifier state as clean.
+  function test_upgradeCeremony_gen2TakesTrafficWhileGen1KeepsVerifying() public {
+    // ---- verifier 1 fully wired ----
+    Types.LaneConfig memory lane = _lane();
+    _exec(applySig.callsFor(address(verifier), new uint64[](0), applySig.toSignatureConfig(lane)));
+    _exec(applyRemote.callsFor(address(verifier), applyRemote.toRemoteChainConfigArgs(lane)));
+    _exec(applyInbound.callsFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG, address(verifier))));
+    _exec(applyOutbound.callsFor(address(resolver), _outboundArgs(lane)));
+    _exec(setFeeAggregator.callsFor(address(resolver), RESOLVER_FEE_AGGREGATOR));
+
+    // ---- deploy verifier 2 and pin the lane to it ----
+    _deploySecondVerifier();
+    lane.versionTag = VERSION_TAG_V2;
+
+    // Ceremony order: dest side first (inbound + signatures), then source side, then cutover.
+    _exec(applyInbound.callsFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG_V2, address(verifierV2))));
+    _exec(applySig.callsFor(address(verifierV2), new uint64[](0), applySig.toSignatureConfig(lane)));
+    _exec(applyRemote.callsFor(address(verifierV2), applyRemote.toRemoteChainConfigArgs(lane)));
+    VersionedVerifierResolver.OutboundImplementationArgs[] memory flip =
+      new VersionedVerifierResolver.OutboundImplementationArgs[](1);
+    flip[0] = VersionedVerifierResolver.OutboundImplementationArgs({
+      destChainSelector: lane.dest.chainSelector, verifier: address(verifierV2)
+    });
+    _exec(applyOutbound.callsFor(address(resolver), flip));
+
+    // ---- flip-then-drain: old tag keeps resolving, new tag takes traffic ----
+    assertEq(
+      resolver.getInboundImplementation(abi.encodePacked(VERSION_TAG)),
+      address(verifier),
+      "verifier 1 inbound entry survives the cutover (in-flight messages still verify)"
+    );
+    assertEq(
+      resolver.getInboundImplementation(abi.encodePacked(VERSION_TAG_V2)),
+      address(verifierV2),
+      "verifier 2 registered inbound"
+    );
+    assertEq(
+      resolver.getOutboundImplementation(lane.dest.chainSelector, ""),
+      address(verifierV2),
+      "outbound flipped to verifier 2"
+    );
+
+    // ---- both governance checks agree the two-verifier state is clean ----
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
+    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
+
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
+    lanes[0] = lane;
+    assertEq(driftCheck.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), lanes), 0, "DriftCheck clean");
+
+    LaneParityCheck parity = new LaneParityCheck();
+    Types.ChainConfig memory destChain = _chainConfig();
+    destChain.chainSelector = DEST_SELECTOR;
+    assertEq(
+      parity.checkConfigParity(lane, _chainConfig(), destChain, deployment, deployment), 0, "config parity clean"
+    );
+    assertEq(parity.checkSourceSide(lane, deployment), 0, "source side clean");
+    assertEq(parity.checkDestSide(lane, lane.versionTag, deployment), 0, "dest side clean");
+  }
+
+  // ===========================================================================
   //  emergency lever
   // ===========================================================================
 
@@ -245,6 +365,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     lane.name = "compose_lane";
     lane.source = Types.LaneEndpoint({aliasName: "local", chainSelector: SOURCE_SELECTOR});
     lane.dest = Types.LaneEndpoint({aliasName: "local", chainSelector: DEST_SELECTOR});
+    lane.versionTag = VERSION_TAG;
     lane.signatureConfig.threshold = THRESHOLD;
     lane.signatureConfig.signers = signers;
     lane.remote = Types.RemoteChainConfig({
@@ -276,14 +397,13 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     deployment.aliasName = "local";
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
-    deployment.verifier = address(verifier);
+    deployment.verifiers = _verifiersOf(address(verifier));
   }
 
   function _chainConfig() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = "local";
     chainConfig.chainSelector = SOURCE_SELECTOR;
     chainConfig.rmn = RMN;
-    chainConfig.versionTag = VERSION_TAG;
     chainConfig.finalityConfig = 0x00000000;
     chainConfig.storageLocations = new string[](1);
     chainConfig.storageLocations[0] = "https://aggregator.example/ccv";
@@ -292,13 +412,19 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
 
   function _roles() internal view returns (Types.RolesConfig memory roles) {
     roles.aliasName = "local";
-    roles.verifier.owner = address(this);
-    roles.verifier.storageLocationsAdmin = address(this);
-    roles.verifier.allowlistAdmin = address(this);
-    roles.verifier.feeAggregator = FEE_AGGREGATOR;
+    roles.verifiers = _singleVerifierRoles(_fixtureVerifierRoles(VERSION_TAG));
     roles.resolver.owner = address(this);
     roles.resolver.feeAggregator = RESOLVER_FEE_AGGREGATOR;
     roles.factoryOwner = address(this);
+  }
+
+  /// @dev Roles for both verifiers — the ceremony's two-verifier DriftCheck needs an
+  ///      entry per recorded tag.
+  function _rolesBothVerifiers() internal view returns (Types.RolesConfig memory roles) {
+    roles = _roles();
+    roles.verifiers = new Types.VerifierRoles[](2);
+    roles.verifiers[0] = _fixtureVerifierRoles(VERSION_TAG);
+    roles.verifiers[1] = _fixtureVerifierRoles(VERSION_TAG_V2);
   }
 
   function _exec(
@@ -315,5 +441,19 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
         }
       }
     }
+  }
+}
+
+/// @dev Exposes the internal record logic through an external call, so a memory struct
+///      round-trips by value and `vm.expectRevert` sees the revert in a CALL.
+contract DeployVerifierHarness is DeployVerifier {
+  function record(
+    Types.Deployment memory deployment,
+    bytes4 versionTag,
+    address verifier,
+    bool allowReplace
+  ) external pure returns (Types.Deployment memory) {
+    _recordVerifier(deployment, versionTag, verifier, allowReplace);
+    return deployment;
   }
 }

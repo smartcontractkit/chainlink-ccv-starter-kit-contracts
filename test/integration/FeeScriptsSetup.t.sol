@@ -63,7 +63,7 @@ abstract contract FeeScriptsSetup is CommitteeVerifierSetup {
     deployment.aliasName = "test_fee_chain";
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
-    deployment.verifier = address(verifier);
+    deployment.verifiers = _verifiersOf(address(verifier));
   }
 
   function _bothTokens() internal view returns (address[] memory feeTokens) {

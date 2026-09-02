@@ -8,7 +8,7 @@
 #
 #  NEVER overwrites. If the target does not exist it is created from the template with
 #  the core fields filled in from the source, and every field the source cannot know
-#  (versionTag, resolverSalt, storageLocations, ...) left at its template placeholder.
+#  (resolverSalt, storageLocations, ...) left at its template placeholder.
 #  If the target already exists, nothing is written: the core fields are compared and any
 #  difference is reported as a WARN.
 #

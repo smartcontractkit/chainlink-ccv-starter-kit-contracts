@@ -12,7 +12,8 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title ApplySignatureConfigs
 /// @notice Sets the signer set + threshold per source chain on the CommitteeVerifier.
-///         Runs every lane whose DESTINATION is the given chain, one call each, and skips
+///         Runs every lane whose DESTINATION is the given chain AND whose versionTag matches
+///         the given one (one verifier per run), one call each, and skips
 ///         the lanes already matching on-chain — so --rpc-url is required in BOTH output
 ///         modes.
 ///
@@ -21,7 +22,7 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage (chainAlias is the lane's DESTINATION chain — signatures are verified there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplySignatureConfigs.s.sol \
-///     --sig "run(string)" base_sepolia --rpc-url $BASE_SEPOLIA_RPC_URL
+///     --sig "run(string,bytes4)" base_sepolia 0x00010001 --rpc-url $BASE_SEPOLIA_RPC_URL
 ///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplySignatureConfigs is BaseScript {
   /// @notice Waives the committee-strength policy below. `run()` sets it from
@@ -78,20 +79,28 @@ contract ApplySignatureConfigs is BaseScript {
   ) public view returns (Call[] memory calls, string memory targetAlias) {
     targetAlias = _targetAlias(lane);
     Types.Deployment memory deployment = ConfigLib.readDeployment(targetAlias);
-    require(
-      deployment.verifier != address(0), string.concat("ApplySignatureConfigs: verifier not recorded for ", targetAlias)
-    );
+    // Reverts when the lane's versionTag has no verifier recorded on the dest chain.
+    address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
 
     _assertValidConfig(lane);
 
-    return (callsFor(deployment.verifier, new uint64[](0), toSignatureConfig(lane)), targetAlias);
+    return (callsFor(verifier, new uint64[](0), toSignatureConfig(lane)), targetAlias);
   }
 
+  /// @notice The lanes with this chain as destination that are pinned to `versionTag` —
+  ///         ONE verifier per run. Different verifiers can have different owners,
+  ///         and a Safe batch is all-or-nothing, so calls needing different
+  ///         executors must never share one batch.
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
+    require(versionTag != bytes4(0), "ApplySignatureConfigs: versionTag cannot be zero");
     _initOutput(chainAlias);
     allowWeakCommittee = vm.envOr("ALLOW_WEAK_COMMITTEE", false);
+
+    address verifier = ConfigLib.verifierByTag(ConfigLib.readDeployment(chainAlias), versionTag);
+    _assertReachable(verifier, "verifier");
 
     string[] memory lanePaths = ConfigLib.listLanes();
     uint256 matched = 0;
@@ -100,13 +109,11 @@ contract ApplySignatureConfigs is BaseScript {
     for (uint256 i = 0; i < lanePaths.length; ++i) {
       Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      if (lane.versionTag != versionTag) continue;
       ++matched;
 
       (Call[] memory calls, string memory targetAlias) = laneCalls(lane);
 
-      // The diff reads the verifier, so an unreachable one must fail with a legible
-      // reason rather than as a bare revert inside the getter.
-      require(calls[0].to.code.length != 0, "ApplySignatureConfigs: no code at recorded verifier (wrong --rpc-url?)");
       if (isCurrent(calls[0].to, lane)) {
         console2.log("[ApplySignatureConfigs] lane UNCHANGED:", lane.name);
         continue;
@@ -122,13 +129,23 @@ contract ApplySignatureConfigs is BaseScript {
       ++staged;
     }
 
-    require(matched > 0, string.concat("ApplySignatureConfigs: no lanes with destination ", chainAlias));
+    require(
+      matched > 0,
+      string.concat(
+        "ApplySignatureConfigs: no lanes with destination ",
+        chainAlias,
+        " pinned to versionTag ",
+        ConfigLib.tagToString(versionTag)
+      )
+    );
     if (staged == 0) {
       console2.log("[ApplySignatureConfigs] nothing to do: every lane is already current:", matched);
       return;
     }
     console2.log("[ApplySignatureConfigs] staged lanes:", staged, "of", matched);
-    _flush(string.concat("apply-signature-configs-", chainAlias));
+    // The tag is part of the batch name: per-tag runs on the same chain must not
+    // overwrite each other's Safe batch.
+    _flush(string.concat("apply-signature-configs-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 
   /// @notice True when the config already matches on-chain: the verifier holds this

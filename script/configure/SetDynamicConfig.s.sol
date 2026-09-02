@@ -9,11 +9,12 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title SetDynamicConfig
 /// @notice Sets the CommitteeVerifier DynamicConfig
-///         { feeAggregator, allowlistAdmin }. Per chain / per verifier.
+///         { feeAggregator, allowlistAdmin }. Per chain / per verifier: the versionTag
+///         argument selects which recorded verifier (and which roles entry).
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/configure/SetDynamicConfig.s.sol \
-///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
+///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 contract SetDynamicConfig is BaseScript {
   /// @notice Single source of truth for the setDynamicConfig calldata.
   function callsFor(
@@ -24,36 +25,39 @@ contract SetDynamicConfig is BaseScript {
     calls[0] = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.setDynamicConfig, (dynamicConfig))});
   }
 
-  /// @notice Translate roles-as-data into the verifier DynamicConfig struct.
+  /// @notice Translate one verifier's roles-as-data into the verifier DynamicConfig struct.
   function toDynamicConfig(
-    Types.RolesConfig memory roles
+    Types.VerifierRoles memory verifierRoles
   ) public pure returns (CommitteeVerifier.DynamicConfig memory) {
     return CommitteeVerifier.DynamicConfig({
-      feeAggregator: roles.verifier.feeAggregator, allowlistAdmin: roles.verifier.allowlistAdmin
+      feeAggregator: verifierRoles.feeAggregator, allowlistAdmin: verifierRoles.allowlistAdmin
     });
   }
 
   function run(
-    string calldata chainAlias
+    string calldata chainAlias,
+    bytes4 versionTag
   ) external {
     _initOutput(chainAlias);
 
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    // Both lookups revert with a legible reason when the tag is unknown: the
+    // record defines which tags exist, the roles file carries that verifier's intent.
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    require(
-      deployment.verifier != address(0), string.concat("SetDynamicConfig: verifier not recorded for ", chainAlias)
-    );
+    address verifier = ConfigLib.verifierByTag(deployment, versionTag);
+    _assertReachable(verifier, "verifier");
+    Types.VerifierRoles memory verifierRoles = ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag);
 
     console2.log("[SetDynamicConfig] chain:", chainAlias);
-    console2.log("  target verifier:", deployment.verifier);
-    console2.log("  feeAggregator:", roles.verifier.feeAggregator);
-    console2.log("  allowlistAdmin:", roles.verifier.allowlistAdmin);
+    console2.log("  versionTag:", ConfigLib.tagToString(versionTag));
+    console2.log("  target verifier:", verifier);
+    console2.log("  feeAggregator:", verifierRoles.feeAggregator);
+    console2.log("  allowlistAdmin:", verifierRoles.allowlistAdmin);
 
-    if (roles.verifier.feeAggregator == address(0)) {
+    if (verifierRoles.feeAggregator == address(0)) {
       console2.log("  WARN verifier feeAggregator is zero: fee withdrawals will revert until set");
     }
 
-    _stageMany(callsFor(deployment.verifier, toDynamicConfig(roles)));
-    _flush("set-dynamic-config");
+    _stageMany(callsFor(verifier, toDynamicConfig(verifierRoles)));
+    _flush(string.concat("set-dynamic-config-", ConfigLib.tagToString(versionTag)));
   }
 }

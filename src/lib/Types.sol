@@ -18,7 +18,6 @@ library Types {
     uint64 chainSelector; // parsed from a JSON string (selectors exceed 2^53)
     address rmn; // Chainlink-provided; MUST be non-zero
     address router; // Chainlink's local CCIP router, synced from the API; default for lanes
-    bytes4 versionTag; // non-zero, immutable
     bytes4 finalityConfig; // FinalityCodec bytes4. 0x00000000 (full finality only) is the default.
     string[] storageLocations; // operator's own aggregator endpoint(s)
     address[] feeTokens; // fee tokens to report on / sweep. Empty = no-op for fee scripts.
@@ -53,13 +52,17 @@ library Types {
     string name;
     LaneEndpoint source;
     LaneEndpoint dest;
+    bytes4 versionTag;
     SignatureConfig signatureConfig;
     RemoteChainConfig remote;
     AllowlistConfig allowlist;
   }
 
   // ------------------------------ config/roles ------------------------------
+  /// @dev Role holders for ONE verifier, keyed by its versionTag like the
+  ///      deployment record. Declared BEFORE deploying that verifier.
   struct VerifierRoles {
+    bytes4 versionTag;
     address owner;
     address storageLocationsAdmin;
     address allowlistAdmin;
@@ -73,16 +76,26 @@ library Types {
 
   struct RolesConfig {
     string aliasName;
-    VerifierRoles verifier;
+    VerifierRoles[] verifiers; // one entry per verifier; tags unique per chain
     ResolverRoles resolver;
     address factoryOwner;
   }
 
   // --------------------------- config/deployments ---------------------------
+  /// @dev One deployed verifier. Mirrors one entry of the resolver's
+  ///      inbound map (bytes4 versionTag -> verifier); tags are unique per chain.
+  struct VerifierDeployment {
+    bytes4 versionTag;
+    address addr;
+  }
+
   struct Deployment {
     string aliasName;
     address factory;
     address resolver;
-    address verifier;
+    // Which catalogued versionTags are DEPLOYED on this chain, and at what address.
+    // config/version-tags.json enumerates the tag identities repo-wide; this record maps
+    // the deployed ones to addresses.
+    VerifierDeployment[] verifiers;
   }
 }

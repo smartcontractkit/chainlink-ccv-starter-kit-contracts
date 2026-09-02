@@ -74,7 +74,7 @@ check "seeds feeTokens" "$(jq -r '.feeTokens[0]' "$CFG")" "0xTTTT000000000000000
 check "seeds explorerAddressPath" "$(jq -r .explorerAddressPath "$CFG")" "https://fixture.example/address"
 check "chainId normalised to a number" "$(jq -r '.chainId|type' "$CFG")" "number"
 check "chainSelector kept a string" "$(jq -r '.chainSelector|type' "$CFG")" "string"
-check "operator fields left at placeholders" "$(jq -r .versionTag "$CFG")" "0x00000000"
+check "operator fields left at placeholders" "$(jq -r .resolverSalt "$CFG")" "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 echo "bootstrap: target present, agrees"
 before="$(hash_of "$CFG")"
@@ -218,7 +218,7 @@ rm -f "$CFG2"
 
 echo "check --all: a chain the upstream does not know is SKIPPED, not a failure"
 cat > "$TMP/config/chains/localchain.json" <<'JSON'
-{"alias":"localchain","chainId":31337,"chainSelector":"424242","router":"0x0000000000000000000000000000000000000001","rmn":"0x0000000000000000000000000000000000000001","versionTag":"0x00010001","finalityConfig":"0x00000001","storageLocations":[],"feeTokens":[],"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}
+{"alias":"localchain","chainId":31337,"chainSelector":"424242","router":"0x0000000000000000000000000000000000000001","rmn":"0x0000000000000000000000000000000000000001","finalityConfig":"0x00000001","storageLocations":[],"feeTokens":[],"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}
 JSON
 before="$(hash_of "$TMP/config/chains/localchain.json")"
 out="$(run check --all)"
