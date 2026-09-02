@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {ApplyInboundImplementationUpdates} from "../../script/configure/ApplyInboundImplementationUpdates.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 
@@ -13,6 +14,13 @@ contract ApplyInboundImplementationUpdatesHarness is ApplyInboundImplementationU
     string memory chainAlias
   ) external view returns (bytes4[] memory) {
     return _inboundTags(lanePaths, chainAlias);
+  }
+
+  function dedupedDestTags(
+    Types.LaneConfig[] memory lanes,
+    string memory chainAlias
+  ) external pure returns (bytes4[] memory) {
+    return _dedupedDestTags(lanes, chainAlias);
   }
 }
 
@@ -116,33 +124,57 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     );
   }
 
-  function test_inboundTags_filtersByDestAndDeduplicates() public {
-    string[] memory lanePaths = new string[](4);
-    lanePaths[0] = _writeLaneFixture("a-to-x", "a", "x", "0x00010001");
-    lanePaths[1] = _writeLaneFixture("b-to-x", "b", "x", "0x00010001"); // duplicate tag, same dest
-    lanePaths[2] = _writeLaneFixture("c-to-x", "c", "x", "0x00010002"); // second tag, same dest
-    lanePaths[3] = _writeLaneFixture("x-to-d", "x", "d", "0x00010001"); // x is SOURCE here: excluded
+  function _lane(
+    string memory sourceAlias,
+    string memory destAlias,
+    bytes4 versionTag
+  ) private pure returns (Types.LaneConfig memory lane) {
+    lane.source.aliasName = sourceAlias;
+    lane.dest.aliasName = destAlias;
+    lane.versionTag = versionTag;
+  }
 
-    bytes4[] memory tags = script.inboundTags(lanePaths, "x");
+  /// @dev In-memory lanes: the selection logic is tag-agnostic, so this needs no
+  ///      catalog entries beyond what the tags themselves assert.
+  function test_dedupedDestTags_filtersByDestAndDeduplicates() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](4);
+    lanes[0] = _lane("a", "x", 0x00010001);
+    lanes[1] = _lane("b", "x", 0x00010001); // duplicate tag, same dest
+    lanes[2] = _lane("c", "x", 0x00010002); // second tag, same dest
+    lanes[3] = _lane("x", "d", 0x00010001); // x is SOURCE here: excluded
+
+    bytes4[] memory tags = script.dedupedDestTags(lanes, "x");
     assertEq(tags.length, 2, "two unique tags serve lanes into x");
     assertEq(tags[0], bytes4(0x00010001), "first tag in lane order");
     assertEq(tags[1], bytes4(0x00010002), "second tag deduplicated in");
 
-    bytes4[] memory destOnly = script.inboundTags(lanePaths, "d");
+    bytes4[] memory destOnly = script.dedupedDestTags(lanes, "d");
     assertEq(destOnly.length, 1, "only the x->d lane targets d");
     assertEq(destOnly[0], bytes4(0x00010001));
+  }
+
+  function test_dedupedDestTags_emptyWhenNoLaneTargetsChain() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
+    lanes[0] = _lane("a", "b", 0x00010001);
+
+    assertEq(script.dedupedDestTags(lanes, "elsewhere").length, 0, "no lane has this chain as destination");
+  }
+
+  /// @dev End-to-end through lane files. Only catalogued tags can appear in a real
+  ///      lane file, so this sticks to the example catalog's tag; the multi-tag
+  ///      dedup cases live on _dedupedDestTags above.
+  function test_inboundTags_readsLaneFilesAndFiltersByDest() public {
+    string[] memory lanePaths = new string[](2);
+    lanePaths[0] = _writeLaneFixture("a-to-x", "a", "x", "0x00010001");
+    lanePaths[1] = _writeLaneFixture("x-to-d", "x", "d", "0x00010001");
+
+    bytes4[] memory tags = script.inboundTags(lanePaths, "x");
+    assertEq(tags.length, 1, "one lane targets x");
+    assertEq(tags[0], bytes4(0x00010001));
+    assertEq(script.inboundTags(lanePaths, "elsewhere").length, 0, "no lane has this chain as destination");
 
     for (uint256 i = 0; i < lanePaths.length; ++i) {
       vm.removeFile(lanePaths[i]);
     }
-  }
-
-  function test_inboundTags_emptyWhenNoLaneTargetsChain() public {
-    string[] memory lanePaths = new string[](1);
-    lanePaths[0] = _writeLaneFixture("a-to-b", "a", "b", "0x00010001");
-
-    assertEq(script.inboundTags(lanePaths, "elsewhere").length, 0, "no lane has this chain as destination");
-
-    vm.removeFile(lanePaths[0]);
   }
 }

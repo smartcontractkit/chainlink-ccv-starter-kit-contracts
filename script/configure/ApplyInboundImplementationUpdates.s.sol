@@ -83,16 +83,28 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     string[] memory lanePaths,
     string memory chainAlias
   ) internal view returns (bytes4[] memory tags) {
-    bytes4[] memory buf = new bytes4[](lanePaths.length);
-    uint256 n = 0;
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](lanePaths.length);
     for (uint256 i = 0; i < lanePaths.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_stringsEqual(lane.dest.aliasName, chainAlias)) continue;
+      lanes[i] = ConfigLib.readLaneByPath(lanePaths[i]);
+    }
+    return _dedupedDestTags(lanes, chainAlias);
+  }
+
+  /// @dev Selection half of _inboundTags, kept pure so it is testable with
+  ///      in-memory lanes (readLaneByPath validates tags against the repo catalog).
+  function _dedupedDestTags(
+    Types.LaneConfig[] memory lanes,
+    string memory chainAlias
+  ) internal pure returns (bytes4[] memory tags) {
+    bytes4[] memory buf = new bytes4[](lanes.length);
+    uint256 n = 0;
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      if (!_stringsEqual(lanes[i].dest.aliasName, chainAlias)) continue;
       bool seen = false;
       for (uint256 j = 0; j < n; ++j) {
-        if (buf[j] == lane.versionTag) seen = true;
+        if (buf[j] == lanes[i].versionTag) seen = true;
       }
-      if (!seen) buf[n++] = lane.versionTag;
+      if (!seen) buf[n++] = lanes[i].versionTag;
     }
 
     tags = new bytes4[](n);
