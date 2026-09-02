@@ -303,6 +303,8 @@ contract OwnershipTest is CommitteeVerifierSetup {
     factory.transferOwnership(DEFAULT_SENDER);
     assertEq(factory.owner(), address(this), "propose does not move ownership");
 
+    // run() asserts chain identity, so the alias has a COMMITTED chain fixture
+    // (config/chains/zz-scratch-ownership-factory.json) declaring the test EVM's 31337.
     ConfigLib.writeDeployment(
       Types.Deployment({
         aliasName: ALIAS_FACTORY, factory: address(factory), resolver: address(resolver), verifier: address(verifier)
@@ -315,6 +317,14 @@ contract OwnershipTest is CommitteeVerifierSetup {
     acceptOwner.run(ALIAS_FACTORY, "factory");
 
     assertEq(factory.owner(), DEFAULT_SENDER, "factory ownership accepted");
+  }
+
+  function test_acceptOwnership_run_revertsOnWrongNetwork() public {
+    vm.chainId(11155111);
+    vm.expectRevert(
+      bytes(string.concat("ConfigLib: connected to chain 11155111 but ", ALIAS_FACTORY, " is chain 31337"))
+    );
+    acceptOwner.run(ALIAS_FACTORY, "factory");
   }
 
   function test_transferOwnership_callsFor_targetsFactory() public view {

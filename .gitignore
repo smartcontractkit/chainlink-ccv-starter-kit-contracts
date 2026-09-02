@@ -25,6 +25,9 @@ node_modules/
 config/**/*.json
 !config/**/_template.json
 !config/**/*.example.json
+# Test fixture, not a real deployment: run()-path tests need a chain file whose
+# chainId (31337) matches the test EVM. Holds no addresses or operator data.
+!config/chains/zz-scratch-ownership-factory.json
 
 # -----------------------------------------------------------------------------
 # Generated outputs

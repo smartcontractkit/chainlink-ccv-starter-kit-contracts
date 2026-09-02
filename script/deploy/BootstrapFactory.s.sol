@@ -38,6 +38,9 @@ contract BootstrapFactory is Script {
   function run(
     string calldata chainAlias
   ) external returns (address factory) {
+    // Wrong-chain bootstrap burns the one-shot nonce-0 deployer, so verify first.
+    ConfigLib.assertChain(chainAlias);
+
     address deployer = msg.sender;
     require(vm.getNonce(deployer) == 0, "BootstrapFactory: deployer nonce != 0 (address parity broken)");
 

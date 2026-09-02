@@ -5,6 +5,23 @@ import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {Test} from "forge-std/Test.sol";
 
+/// @dev Library internals revert in the caller's frame, so expectRevert needs this
+///      external-call indirection.
+contract ChainAssertHarness {
+  function assertChain(
+    string calldata aliasName
+  ) external view {
+    ConfigLib.assertChain(aliasName);
+  }
+
+  function assertChainMatches(
+    Types.ChainConfig calldata chainConfig,
+    string calldata aliasName
+  ) external view {
+    ConfigLib.assertChainMatches(chainConfig, aliasName);
+  }
+}
+
 /// @notice Unit tests for the config-as-data loader. Uses the shipped example files
 ///         directly (path-based) so it does not depend on operator-specific configs.
 contract ConfigLibTest is Test {
@@ -35,6 +52,72 @@ contract ConfigLibTest is Test {
       assertFalse(_contains(lanes[i], "_template"), "must skip _template files");
       assertFalse(_contains(lanes[i], ".example."), "must skip .example files");
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  //  chain-identity preflight (assertChain / assertChainMatches)
+  // ---------------------------------------------------------------------------
+
+  function test_assertChain_missingConfig_reverts() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    vm.expectRevert(bytes("ConfigLib: no chain config at config/chains/zz-no-such-chain.json"));
+    h.assertChain("zz-no-such-chain");
+  }
+
+  /// @dev The example files double as a real mismatch: sepolia.example.json exists at
+  ///      that alias but declares "sepolia" inside.
+  function test_assertChain_aliasMismatch_reverts() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    vm.expectRevert(bytes("ConfigLib: config/chains/sepolia.example.json declares alias 'sepolia'"));
+    h.assertChain("sepolia.example");
+  }
+
+  function test_assertChainMatches_zeroChainId_reverts() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    vm.expectRevert(bytes("ConfigLib: config/chains/sepolia.json has no chainId"));
+    h.assertChainMatches(_chain("sepolia", 0), "sepolia");
+  }
+
+  function test_assertChainMatches_connectedToConfiguredChain_passes() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    vm.chainId(11155111);
+    h.assertChainMatches(_chain("sepolia", 11155111), "sepolia");
+  }
+
+  /// @dev The check this feature exists for: a valid config against the wrong RPC.
+  ///      CREATE2 puts contracts at the SAME address per chain, so nothing else catches it.
+  function test_assertChainMatches_wrongNetwork_reverts() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    vm.chainId(84532); // base_sepolia RPC behind a sepolia alias
+    vm.expectRevert(bytes("ConfigLib: connected to chain 84532 but sepolia is chain 11155111"));
+    h.assertChainMatches(_chain("sepolia", 11155111), "sepolia");
+  }
+
+  /// @dev Every script requires a live RPC, and without --rpc-url forge sits at 31337 —
+  ///      so a real-chain config at 31337 fails with the missing-flag hint, not a skip.
+  function test_assertChainMatches_withoutRpc_reverts() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    vm.expectRevert(bytes("ConfigLib: chainid is 31337 but sepolia is chain 11155111 - no --rpc-url passed?"));
+    h.assertChainMatches(_chain("sepolia", 11155111), "sepolia");
+  }
+
+  /// @dev A config genuinely FOR 31337 (a local anvil chain) is not the skip case: it is
+  ///      compared like any other chain, both when it matches and when the run is elsewhere.
+  function test_assertChainMatches_localAnvilConfig_isStillCompared() public {
+    ChainAssertHarness h = new ChainAssertHarness();
+    h.assertChainMatches(_chain("localchain", 31337), "localchain"); // test EVM is 31337: a real match
+
+    vm.chainId(11155111);
+    vm.expectRevert(bytes("ConfigLib: connected to chain 11155111 but localchain is chain 31337"));
+    h.assertChainMatches(_chain("localchain", 31337), "localchain");
+  }
+
+  function _chain(
+    string memory aliasName,
+    uint256 chainId
+  ) private pure returns (Types.ChainConfig memory chainConfig) {
+    chainConfig.aliasName = aliasName;
+    chainConfig.chainId = chainId;
   }
 
   function _endsWithJson(

@@ -82,9 +82,14 @@ of broadcasting — same script, different mode:
 ```bash
 export OUTPUT_MODE=SAFE
 export SAFE_ADDRESS=0x<the executing Safe>
-forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)" sepolia verifier
+forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)" sepolia verifier --rpc-url $SEPOLIA_RPC_URL
 # -> writes out/safe/sepolia/a-transfer-owner-verifier.json
 ```
+
+`--rpc-url` is required in every mode: each run first verifies the connected
+network against the chain config (`ConfigLib.assertChain`), and the preflights
+read chain state. "Key-free" refers to signing keys — a SAFE run still needs no
+key material.
 
 `SAFE_ADDRESS` is required in SAFE mode and recorded in each batch as
 `meta.createdFromSafeAddress`, so the Transaction Builder flags a batch imported
