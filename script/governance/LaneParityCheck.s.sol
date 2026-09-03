@@ -34,9 +34,10 @@ contract LaneParityCheck is Script {
     string calldata laneName
   ) external view {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
-    _header(lane);
+    _header(lane, "config", "files only: selectors, tag recorded on both chains, salt + resolver identical");
     _finish(
       lane,
+      "config",
       checkConfigParity(
         lane,
         ConfigLib.readChain(lane.source.aliasName),
@@ -52,8 +53,11 @@ contract LaneParityCheck is Script {
     string calldata laneName
   ) external view {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
-    _header(lane);
-    _finish(lane, checkSourceSide(lane, ConfigLib.readDeployment(lane.source.aliasName)));
+    // The resolver sits at the same address on every chain, so the code checks below
+    // cannot catch a swapped RPC — only the connected chainid can.
+    ConfigLib.assertChain(lane.source.aliasName);
+    _header(lane, "source", "on the source chain: outbound implementation + remote chain config for the dest selector");
+    _finish(lane, "source", checkSourceSide(lane, ConfigLib.readDeployment(lane.source.aliasName)));
   }
 
   /// @notice Run with `--rpc-url` pointing at the lane's DEST chain.
@@ -63,27 +67,32 @@ contract LaneParityCheck is Script {
     string calldata laneName
   ) external view {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
-    _header(lane);
-    _finish(lane, checkDestSide(lane, lane.versionTag, ConfigLib.readDeployment(lane.dest.aliasName)));
+    ConfigLib.assertChain(lane.dest.aliasName);
+    _header(lane, "dest", "on the dest chain: inbound implementation for the lane tag, verifier tag, signer set");
+    _finish(lane, "dest", checkDestSide(lane, lane.versionTag, ConfigLib.readDeployment(lane.dest.aliasName)));
   }
 
   function _header(
-    Types.LaneConfig memory lane
+    Types.LaneConfig memory lane,
+    string memory leg,
+    string memory legDetail
   ) private pure {
     console2.log("[LaneParityCheck] lane:", lane.name);
+    console2.log(string.concat("  leg: ", leg, " - ", legDetail));
     console2.log("  source:", lane.source.aliasName);
     console2.log("  dest:  ", lane.dest.aliasName);
   }
 
   function _finish(
     Types.LaneConfig memory lane,
+    string memory leg,
     uint256 mismatches
   ) private pure {
     if (mismatches > 0) {
       console2.log("DRIFT_DETECTED total lane parity mismatches:", mismatches);
       revert ParityMismatch(mismatches);
     }
-    console2.log("[LaneParityCheck] parity OK:", lane.name);
+    console2.log(string.concat("[LaneParityCheck] ", leg, " leg OK: ", lane.name));
   }
 
   // ===========================================================================

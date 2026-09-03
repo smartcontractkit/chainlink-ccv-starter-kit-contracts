@@ -19,8 +19,9 @@ SCRIPT="script/governance/LaneParityCheck.s.sol"
 WORST=0
 
 run_leg() {
-  local sig="$1"
-  shift
+  local banner="$1" sig="$2"
+  shift 2
+  echo "== [lane-parity-check] $banner =="
   local out
   out="$(forge script "$SCRIPT" --sig "$sig" "$LANE" "$@" 2>&1)"
   local code=$?
@@ -33,8 +34,8 @@ run_leg() {
   fi
 }
 
-run_leg 'runConfig(string)'
-run_leg 'runSource(string)' --rpc-url "$SOURCE_RPC"
-run_leg 'runDest(string)' --rpc-url "$DEST_RPC"
+run_leg "leg 1/3 runConfig: config files only, no RPC" 'runConfig(string)'
+run_leg "leg 2/3 runSource: source chain via SOURCE_RPC" 'runSource(string)' --rpc-url "$SOURCE_RPC"
+run_leg "leg 3/3 runDest: dest chain via DEST_RPC" 'runDest(string)' --rpc-url "$DEST_RPC"
 
 exit $WORST

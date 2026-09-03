@@ -43,6 +43,8 @@ contract SnapshotRoles is BaseScript {
   function run(
     string calldata chainAlias
   ) external {
+    // A snapshot from the wrong RPC could be promoted into config/roles — refuse it.
+    ConfigLib.assertChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     require(
       deployment.verifiers.length > 0 && deployment.resolver != address(0), "SnapshotRoles: contracts not deployed"

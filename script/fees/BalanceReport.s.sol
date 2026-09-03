@@ -90,6 +90,7 @@ contract BalanceReport is BaseScript {
   function run(
     string calldata chainAlias
   ) external view {
+    ConfigLib.assertChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
