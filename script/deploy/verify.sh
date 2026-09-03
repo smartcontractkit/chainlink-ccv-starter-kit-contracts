@@ -29,6 +29,9 @@
 #                         defaults to sourcify, which needs no key but can only ever
 #                         partial-match here: bytecode_hash = "none" strips the metadata
 #                         hash a full match needs.
+#       VERIFY_URL        forge --verifier-url value, for custom/Blockscout-style
+#                         explorers. For the default etherscan provider the v2 endpoint
+#                         is pinned automatically (also keeps forge single-provider).
 #
 #  Exit: 0 OK | 1 a verification failed | 2 MISSING_TOOL / bad input
 # =============================================================================
@@ -86,6 +89,13 @@ fi
 
 CHAIN_ID="$(jq -r '.chainId' "$CHAIN_FILE")"
 VERIFY_PROVIDER="${VERIFY_PROVIDER:-etherscan}"
+# An explicit --verifier-url keeps forge single-provider: without one it also submits an
+# auxiliary, unawaited Sourcify run. So pin the Etherscan v2 endpoint for the default
+# provider; VERIFY_URL overrides.
+VERIFY_URL="${VERIFY_URL:-}"
+if [ -z "$VERIFY_URL" ] && [ "$VERIFY_PROVIDER" = "etherscan" ]; then
+    VERIFY_URL="https://api.etherscan.io/v2/api?chainid=$CHAIN_ID"
+fi
 ZERO="0x0000000000000000000000000000000000000000"
 
 FACTORY_SRC="node_modules/@chainlink/contracts-ccip/contracts/CREATE2Factory.sol:CREATE2Factory"
@@ -114,12 +124,13 @@ verify_one() {
         fi
         args=(--constructor-args "$encoded")
     fi
+    [ -n "$VERIFY_URL" ] && args+=(--verifier-url "$VERIFY_URL")
 
     echo "  $label $addr"
     if [ "$DRY_RUN" = "1" ]; then
         printf '    forge verify-contract %s %s --chain %s --verifier %s' \
             "$addr" "$contract" "$CHAIN_ID" "$VERIFY_PROVIDER"
-        [ ${#args[@]} -gt 0 ] && printf ' %s %s' "${args[0]}" "${args[1]}"
+        printf ' %q' "${args[@]+"${args[@]}"}"
         printf ' --watch\n'
         return 0
     fi
