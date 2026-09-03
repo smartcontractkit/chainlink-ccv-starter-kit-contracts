@@ -319,9 +319,10 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     _deploySecondVerifier();
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     assertEq(
       script.checkResolverImplementations(deployment, _chainConfig(), _lanes()),
       1,
@@ -364,9 +365,10 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     assertEq(
       script.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), _lanes()), 0, "two live verifiers, no drift"
     );

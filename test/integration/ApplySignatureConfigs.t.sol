@@ -32,14 +32,12 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     script = new ApplySignatureConfigs();
 
     // `laneCalls` reads the record for the alias it resolves, so the target needs one.
-    ConfigLib.writeDeployment(
-      Types.Deployment({
-        aliasName: DEST_ALIAS,
-        factory: address(factory),
-        resolver: address(resolver),
-        verifiers: _verifiersOf(address(verifier))
-      })
-    );
+    Types.Deployment memory deployment;
+    deployment.aliasName = DEST_ALIAS;
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifiers = _verifiersOf(address(verifier));
+    ConfigLib.writeDeployment(deployment);
   }
 
   function _generateSigners(
@@ -187,6 +185,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenTargetVerifierNotYetDeployed() public {
+    // No verifiers entry for the tag: the condition under test.
     Types.Deployment memory partialRecord;
     partialRecord.aliasName = PARTIAL_ALIAS;
     partialRecord.factory = address(factory);

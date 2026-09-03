@@ -263,9 +263,10 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     // ---- both governance checks agree the two-verifier state is clean ----
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
     lanes[0] = lane;
     assertEq(driftCheck.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), lanes), 0, "DriftCheck clean");
@@ -453,7 +454,10 @@ contract DeployVerifierHarness is DeployVerifier {
     address verifier,
     bool allowReplace
   ) external pure returns (Types.Deployment memory) {
-    _recordVerifier(deployment, versionTag, verifier, allowReplace);
+    Types.VerifierDeployment memory entry;
+    entry.versionTag = versionTag;
+    entry.addr = verifier;
+    _recordVerifier(deployment, entry, allowReplace);
     return deployment;
   }
 }

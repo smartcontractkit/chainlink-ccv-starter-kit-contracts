@@ -66,7 +66,8 @@ abstract contract CommitteeVerifierSetup is Test {
     address verifierAddr
   ) internal pure returns (Types.VerifierDeployment[] memory list) {
     list = new Types.VerifierDeployment[](1);
-    list[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: verifierAddr});
+    list[0].versionTag = VERSION_TAG;
+    list[0].addr = verifierAddr;
   }
 
   /// @notice Single-entry verifier-roles array for roles fixtures.

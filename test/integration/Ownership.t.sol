@@ -305,14 +305,12 @@ contract OwnershipTest is CommitteeVerifierSetup {
 
     // run() asserts chain identity, so the alias has a COMMITTED chain fixture
     // (config/chains/zz-scratch-ownership-factory.json) declaring the test EVM's 31337.
-    ConfigLib.writeDeployment(
-      Types.Deployment({
-        aliasName: ALIAS_FACTORY,
-        factory: address(factory),
-        resolver: address(resolver),
-        verifiers: _verifiersOf(address(verifier))
-      })
-    );
+    Types.Deployment memory deployment;
+    deployment.aliasName = ALIAS_FACTORY;
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifiers = _verifiersOf(address(verifier));
+    ConfigLib.writeDeployment(deployment);
 
     // run() reads OUTPUT_MODE, which deliberately has no default. setEnv is process-global
     // and memoised by forge, but this is the suite's only env-path run() call.

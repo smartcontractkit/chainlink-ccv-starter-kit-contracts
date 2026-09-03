@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  deployments-report.sh — generate docs/src/deployments.md from config/.
+#  deployments-report.sh — generate docs/src/deployments.md from the records.
 #
 #  Reads config/deployments/<alias>.json + config/chains/<alias>.json and emits a
-#  per-network table of deployed addresses plus the config that produced them
-#  (chainId, selector, RMN, resolver salt). Verifiers are listed per versionTag: a
-#  chain can run several at once, and each rides with its own tag.
+#  per-network table of deployed addresses and the constructor arguments each contract
+#  was actually built with. Verifiers are listed per versionTag: a chain can run several
+#  at once.
 #
 #  Also asserts the cross-chain invariant while it is here: the resolver must be at
 #  the SAME address on every chain. A divergence is flagged in the output and sets
@@ -18,7 +18,7 @@
 #           --check    print to stdout, write nothing; exit 1 if the file is stale
 #
 #  Exit: 0 OK | 1 resolver divergence or (with --check) stale output
-#        2 MISSING_TOOL, bad arguments, or a refused write (see the write path)
+#        2 MISSING_TOOL, bad arguments, a malformed record, or a refused write
 # =============================================================================
 set -uo pipefail
 
@@ -31,6 +31,7 @@ cd "$(dirname "$0")/../.." || exit 2
 DEPLOYMENTS_DIR="config/deployments"
 CHAINS_DIR="config/chains"
 OUT="docs/src/deployments.md"
+ZERO="0x0000000000000000000000000000000000000000"
 # Marks a render with no records; matched again on the write path. Keep in step with the
 # empty-case text in render().
 EMPTY_MARKER="No deployments recorded yet"
@@ -85,22 +86,36 @@ aliases() {
     done
 }
 
+# Indexing a non-object errors in jq and yields empty output, which would render a page of
+# blank cells and still exit 0. Check every record's shape once, up front.
+for n in $(aliases); do
+    if ! jq -e '(.factory | type == "object") and (.resolver | type == "object") and (.verifiers | type == "array")' \
+        "$DEPLOYMENTS_DIR/$n.json" > /dev/null 2>&1; then
+        echo "[deployments-report] MALFORMED: $DEPLOYMENTS_DIR/$n.json" >&2
+        echo "                     .factory and .resolver must be objects holding an address and" >&2
+        echo "                     .verifiers an array; see config/deployments/_template.json." >&2
+        exit 2
+    fi
+done
+
 # link <alias> <address> -> markdown link if the chain declares an explorerAddressPath, else code
 # The field is a FULL URL prefix from the CCIP API (chainMetadata.explorer.addressPath),
 # e.g. "https://sepolia.etherscan.io/address" — the address is appended directly.
 link() {
     local base
-    [ -n "$2" ] || {
+    [ -n "$2" ] && [ "$2" != "$ZERO" ] || {
         printf 'not recorded'
         return 0
     }
     base="$(jq -r '.explorerAddressPath // empty' "$CHAINS_DIR/$1.json")"
-    if [ -n "$base" ] && [ "$2" != "0x0000000000000000000000000000000000000000" ]; then
+    if [ -n "$base" ]; then
         printf '[`%s`](%s/%s)' "$2" "${base%/}" "$2"
     else
         printf '`%s`' "$2"
     fi
 }
+
+addr() { jq -r --arg k "$2" '.[$k].address // "'"$ZERO"'"' "$DEPLOYMENTS_DIR/$1.json"; }
 
 render() {
     local names resolvers=""
@@ -126,34 +141,56 @@ render() {
     echo "| Chain | Factory | Resolver | Verifiers (versionTag → address) |"
     echo "|---|---|---|---|"
     for n in $names; do
-        f="$(jq -r '.factory  // empty' "$DEPLOYMENTS_DIR/$n.json")"
-        r="$(jq -r '.resolver // empty' "$DEPLOYMENTS_DIR/$n.json")"
-        resolvers="$resolvers$r"$'\n'
+        local f r v_cell
+        f="$(addr "$n" factory)"
+        r="$(addr "$n" resolver)"
+        resolvers="$resolvers$([ "$r" != "$ZERO" ] && printf '%s' "$r")"$'\n'
         v_cell=""
-        while IFS=$'\t' read -r tag addr; do
+        while IFS=$'\t' read -r tag vaddr; do
             [ -n "$tag" ] || continue
-            v_cell="$v_cell${v_cell:+<br>}\`$tag\` → $(link "$n" "$addr")"
+            v_cell="$v_cell${v_cell:+<br>}\`$tag\` → $(link "$n" "$vaddr")"
         done < <(jq -r '.verifiers[]? | "\(.versionTag)\t\(.address)"' "$DEPLOYMENTS_DIR/$n.json")
         [ -n "$v_cell" ] || v_cell="not recorded"
         printf '| `%s` | %s | %s | %s |\n' "$n" "$(link "$n" "$f")" "$(link "$n" "$r")" "$v_cell"
     done
     echo
 
-    echo "## Deploy-time inputs"
+    echo "## Deploy-time constructor arguments"
     echo
-    echo "\`rmn\` is a CommitteeVerifier constructor argument, immutable after deployment"
-    echo "(each verifier's immutable \`versionTag\` is shown next to its address above)."
-    echo "\`resolverSalt\` is the CREATE2 salt that fixes the resolver's address"
-    echo "(the resolver itself takes no constructor arguments)."
+    echo "Recorded by the deploy scripts from the exact values each constructor received, so"
+    echo "these stay correct after config changes. \`rmn\` is immutable per verifier; the"
+    echo "CREATE2 salt fixes the resolver's address (the resolver itself takes no"
+    echo "constructor arguments)."
     echo
-    echo "| Chain | Chain ID | Selector | Verifier: rmn | Resolver: CREATE2 salt |"
+    echo "| Chain | Chain ID | Selector | Verifier rmn (per tag) | Resolver: CREATE2 salt |"
     echo "|---|---:|---|---|---|"
     for n in $names; do
-        jq -r --arg n "$n" '
-          def cell(v): if v == null or v == "" then "not recorded" else "`\(v)`" end;
-          "| `\($n)` | \(.chainId // "not recorded") | \(cell(.chainSelector)) | \(cell(.rmn))"
-          + " | \(cell(.resolverSalt)) |"
-        ' "$CHAINS_DIR/$n.json"
+        local rec="$DEPLOYMENTS_DIR/$n.json"
+        local chain_id selector salt rmn_cell
+        chain_id="$(jq -r '.chainId' "$CHAINS_DIR/$n.json")"
+        selector="$(jq -r '.chainSelector' "$CHAINS_DIR/$n.json")"
+        salt="$(jq -r '.resolver.salt // "not recorded"' "$rec")"
+        rmn_cell=""
+        while IFS=$'\t' read -r tag rmn; do
+            [ -n "$tag" ] || continue
+            rmn_cell="$rmn_cell${rmn_cell:+<br>}\`$tag\` → \`$rmn\`"
+        done < <(jq -r '.verifiers[]? | "\(.versionTag)\t\(.args.rmn // "not recorded")"' "$rec")
+        [ -n "$rmn_cell" ] || rmn_cell="not recorded"
+        printf '| `%s` | %s | `%s` | %s | `%s` |\n' "$n" "$chain_id" "$selector" "$rmn_cell" "$salt"
+    done
+    echo
+
+    echo "### Verifier storage locations at deploy time"
+    echo
+    for n in $names; do
+        local any=""
+        while IFS=$'\t' read -r tag locs; do
+            [ -n "$tag" ] || continue
+            any="yes"
+            printf -- '- `%s` `%s`: %s\n' "$n" "$tag" "$locs"
+        done < <(jq -r '.verifiers[]? | [.versionTag, ((.args.storageLocations // []) | if length == 0 then "none recorded" else map("`" + . + "`") | join(", ") end)] | @tsv' \
+            "$DEPLOYMENTS_DIR/$n.json")
+        [ -n "$any" ] || printf -- '- `%s`: no verifiers recorded\n' "$n"
     done
     echo
 

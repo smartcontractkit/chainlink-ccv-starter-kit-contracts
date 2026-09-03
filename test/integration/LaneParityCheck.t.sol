@@ -105,9 +105,10 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     _deploySecondVerifier();
     Types.Deployment memory deployment = _dep();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     Types.LaneConfig memory lane = _lane();
     lane.versionTag = VERSION_TAG_V2;
     assertEq(
@@ -225,9 +226,10 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     _deploySecondVerifier();
     Types.Deployment memory deployment = _dep();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     assertEq(script.checkDestSide(_lane(), VERSION_TAG_V2, deployment), 2, "unregistered verifier");
   }
 
