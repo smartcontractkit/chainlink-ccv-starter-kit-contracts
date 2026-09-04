@@ -72,6 +72,10 @@ contract DeployResolver is Script {
     deployment.resolver = resolver;
     // No constructor args; the salt is the deploy-time input that fixed this address.
     deployment.resolverParams = Types.ResolverDeployParams({salt: chainConfig.resolverSalt, encodedArgs: ""});
+    if (ConfigLib.isDryRun()) {
+      console2.log("  DRY RUN: nothing deployed, record NOT written - re-run with --broadcast");
+      return resolver;
+    }
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
     console2.log("  ACTION: confirm this matches the resolver address on other chains.");
