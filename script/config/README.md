@@ -76,9 +76,9 @@ naming such tokens. To retire one: sweep its fees (`SweepFees` reads this config
 sweep while the token is still listed), then hand-edit it out — the sync will not
 re-add a token the upstream no longer serves.
 
-There is deliberately **no `sync --all`**: accepting upstream values is a per-chain
-decision, and `rmn` is immutable in a deployed verifier — the config is the only record
-of what was deployed, so it should never be bulk-overwritten.
+`sync` takes one chain at a time: accepting upstream values is a per-chain decision, and
+`rmn` is immutable in a deployed verifier — the config is the only record of what was
+deployed, so it should never be bulk-overwritten.
 
 Treat a post-deploy `rmn` drift as something to investigate, not accept: `rmn` is
 immutable inside a deployed verifier and has no getter, so the config is the only record
@@ -102,7 +102,7 @@ core-fields.jq           the owned field set and comparison rules, shared by bot
 ```
 
 The fetch layer is the one untrusted boundary, so validation lives there. Everything
-above it is covered by an offline selftest (`make test-config`) that swaps the fetcher for a stub — see `script/config/selftest.sh`.
+above it is covered by an offline selftest (`make sync-selftest`) that swaps the fetcher for a stub — see `script/config/selftest.sh`.
 
 Debugging: run the source directly to see the raw decoded output —
 
