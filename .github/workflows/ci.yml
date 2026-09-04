@@ -104,4 +104,4 @@ jobs:
       # Fork tests are excluded — they need RPC endpoints, so they belong in a
       # scheduled workflow with secrets, not in the PR gate.
       - name: Test
-        run: forge test -vvv --no-match-path 'test/**/*.fork.t.sol'
+        run: forge test -vvv
