@@ -8,7 +8,7 @@
         bootstrap-factory deploy-resolver deploy-verifier verify \
         apply-remote-config apply-allowlists apply-signature-configs \
         set-dynamic-config set-finality-config update-storage-locations \
-        apply-inbound apply-outbound set-fee-aggregator \
+        apply-inbound apply-outbound set-fee-aggregator apply-factory-allowlist \
         transfer-owner accept-owner cancel-owner \
         transfer-sla accept-sla cancel-sla \
         sweep-fees balance-report \
@@ -165,6 +165,9 @@ apply-outbound:   ## resolver outbound map (dest selector -> verifier) for lanes
 
 set-fee-aggregator: ## resolver feeAggregator from roles
 	$(call run-script,script/configure/SetFeeAggregator.s.sol,"run(string)",$(CHAIN))
+
+apply-factory-allowlist: ## factory createAndCall allowlist from roles; prunes the bootstrap deployer
+	$(call run-script,script/configure/ApplyFactoryAllowlistUpdates.s.sol,"run(string)",$(CHAIN))
 
 # ---- ownership: owner roles (CHAIN + TARGET=verifier:<tag>|resolver|factory) ----
 transfer-owner:   ## current owner PROPOSES the configured holder

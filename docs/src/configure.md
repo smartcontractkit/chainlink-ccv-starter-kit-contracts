@@ -70,7 +70,7 @@ Keep retired and in-progress lanes outside `config/lanes/`.
 
 ## What each script configures
 
-Nine scripts across two contracts. Every one is a single privileged call.
+Ten scripts across three contracts. Every one is a single privileged call.
 
 | script | contract | run on | caller | `--sig` | reads |
 |---|---|---|---|---|---|
@@ -83,6 +83,7 @@ Nine scripts across two contracts. Every one is a single privileged call.
 | `ApplyOutboundImplementationUpdates` | resolver | **source** of each lane | resolver owner | `run(string)` | `lanes/*.json` → dest selector + lane `versionTag` |
 | `ApplyInboundImplementationUpdates` | resolver | the chain | resolver owner | `run(string)` | `lanes/*.json` → lane `versionTag` for inbound dest |
 | `SetFeeAggregator` | resolver | the chain | resolver owner | `run(string)` | `roles/*.json` → `resolver.feeAggregator` |
+| `ApplyFactoryAllowlistUpdates` | factory | the chain | factory owner | `run(string)` | `roles/*.json` → `factory.allowlist` |
 
 ## Configuring the verifier
 
@@ -172,6 +173,30 @@ make set-fee-aggregator CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
   already matching on-chain are skipped, so `--rpc-url` is required even in SAFE mode.
 - **`SetFeeAggregator`** — where the resolver sends withdrawn fees. Distinct from the
   verifier's aggregator; see below.
+
+## Pruning the factory allowlist
+
+`BootstrapFactory` allowlists the deployer in the constructor so it can deploy the
+resolver through the factory. Nothing removes that afterwards, so the deployer key keeps
+the ability to claim CREATE2 addresses until you prune it.
+
+```bash
+# requires: CHAIN, RPC_URL, OUTPUT_MODE (+ SAFE_ADDRESS in SAFE mode) — no TAG
+make apply-factory-allowlist CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
+```
+
+`factory.allowlist` in `roles/<alias>.json` is the **full** desired set, not a delta. The
+script reads `getAllowList()`, stages only the difference, and does nothing when the two
+already agree — so re-running is safe and a clean run is proof the on-chain set matches
+config. An empty list is valid intent: nobody may `createAndCall` until the owner re-adds
+an account.
+
+**Order matters.** Prune only after the factory owner has accepted ownership and every
+deterministic deploy on that chain is done — removing the deployer earlier blocks the
+resolver deploy. The script refuses to remove anything while no resolver is recorded for
+the chain, which catches the common case but not a chain you have yet to deploy on. To
+authorise a replacement deployment account later: add it to `factory.allowlist`, run this,
+deploy, remove it, run this again.
 
 ## What a fresh deploy already has
 

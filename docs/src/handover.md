@@ -64,6 +64,12 @@ Because they are a single-step overwrite, re-point them **only after** the corre
 ownership acceptance is confirmed on-chain. Handover order is
 **grant-new-before-revoke-old**.
 
+## After the factory owner accepts
+
+The bootstrap deployer is still on the factory's `createAndCall` allowlist. Once the new
+owner has accepted and every deterministic deploy on that chain is done, prune it — see
+[Pruning the factory allowlist](configure.md#pruning-the-factory-allowlist).
+
 ## Check the result
 
 `SnapshotRoles` reads every live role holder for review, and `DriftCheck` compares them
