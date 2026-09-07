@@ -5,11 +5,27 @@ It deploys and configures existing, already-audited Chainlink CCV contracts and
 provides the deploy / config / governance tooling around them. **No new Solidity is
 written here** — the contracts come from `@chainlink/contracts-ccip`, pinned exactly.
 
-> Hosted as a standalone Foundry repo under the `smartcontractkit` GitHub org.
+## Documentation
+
+The onboarding guide is an [mdBook](https://rust-lang.github.io/mdBook/) under [`docs/`](docs/).
+
+```bash
+cargo install mdbook   # once
+mdbook serve docs --open
+```
+
+**Reading order** (same as [`docs/src/SUMMARY.md`](docs/src/SUMMARY.md)):
+
+1. [Introduction](docs/src/intro.md) → [Getting started](docs/src/getting-started.md)
+2. [Full flow example](docs/src/full-flow.md) — the end-to-end commands; each step links to the depth chapter
+3. Depth when a step needs it: [Configuration](docs/src/configuration.md), [Deploying](docs/src/deploy.md), [Configuring the contracts](docs/src/configure.md)
+4. [Governance checks](docs/src/governance.md), [Handover](docs/src/handover.md), [Safe batches](docs/src/safe-batches.md)
+
+JSON schema detail: [`config/README.md`](config/README.md). Stuck on an error: [Troubleshooting](docs/src/troubleshooting.md).
 
 ## What gets deployed
 
-On **every chain, on both sides of every lane** (first project ≈ 8 lanes):
+On **every chain, on both sides of every lane**:
 
 | Contract | How it's deployed | Address determinism |
 |---|---|---|
@@ -17,167 +33,54 @@ On **every chain, on both sides of every lane** (first project ≈ 8 lanes):
 | `VersionedVerifierResolver` | Via the factory, fixed CREATE2 salt | **Same address everywhere** (no constructor args) |
 | `CommitteeVerifier` | Plain CREATE, constructor args | May differ per chain — rotates behind the resolver |
 
-Only the **resolver** needs a deterministic address; the verifier rotates behind it.
+Only the **resolver** needs a deterministic address. Verifiers rotate behind it; a chain
+can run several at once, each identified by an immutable `bytes4` **versionTag**.
 
 ## Layout
 
 ```
-config/          config-as-data (per chain / per lane / per role / deployments)
+config/          config-as-data (version-tags catalog, chains, lanes, roles, deployments)
 script/
-  deploy/        BootstrapFactory (EOA-only), DeployResolver (CREATE2), DeployVerifier
-  configure/     one script per privileged call, looped over lanes/chains
+  deploy/        BootstrapFactory, DeployResolver, DeployVerifier
+  configure/     one script per privileged call, for one chain at a time
+  config/        sync-ccip-config.sh — sync Chainlink's chain values from the CCIP API
   ownership/     per-target 2-step transfers (owners + storageLocationsAdmin)
-  fees/          SweepFees + BalanceReport (both contracts, zero-aggregator guard)
-  governance/    SnapshotRoles, DriftCheck (+ drift-check.sh with distinct exit codes)
-src/lib/         ConfigLib (loader), BaseScript (EOA/Safe switch + Safe-JSON emitter), Types
+  fees/          SweepFees + BalanceReport
+  governance/    SnapshotRoles, DriftCheck, LaneParityCheck, deployments-report (+ wrappers)
+src/lib/         ConfigLib, BaseScript (EOA/Safe switch), Types
+artifacts/       forge build output (foundry.toml: out = "artifacts")
 out/safe/        generated Safe Transaction Builder JSON, one subdir per chain alias
-test/            unit + integration (fork) tests
+test/            unit + integration tests
 ```
 
-See [`config/README.md`](config/README.md) for the full JSON schema.
-
-## Prerequisites
+## Quick start
 
 ```bash
-foundryup -v v1.8.1         # match CI; `exclude_lints` in foundry.toml needs >= 1.8.0
-npm install                 # installs @chainlink/contracts-ccip@2.0.0 (pinned) + deps
-forge install foundry-rs/forge-std   # or: git submodule; provides lib/forge-std
-cp .env.example .env        # then fill in RPC URLs, KMS/keys, explorer keys
-cp config/version-tags.example.json config/version-tags.json  # tag catalog
+foundryup
+npm ci
+git submodule update --init --recursive
+cp .env.example .env
+cp config/version-tags.example.json config/version-tags.json
+make build
 ```
 
-Compiler settings are pinned in `foundry.toml` (`solc 0.8.26`, `evm_version paris`,
-`optimizer_runs 80000`, `via_ir`, `bytecode_hash = "none"`) to match Chainlink's
-release profile — required for CREATE2 determinism and source verification.
-
-```bash
-forge build                       # production (deterministic) profile
-FOUNDRY_PROFILE=dev forge build   # fast iteration (NOT address-compatible)
-forge test
-```
-
-## Phase 1 — EOA path (deployable & testable fast)
-
-```bash
-export OUTPUT_MODE=EOA
-# 3) bootstrap the factory (fresh nonce-0 deployer!) and record its address
-forge script script/deploy/BootstrapFactory.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
-# 4) resolver via CREATE2 (assert address parity vs other chains)
-forge script script/deploy/DeployResolver.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
-# 5) verifier — the bytes4 versionTag names this verifier and is appended to the deployment record
-forge script script/deploy/DeployVerifier.s.sol --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
-# 6-12) configure (looped over config/lanes and config/chains; the versionTag selects one verifier per run)
-forge script script/configure/ApplySignatureConfigs.s.sol --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL --broadcast --aws
-# ... remaining configure scripts ...
-```
-
-Signing: use Foundry's native KMS (`--aws` / GCP flags) for the deployer/broadcaster
-key so no raw key touches disk. (This is the **in-scope** KMS concern; the verifier
-node's off-chain ECDSA key is a separate, out-of-scope concern.)
-
-## Phase 2 — Safe path (key-free batches for signers)
-
-Every config / role-transfer script can emit **Safe Transaction Builder JSON** instead
-of broadcasting — same script, different mode:
-
-```bash
-export OUTPUT_MODE=SAFE
-export SAFE_ADDRESS=0x<the executing Safe>
-forge script script/ownership/TransferOwnership.s.sol --sig "run(string,string)" sepolia verifier:0x00010001 --rpc-url $SEPOLIA_RPC_URL
-# -> writes out/safe/sepolia/transfer-owner-verifier-0x00010001.json
-```
-
-`--rpc-url` is required in every mode: each run first verifies the connected
-network against the chain config (`ConfigLib.assertChain`), and the preflights
-read chain state. "Key-free" refers to signing keys — a SAFE run still needs no
-key material.
-
-`SAFE_ADDRESS` is required in SAFE mode and recorded in each batch as
-`meta.createdFromSafeAddress`, so the Transaction Builder flags a batch imported
-into a different Safe. In EOA mode the variable is ignored (with a log).
-
-Multi-step ceremonies are split into **ordered** batch files (`a-` then `b-`, one
-directory per chain alias) so a signer can't execute steps out of order and permanently
-lock a contract. Handover order is **grant-new-before-revoke-old**; revoke the old
-holder only after onchain acceptance is confirmed.
-
-## Handover (per-target two-step ceremonies)
-
-Each role moves via its own `a-`/`b-` pair, one batch per target, and **each party
-prepares its own leg** in whichever mode fits its wallet: a Safe generates the batch
-with its own `SAFE_ADDRESS`; an EOA runs the same script in EOA mode with
-`--broadcast`. The current holder executes the `a-` (propose) leg; the incoming
-holder executes the `b-` (accept) leg — or simply calls `acceptOwnership()` from
-their own tooling, since the propose leg already made them the pending holder.
-
-1. Owners — `TransferOwnership` / `AcceptOwnership`, target `verifier:<versionTag>`,
-   `resolver` or `factory` (a verifier is always addressed by its versionTag).
-   `TransferOwnership` reads chain state, so `--rpc-url` is required
-   even in SAFE mode, where the batch is refused unless `SAFE_ADDRESS` is the
-   current on-chain owner.
-2. `storageLocationsAdmin` — `TransferStorageLocationsAdmin` /
-   `AcceptStorageLocationsAdmin` (both take the verifier's `versionTag` as their second
-   argument); a **separate** admin role from the owner.
-3. Transitional `DynamicConfig` roles (allowlistAdmin / feeAggregator) are not
-   two-step: re-point them via `SetDynamicConfig` only AFTER acceptance is confirmed
-   on-chain.
-
-A mistaken or stale proposal is cancelled by the **current** holder via
-`CancelOwnership` / `CancelStorageLocationsAdmin`, which re-propose `address(0)`
-so nobody can accept. Cancellation only clears the pending slot — it never moves
-the role. These scripts read chain state, so `--rpc-url` is required even in SAFE
-mode, where the batch is refused unless `SAFE_ADDRESS` is the current on-chain
-holder of the role.
-
-## Operational notes
-
-- **Two distinct fee destinations.** The verifier's `DynamicConfig.feeAggregator`
-  and the resolver's `setFeeAggregator` are different — set **both**. A zero
-  aggregator makes fee withdrawals revert.
-- **Emergency lever asymmetry.** There is **no pause function**. The only emergency
-  lever is **outbound**: set `router = 0` for a destination via
-  `applyRemoteChainConfigUpdates`. There is **no inbound halt** — don't hunt for one.
-- **`versionTag`** is `bytes4`, non-zero, immutable — a DEPLOY input, not chain state.
-  Each `DeployVerifier` run takes a tag and appends that verifier to
-  `config/deployments/<alias>.json`; several verifiers stay live at once (the old one
-  keeps verifying in-flight messages during an upgrade). Every lane pins the verifier
-  serving it via its own mandatory `versionTag`. Scheme: 2 bytes operator id + 2 bytes version.
-- **`storageLocations`** is the operator's own aggregator endpoint URL — a per-deployment
-  input from the off-chain/infra workstream, updatable later by the `storageLocationsAdmin`.
-
-## Deployed addresses (outline step 17)
-
-Record every deployment in `config/deployments/<alias>.json` and summarize here.
-
-| Chain | Factory | Resolver | Verifier | Explorer |
-|---|---|---|---|---|
-| Sepolia | `0x…` | `0x…` | `0x…` | [link](#) |
-| Base Sepolia | `0x…` | `0x…` | `0x…` | [link](#) |
-
-**CREATE2 factory salt (resolver):** `0x…` (must be identical on every chain).
-
-### Source verification
-
-Deploy with the default (release) profile, then:
-
-```bash
-forge verify-contract <address> VersionedVerifierResolver --chain <id> --watch
-forge verify-contract <address> CommitteeVerifier --chain <id> --constructor-args <abi-encoded> --watch
-```
+Then follow the [full flow](docs/src/full-flow.md) top to bottom — each step links to the
+chapter that explains it in depth.
 
 ## Testing
 
-- **(a)** unit / integration (fork) tests for the deploy and config scripts — `test/`.
-  Fixtures are modelled on Chainlink's own `*Setup.t.sol`.
-- **(b)** end-to-end acceptance proof on a real lane. The acceptance fixtures (token,
-  token pools, CCV-requiring receiver) are **Chainlink Labs'** deliverable; if late, a
-  stopgap CCV-requiring receiver must be authored (open point 12).
+```bash
+make test          # hermetic; no RPC
+make sync-selftest   # offline config-sync selftest
+make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
+```
 
-## Open items to confirm
+## Deployed addresses
 
-- **Lane config direction mapping** vs Chainlink's `configure_committee_verifier_for_lanes.go`
-  (which side each call executes on).
-- **Committee size / threshold / test lane** (open point 7): default must not be 1-of-1
-  and threshold must exceed 2/3 (e.g. 10 → 7).
-- **CREATE2 determinism across chains**: needs a fresh nonce-0 deployer on every target
-  chain and identical initcode everywhere — the biggest subtle risk at ~8 chains.
+Regenerate from local deployment records (gitignored):
+
+```bash
+make deployments-doc
+```
+
+The committed page is a placeholder until you deploy — see [`docs/src/deployments.md`](docs/src/deployments.md).

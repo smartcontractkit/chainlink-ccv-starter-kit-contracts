@@ -1,0 +1,14 @@
+[book]
+src = "src"
+title = "CCV Starter Kit — OnChain"
+language = "en"
+
+[output.html]
+no-section-label = true
+mathjax-support = false
+git-repository-url = "https://github.com/smartcontractkit/chainlink-ccv-starter-kit-contracts"
+edit-url-template = "https://github.com/smartcontractkit/chainlink-ccv-starter-kit-contracts/edit/main/docs/{path}"
+
+[output.html.fold]
+enable = true
+level = 1
