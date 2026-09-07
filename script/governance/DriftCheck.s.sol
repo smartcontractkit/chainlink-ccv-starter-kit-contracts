@@ -100,7 +100,15 @@ contract DriftCheck is Script {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
       string memory prefix = string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag), " ");
       if (!ConfigLib.hasVerifierRolesTag(roles, deployment.verifiers[i].versionTag)) {
-        console2.log(string.concat("DRIFT_DETECTED ", prefix, "has no roles entry in config/roles"));
+        console2.log(
+          string.concat(
+            "DRIFT_DETECTED ",
+            prefix,
+            "has no roles entry - add a verifiers[] entry to config/roles/",
+            roles.aliasName,
+            ".json"
+          )
+        );
         ++drift;
         continue;
       }
@@ -230,7 +238,10 @@ contract DriftCheck is Script {
             lanes[i].name,
             " versionTag ",
             ConfigLib.tagToString(lanes[i].versionTag),
-            " has no recorded verifier - deploy that verifier first"
+            " has no recorded verifier - run: make deploy-verifier CHAIN=",
+            chainConfig.aliasName,
+            " TAG=",
+            ConfigLib.tagToString(lanes[i].versionTag)
           )
         );
         ++drift;
@@ -291,7 +302,10 @@ contract DriftCheck is Script {
             lanePrefix,
             "versionTag ",
             ConfigLib.tagToString(lane.versionTag),
-            " has no recorded verifier on this chain"
+            " has no recorded verifier on this chain - run: make deploy-verifier CHAIN=",
+            chainConfig.aliasName,
+            " TAG=",
+            ConfigLib.tagToString(lane.versionTag)
           )
         );
         ++drift;

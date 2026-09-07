@@ -85,6 +85,9 @@ contract DeployVerifier is Script {
     }
 
     // ---- storageLocationsAdmin handover ----
+    if (verifierRoles.storageLocationsAdmin == verifierRoles.owner) {
+      console2.log("  NOTE owner and storageLocationsAdmin are the same address (no role segregation)");
+    }
     if (verifierRoles.storageLocationsAdmin == deployer) {
       console2.log("  storageLocationsAdmin: deployer");
     } else {
@@ -106,6 +109,10 @@ contract DeployVerifier is Script {
       encodedArgs: abi.encode(dynamicConfig, chainConfig.storageLocations, chainConfig.rmn, versionTag)
     });
     _recordVerifier(deployment, record, vm.envOr("ALLOW_TAG_REPLACE", false));
+    if (ConfigLib.isDryRun()) {
+      console2.log("  DRY RUN: nothing deployed, record NOT written - re-run with --broadcast");
+      return verifier;
+    }
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }

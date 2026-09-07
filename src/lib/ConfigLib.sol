@@ -5,7 +5,7 @@ pragma solidity 0.8.26;
 // forge-lint: disable-start(unused-return)
 
 import {Types} from "./Types.sol";
-import {Vm} from "forge-std/Vm.sol";
+import {Vm, VmSafe} from "forge-std/Vm.sol";
 
 /// @title ConfigLib
 /// @notice Loads config-as-data JSON from `config/` into typed structs.
@@ -269,6 +269,16 @@ library ConfigLib {
     lane.dest.aliasName = vm.parseJsonString(json, ".dest.alias");
     lane.dest.chainSelector =
       _toUint64(vm.parseUint(vm.parseJsonString(json, ".dest.chainSelector")), ".dest.chainSelector");
+
+    // A lane from a chain to itself is never valid, whichever field says so.
+    require(
+      !_stringsEqual(lane.source.aliasName, lane.dest.aliasName),
+      string.concat("ConfigLib: lane ", lane.name, " has the same chain on both ends: ", lane.source.aliasName)
+    );
+    require(
+      lane.source.chainSelector != lane.dest.chainSelector,
+      string.concat("ConfigLib: lane ", lane.name, " has the same chainSelector on both ends")
+    );
 
     // Mandatory: the lane pins the verifier serving it (both legs — the contract forces
     // source tag == dest tag).
@@ -576,6 +586,14 @@ library ConfigLib {
     string memory path = deploymentPath(aliasName);
     if (vm.exists(path)) return readDeploymentByPath(path);
     deployment.aliasName = aliasName;
+  }
+
+  /// @notice True for a `forge script` run with no `--broadcast`.
+  /// @dev forge executes the entire script in simulation BEFORE submitting anything, so a
+  ///      record written on a dry run describes a contract that was never deployed. Only
+  ///      this one context is excluded: tests, `--broadcast` and `--resume` all record.
+  function isDryRun() internal view returns (bool) {
+    return vm.isContext(VmSafe.ForgeContext.ScriptDryRun);
   }
 
   /// @notice Persist a deployment record to config/deployments/<alias>.json.

@@ -35,17 +35,21 @@ contract LaneParityCheck is Script {
   ) external view {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
     _header(lane, "config", "files only: selectors, tag recorded on both chains, salt + resolver identical");
-    _finish(
-      lane,
-      "config",
-      checkConfigParity(
-        lane,
-        ConfigLib.readChain(lane.source.aliasName),
-        ConfigLib.readChain(lane.dest.aliasName),
-        ConfigLib.readDeployment(lane.source.aliasName),
-        ConfigLib.readDeployment(lane.dest.aliasName)
-      )
-    );
+    uint256 mismatches =
+      checkLaneConfig(lane, ConfigLib.readChain(lane.source.aliasName), ConfigLib.readChain(lane.dest.aliasName));
+    // A missing deployment record is the legitimate pre-deploy state, not lane drift:
+    // note it and skip the record comparisons so this leg can gate a lane before deploy.
+    bool sourceRecorded = vm.exists(ConfigLib.deploymentPath(lane.source.aliasName));
+    bool destRecorded = vm.exists(ConfigLib.deploymentPath(lane.dest.aliasName));
+    if (sourceRecorded && destRecorded) {
+      mismatches += checkRecordedDeployments(
+        lane, ConfigLib.readDeployment(lane.source.aliasName), ConfigLib.readDeployment(lane.dest.aliasName)
+      );
+    } else {
+      if (!sourceRecorded) console2.log("  NOTE no deployment record for source (pre-deploy): record checks skipped");
+      if (!destRecorded) console2.log("  NOTE no deployment record for dest (pre-deploy): record checks skipped");
+    }
+    _finish(lane, "config", mismatches);
   }
 
   /// @notice Run with `--rpc-url` pointing at the lane's SOURCE chain.
@@ -108,17 +112,44 @@ contract LaneParityCheck is Script {
     Types.Deployment memory sourceDeployment,
     Types.Deployment memory destDeployment
   ) public pure returns (uint256 mismatches) {
+    mismatches = checkLaneConfig(lane, sourceChain, destChain);
+    mismatches += checkRecordedDeployments(lane, sourceDeployment, destDeployment);
+  }
+
+  /// @notice The config-vs-config half: needs no deployment records, so it also gates a
+  ///         lane before anything is deployed.
+  function checkLaneConfig(
+    Types.LaneConfig memory lane,
+    Types.ChainConfig memory sourceChain,
+    Types.ChainConfig memory destChain
+  ) public pure returns (uint256 mismatches) {
     // A stale selector registers the outbound implementation under a key no message arrives with.
     mismatches += _diffUint(
       "source selector: lane vs chain config", sourceChain.chainSelector, lane.source.chainSelector
     );
     mismatches += _diffUint("dest selector: lane vs chain config", destChain.chainSelector, lane.dest.chainSelector);
 
-    // Identical salt is necessary but not sufficient (factory address and initcode must
-    // match too), so the recorded addresses are compared as well.
     mismatches += _diffBytes32(
       "resolverSalt must be identical on both chains", sourceChain.resolverSalt, destChain.resolverSalt
     );
+
+    // BaseVerifier reverts DestGasCannotBeZero regardless of the router value.
+    if (lane.remote.gasForVerification == 0) mismatches += _report("lane gasForVerification is zero");
+
+    // router == 0 is the outbound kill switch: a valid state, so NOTE not mismatch.
+    if (lane.remote.router == address(0)) {
+      console2.log("  NOTE lane router is zero: outbound is PAUSED for this lane (not a mismatch)");
+    }
+  }
+
+  /// @notice The record half: what deploy wrote must cover this lane on both sides.
+  function checkRecordedDeployments(
+    Types.LaneConfig memory lane,
+    Types.Deployment memory sourceDeployment,
+    Types.Deployment memory destDeployment
+  ) public pure returns (uint256 mismatches) {
+    // Identical salt is necessary but not sufficient (factory address and initcode must
+    // match too), so the recorded addresses are compared as well.
     mismatches += _diffAddress(
       "recorded resolver address must be identical", sourceDeployment.resolver, destDeployment.resolver
     );
@@ -138,14 +169,6 @@ contract LaneParityCheck is Script {
     }
     if (sourceDeployment.resolver == address(0)) mismatches += _report("source resolver not recorded");
     if (destDeployment.resolver == address(0)) mismatches += _report("dest resolver not recorded");
-
-    // BaseVerifier reverts DestGasCannotBeZero regardless of the router value.
-    if (lane.remote.gasForVerification == 0) mismatches += _report("lane gasForVerification is zero");
-
-    // router == 0 is the outbound kill switch: a valid state, so NOTE not mismatch.
-    if (lane.remote.router == address(0)) {
-      console2.log("  NOTE lane router is zero: outbound is PAUSED for this lane (not a mismatch)");
-    }
   }
 
   // ===========================================================================

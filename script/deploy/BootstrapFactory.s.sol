@@ -74,6 +74,10 @@ contract BootstrapFactory is Script {
     deployment.factory = factory;
     deployment.factoryParams =
       Types.FactoryDeployParams({deployer: deployer, allowList: allowList, encodedArgs: abi.encode(allowList)});
+    if (ConfigLib.isDryRun()) {
+      console2.log("  DRY RUN: nothing deployed, record NOT written - re-run with --broadcast");
+      return factory;
+    }
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }

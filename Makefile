@@ -4,7 +4,7 @@
 # default, and RPC URLs usually carry an API key. Keep the `@` when editing them.
 
 .PHONY: help install build build-dev clean \
-        test test-config fmt fmt-check lint lint-sh lint-typos \
+        test sync-selftest fmt fmt-check lint lint-sh lint-typos \
         bootstrap-factory deploy-resolver deploy-verifier verify \
         apply-remote-config apply-allowlists apply-signature-configs \
         set-dynamic-config set-finality-config update-storage-locations \
@@ -12,7 +12,7 @@
         transfer-owner accept-owner cancel-owner \
         transfer-sla accept-sla cancel-sla \
         sweep-fees balance-report \
-        snapshot drift parity parity-config deployments-doc deployments-check \
+        snapshot drift parity parity-config deployments-doc deployments-check validate-config \
         discover add-chain sync-check sync-chain
 
 CHAIN   ?=
@@ -85,7 +85,7 @@ lint-sh:          ## shellcheck every wrapper script
 lint-typos:       ## spell-check the whole repo (needs crate-ci/typos: cargo install typos-cli)
 	typos
 
-test-config:      ## offline tests for the config-sync write/override semantics
+sync-selftest:    ## offline tests for the config-sync write/override semantics
 	./script/config/selftest.sh
 
 clean:            ## forge clean
@@ -103,7 +103,7 @@ add-chain:        ## seed config/chains/<alias>.json from the API; never overwri
 sync-check:       ## config vs the CCIP API, all chains; read-only, CI-schedulable
 	./script/config/sync-ccip-config.sh check --all
 
-sync-chain:       ## accept upstream CCIP values for ONE chain (no --all by design)
+sync-chain:       ## accept upstream CCIP values for ONE chain
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make sync-chain CHAIN=sepolia"; exit 2; }
 	./script/config/sync-ccip-config.sh sync $(CHAIN)
 
@@ -218,6 +218,9 @@ deployments-doc:  ## regenerate docs/src/deployments.md from config/
 
 deployments-check: ## CI: fail if the doc is stale, or if the resolver address diverges
 	@./script/governance/deployments-report.sh --check > /dev/null
+
+validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, roles, catalog); no RPC
+	forge script script/governance/ValidateConfig.s.sol --tc ValidateConfig --sig "run()"
 
 parity-config:    ## LANE=<name>; config-vs-config only — no RPC
 	@test -n "$(LANE)" || { echo "LANE is required, e.g. make parity-config LANE=sepolia-to-base_sepolia"; exit 2; }
