@@ -129,7 +129,10 @@ deploy-verifier:  ## CommitteeVerifier for TAG; appends to the deployment record
 
 verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag>
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make verify CHAIN=sepolia"; exit 2; }
-	./script/deploy/verify.sh $(CHAIN) $(if $(ONLY),--only $(ONLY))
+# `origin`, not the value: an unset ONLY means "verify everything" and omits the flag,
+# while ONLY= is a target the caller meant to give and forgot, so it is passed through
+# empty for verify.sh to reject.
+	./script/deploy/verify.sh $(CHAIN) $(if $(filter-out undefined,$(origin ONLY)),--only $(ONLY))
 
 # ---- configure: per verifier (CHAIN + TAG; OUTPUT_MODE=EOA|SAFE) ----
 apply-remote-config: ## lane remoteChainConfig on the SOURCE chain's verifier
