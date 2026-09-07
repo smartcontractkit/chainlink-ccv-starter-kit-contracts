@@ -101,7 +101,5 @@ jobs:
           [ -f config/version-tags.json ] || cp config/version-tags.example.json config/version-tags.json
 
       # No `always()` here: if the build failed, the test failure says nothing new.
-      # Fork tests are excluded — they need RPC endpoints, so they belong in a
-      # scheduled workflow with secrets, not in the PR gate.
       - name: Test
         run: forge test -vvv
