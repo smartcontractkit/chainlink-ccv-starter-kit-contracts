@@ -46,14 +46,31 @@ done
 
 cd "$(dirname "$0")/../.." || exit 2
 
-ALIAS="${1:?usage: verify.sh <chainAlias> [--dry-run] [--only factory|resolver|verifiers|verifier:<tag>]}"
+USAGE="usage: verify.sh <chainAlias> [--dry-run] [--only factory|resolver|verifiers|verifier:<tag>]"
+
+# Every bad-input path exits 2 (the documented code), so none of them may be left to
+# `set -u` — bash reports those itself and exits 1.
+if [ $# -eq 0 ]; then
+    echo "[verify] $USAGE" >&2
+    exit 2
+fi
+ALIAS="$1"
 shift
 DRY_RUN=0
 ONLY=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run) DRY_RUN=1; shift ;;
-        --only)    ONLY="$2";  shift 2 ;;
+        --only)
+            # An empty target is rejected rather than ignored: it matches the "" arm
+            # below, so `--only ''` would verify everything — the opposite of --only.
+            ONLY="${2:-}"
+            if [ -z "$ONLY" ]; then
+                echo "[verify] --only needs a target: factory|resolver|verifiers|verifier:<4-byte tag>" >&2
+                exit 2
+            fi
+            shift 2
+            ;;
         *) echo "[verify] unknown arg: $1" >&2; exit 2 ;;
     esac
 done
