@@ -129,14 +129,17 @@ contract TargetResolutionTest is Test {
     deployment.factory = FACTORY;
     deployment.resolver = RESOLVER;
     deployment.verifiers = new Types.VerifierDeployment[](1);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: TAG, addr: VERIFIER});
+    deployment.verifiers[0].versionTag = TAG;
+    deployment.verifiers[0].addr = VERIFIER;
   }
 
   function _depTwoVerifiers() internal pure returns (Types.Deployment memory deployment) {
     deployment = _dep();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: TAG, addr: VERIFIER});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: TAG_V2, addr: VERIFIER_V2});
+    deployment.verifiers[0].versionTag = TAG;
+    deployment.verifiers[0].addr = VERIFIER;
+    deployment.verifiers[1].versionTag = TAG_V2;
+    deployment.verifiers[1].addr = VERIFIER_V2;
   }
 
   function _roles() internal pure returns (Types.RolesConfig memory roles) {

@@ -94,36 +94,48 @@ contract DeployVerifier is Script {
       console2.log("  (must acceptStorageLocationsAdmin() before running UpdateStorageLocations)");
     }
 
-    _recordVerifier(deployment, versionTag, verifier, vm.envOr("ALLOW_TAG_REPLACE", false));
+    // The recorded entry mirrors the constructor call above, field for field; encodedArgs
+    // is the same values pre-encoded for source verification (script/deploy/verify.sh).
+    Types.VerifierDeployment memory record = Types.VerifierDeployment({
+      versionTag: versionTag,
+      addr: verifier,
+      feeAggregator: dynamicConfig.feeAggregator,
+      allowlistAdmin: dynamicConfig.allowlistAdmin,
+      storageLocations: chainConfig.storageLocations,
+      rmn: chainConfig.rmn,
+      encodedArgs: abi.encode(dynamicConfig, chainConfig.storageLocations, chainConfig.rmn, versionTag)
+    });
+    _recordVerifier(deployment, record, vm.envOr("ALLOW_TAG_REPLACE", false));
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }
 
-  /// @dev Appends the new verifier; a tag already on record means this run would
+  /// @dev Appends the new verifier entry; a tag already on record means this run would
   ///      silently orphan the previous deploy, so it reverts unless explicitly waived.
   function _recordVerifier(
     Types.Deployment memory deployment,
-    bytes4 versionTag,
-    address verifier,
+    Types.VerifierDeployment memory record,
     bool allowReplace
   ) internal pure {
-    if (ConfigLib.hasVerifierTag(deployment, versionTag)) {
+    if (ConfigLib.hasVerifierTag(deployment, record.versionTag)) {
       require(
         allowReplace,
         string.concat(
           "DeployVerifier: versionTag ",
-          ConfigLib.tagToString(versionTag),
+          ConfigLib.tagToString(record.versionTag),
           " already recorded for ",
           deployment.aliasName,
           " - pick a new tag, or set ALLOW_TAG_REPLACE=true to replace a deploy nothing references yet"
         )
       );
-      console2.log("  WARN replacing recorded verifier for tag (ALLOW_TAG_REPLACE):", ConfigLib.tagToString(versionTag));
       console2.log(
-        "  WARN previous address is dropped from the record:", ConfigLib.verifierByTag(deployment, versionTag)
+        "  WARN replacing recorded verifier for tag (ALLOW_TAG_REPLACE):", ConfigLib.tagToString(record.versionTag)
+      );
+      console2.log(
+        "  WARN previous address is dropped from the record:", ConfigLib.verifierByTag(deployment, record.versionTag)
       );
       for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
-        if (deployment.verifiers[i].versionTag == versionTag) deployment.verifiers[i].addr = verifier;
+        if (deployment.verifiers[i].versionTag == record.versionTag) deployment.verifiers[i] = record;
       }
       return;
     }
@@ -132,7 +144,7 @@ contract DeployVerifier is Script {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
       extended[i] = deployment.verifiers[i];
     }
-    extended[deployment.verifiers.length] = Types.VerifierDeployment({versionTag: versionTag, addr: verifier});
+    extended[deployment.verifiers.length] = record;
     deployment.verifiers = extended;
   }
 }

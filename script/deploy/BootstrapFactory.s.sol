@@ -12,8 +12,8 @@ import {console2} from "forge-std/console2.sol";
 ///         fresh deployer EOA (nonce 0) so the factory lands on the SAME address on
 ///         every chain. The deployer is placed in the factory allowlist at
 ///         construction. Ownership is set to the CONFIGURED factory owner
-///         (config/roles/<alias>.json `factory.owner`). The factory address is
-///         recorded into config/deployments/<alias>.json.
+///         (config/roles/<alias>.json `factory.owner`). The factory address and its
+///         `allowList` constructor argument are recorded into config/deployments/<alias>.json.
 ///
 /// @dev EOA-ONLY BY DESIGN. The bootstrap depends on a fresh nonce-0 deployer and MUST
 ///      NOT be routed through a Safe. The "Safe output on every script" rule (step 14)
@@ -72,6 +72,8 @@ contract BootstrapFactory is Script {
     // Record the factory address (merges into any existing deployment record).
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
     deployment.factory = factory;
+    deployment.factoryParams =
+      Types.FactoryDeployParams({deployer: deployer, allowList: allowList, encodedArgs: abi.encode(allowList)});
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
   }

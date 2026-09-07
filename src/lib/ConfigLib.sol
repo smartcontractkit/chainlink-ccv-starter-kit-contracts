@@ -464,7 +464,7 @@ library ConfigLib {
   }
 
   // --------------------------------------------------------------------------
-  //  deployments (recorded addresses; written by the deploy scripts)
+  //  deployments (addresses + deploy params; written by the deploy scripts)
   // --------------------------------------------------------------------------
   function deploymentPath(
     string memory aliasName
@@ -483,8 +483,24 @@ library ConfigLib {
   ) internal view returns (Types.Deployment memory deployment) {
     string memory json = vm.readFile(path);
     deployment.aliasName = vm.parseJsonString(json, ".alias");
-    deployment.factory = vm.parseJsonAddress(json, ".factory");
-    deployment.resolver = vm.parseJsonAddress(json, ".resolver");
+    // Parsed strictly: every save writes the factory and resolver blocks, zeroed while
+    // that contract is not deployed, so a missing key means a malformed record and must
+    // not read as zero.
+    deployment.factory = vm.parseJsonAddress(json, ".factory.address");
+    deployment.resolver = vm.parseJsonAddress(json, ".resolver.address");
+
+    // A zero address means the contract is not deployed yet, so the params beside it are
+    // placeholders. Skipping them also avoids parsing the zeroed arrays back out.
+    if (deployment.factory != address(0)) {
+      deployment.factoryParams.deployer = vm.parseJsonAddress(json, ".factory.deployer");
+      deployment.factoryParams.allowList = vm.parseJsonAddressArray(json, ".factory.args.allowList");
+      deployment.factoryParams.encodedArgs = vm.parseJsonBytes(json, ".factory.encodedArgs");
+    }
+
+    if (deployment.resolver != address(0)) {
+      deployment.resolverParams.salt = vm.parseJsonBytes32(json, ".resolver.salt");
+      deployment.resolverParams.encodedArgs = vm.parseJsonBytes(json, ".resolver.encodedArgs");
+    }
 
     // Absent array == nothing deployed yet (records are written one contract at a time).
     uint256 count = 0;
@@ -502,7 +518,16 @@ library ConfigLib {
           string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", path)
         );
       }
-      deployment.verifiers[i] = Types.VerifierDeployment({versionTag: tag, addr: addr});
+      deployment.verifiers[i].versionTag = tag;
+      deployment.verifiers[i].addr = addr;
+      // Parsed strictly like the blocks above: DeployVerifier writes every entry
+      // complete, so a missing key means a malformed record.
+      deployment.verifiers[i].feeAggregator = vm.parseJsonAddress(json, _verifierEntryKey(i, ".args.feeAggregator"));
+      deployment.verifiers[i].allowlistAdmin = vm.parseJsonAddress(json, _verifierEntryKey(i, ".args.allowlistAdmin"));
+      deployment.verifiers[i].storageLocations =
+        vm.parseJsonStringArray(json, _verifierEntryKey(i, ".args.storageLocations"));
+      deployment.verifiers[i].rmn = vm.parseJsonAddress(json, _verifierEntryKey(i, ".args.rmn"));
+      deployment.verifiers[i].encodedArgs = vm.parseJsonBytes(json, _verifierEntryKey(i, ".encodedArgs"));
     }
   }
 
@@ -544,7 +569,7 @@ library ConfigLib {
   }
 
   /// @notice Read the deployment record, or a zeroed struct (with alias set) if the
-  ///         file does not exist yet. Lets deploy scripts merge one address at a time.
+  ///         file does not exist yet. Lets deploy scripts merge one contract at a time.
   function readDeploymentOrEmpty(
     string memory aliasName
   ) internal view returns (Types.Deployment memory deployment) {
@@ -562,33 +587,85 @@ library ConfigLib {
   }
 
   /// @notice Persist a deployment record to an explicit path (used by tests).
+  /// @dev Whole-file replacement, so a deploy script must read the record first and set
+  ///      only its own contract's block. Redeploying a contract OVERRIDES its block; a
+  ///      config edit alone never reaches this path.
   function writeDeploymentByPath(
     string memory path,
     Types.Deployment memory deployment
   ) internal {
+    // Blocks are built with vm.serialize* (proper escaping for arrays and bytes) and the
+    // top level is assembled by hand: string.concat cannot mis-nest, while relying on the
+    // serializer to inline an array of objects could.
     string memory entries = "";
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
-      string memory entry = string.concat(
-        "{\"versionTag\":\"",
-        tagToString(deployment.verifiers[i].versionTag),
-        "\",\"address\":\"",
-        vm.toString(deployment.verifiers[i].addr),
-        "\"}"
-      );
-      entries = string.concat(entries, i == 0 ? "" : ",", entry);
+      entries = string.concat(entries, i == 0 ? "" : ",", _serializeVerifierEntry(deployment.verifiers[i], i));
     }
     string memory json = string.concat(
       "{\"alias\":\"",
       deployment.aliasName,
-      "\",\"factory\":\"",
-      vm.toString(deployment.factory),
-      "\",\"resolver\":\"",
-      vm.toString(deployment.resolver),
-      "\",\"verifiers\":[",
+      "\",\"factory\":",
+      _serializeFactory(deployment.factory, deployment.factoryParams),
+      ",\"resolver\":",
+      _serializeResolver(deployment.resolver, deployment.resolverParams),
+      ",\"verifiers\":[",
       entries,
       "]}"
     );
     vm.writeJson(json, path);
+  }
+
+  /// @dev Every block is written on every save, zeroed when the contract is not deployed
+  ///      yet. Foundry's serializer keeps one in-memory object per objectKey for the whole
+  ///      run, so a conditionally-emitted key would survive into a later write of a
+  ///      different record.
+  function _serializeFactory(
+    address deployedAddress,
+    Types.FactoryDeployParams memory params
+  ) private returns (string memory) {
+    string memory argsKey = "ccv_deployment_factory_args";
+    string memory argsJson = vm.serializeAddress(argsKey, "allowList", params.allowList);
+
+    string memory objectKey = "ccv_deployment_factory";
+    vm.serializeAddress(objectKey, "address", deployedAddress);
+    // Not a constructor argument: the CREATE address derives from this nonce-0 account,
+    // which makes it the deploy-time input worth recording.
+    vm.serializeAddress(objectKey, "deployer", params.deployer);
+    vm.serializeString(objectKey, "args", argsJson);
+    return vm.serializeBytes(objectKey, "encodedArgs", params.encodedArgs);
+  }
+
+  function _serializeResolver(
+    address deployedAddress,
+    Types.ResolverDeployParams memory params
+  ) private returns (string memory) {
+    string memory objectKey = "ccv_deployment_resolver";
+    vm.serializeAddress(objectKey, "address", deployedAddress);
+    // `salt` sits beside the address, not under `args`: it fixes the CREATE2 address
+    // rather than being a constructor argument.
+    vm.serializeBytes32(objectKey, "salt", params.salt);
+    vm.serializeString(objectKey, "args", "{}");
+    return vm.serializeBytes(objectKey, "encodedArgs", params.encodedArgs);
+  }
+
+  /// @dev The objectKey carries the array index: the serializer keeps one in-memory
+  ///      object per key for the whole run, so entries sharing a key would bleed fields
+  ///      into each other.
+  function _serializeVerifierEntry(
+    Types.VerifierDeployment memory entry,
+    uint256 index
+  ) private returns (string memory) {
+    string memory argsKey = string.concat("ccv_deployment_verifier_args_", vm.toString(index));
+    vm.serializeAddress(argsKey, "feeAggregator", entry.feeAggregator);
+    vm.serializeAddress(argsKey, "allowlistAdmin", entry.allowlistAdmin);
+    vm.serializeString(argsKey, "storageLocations", entry.storageLocations);
+    string memory argsJson = vm.serializeAddress(argsKey, "rmn", entry.rmn);
+
+    string memory objectKey = string.concat("ccv_deployment_verifier_", vm.toString(index));
+    vm.serializeString(objectKey, "versionTag", tagToString(entry.versionTag));
+    vm.serializeAddress(objectKey, "address", entry.addr);
+    vm.serializeString(objectKey, "args", argsJson);
+    return vm.serializeBytes(objectKey, "encodedArgs", entry.encodedArgs);
   }
 
   // --------------------------------------------------------------------------

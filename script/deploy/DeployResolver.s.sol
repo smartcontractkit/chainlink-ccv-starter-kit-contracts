@@ -70,6 +70,8 @@ contract DeployResolver is Script {
     }
 
     deployment.resolver = resolver;
+    // No constructor args; the salt is the deploy-time input that fixed this address.
+    deployment.resolverParams = Types.ResolverDeployParams({salt: chainConfig.resolverSalt, encodedArgs: ""});
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
     console2.log("  ACTION: confirm this matches the resolver address on other chains.");

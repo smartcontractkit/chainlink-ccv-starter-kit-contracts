@@ -10,6 +10,9 @@ pragma solidity 0.8.26;
 /// @dev Adding a field here also means adding a comparison in `DriftCheck` and a case in
 ///      `DriftCheck.t.sol`. Nothing enforces that, so an uncompared field silently makes
 ///      the drift check incomplete.
+/// @dev The recorded deploy params are exempt from that rule: they record what a past
+///      deploy constructed, not declared intent, so differing from current config is
+///      normal rather than drift.
 library Types {
   // ----------------------------- config/chains ------------------------------
   struct ChainConfig {
@@ -82,17 +85,42 @@ library Types {
   }
 
   // --------------------------- config/deployments ---------------------------
+  // Deploy-time params are recorded beside each address: `encodedArgs` mirrors the plain
+  // fields, both set from the same locals at the `new` call. The address is the presence
+  // flag — zero means that contract is not deployed and its params carry no meaning.
+
+  struct FactoryDeployParams {
+    address deployer; // the nonce-0 EOA the CREATE address derives from
+    address[] allowList;
+    bytes encodedArgs; // abi.encode(allowList)
+  }
+
+  /// @dev The resolver takes no constructor arguments, so `encodedArgs` is always empty.
+  ///      `salt` is not an argument either — it fixes the CREATE2 address, which makes it
+  ///      the deploy-time input worth recording.
+  struct ResolverDeployParams {
+    bytes32 salt;
+    bytes encodedArgs;
+  }
+
   /// @dev One deployed verifier. Mirrors one entry of the resolver's
   ///      inbound map (bytes4 versionTag -> verifier); tags are unique per chain.
   struct VerifierDeployment {
-    bytes4 versionTag;
+    bytes4 versionTag; // immutable on-chain
     address addr;
+    address feeAggregator; // DynamicConfig member; mutable on-chain afterwards
+    address allowlistAdmin; // DynamicConfig member; mutable on-chain afterwards
+    string[] storageLocations; // mutable on-chain afterwards
+    address rmn; // immutable on-chain
+    bytes encodedArgs; // abi.encode(dynamicConfig, storageLocations, rmn, versionTag)
   }
 
   struct Deployment {
     string aliasName;
     address factory;
+    FactoryDeployParams factoryParams;
     address resolver;
+    ResolverDeployParams resolverParams;
     // Which catalogued versionTags are DEPLOYED on this chain, and at what address.
     // config/version-tags.json enumerates the tag identities repo-wide; this record maps
     // the deployed ones to addresses.

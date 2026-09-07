@@ -186,9 +186,10 @@ contract SweepFeesTest is FeeScriptsSetup {
 
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     Types.RolesConfig memory roles = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
     roles.verifiers = new Types.VerifierRoles[](2);
     roles.verifiers[0].versionTag = VERSION_TAG;
@@ -219,9 +220,10 @@ contract SweepFeesTest is FeeScriptsSetup {
 
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     Types.RolesConfig memory roles = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
     roles.aliasName = "test_fee_chain"; // only verifier 1 declared
 

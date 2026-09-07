@@ -43,9 +43,10 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
     _deploySecondVerifier();
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0] = Types.VerifierDeployment({versionTag: VERSION_TAG, addr: address(verifier)});
-    deployment.verifiers[1] = Types.VerifierDeployment({versionTag: VERSION_TAG_V2, addr: address(verifierV2)});
-
+    deployment.verifiers[0].versionTag = VERSION_TAG;
+    deployment.verifiers[0].addr = address(verifier);
+    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
+    deployment.verifiers[1].addr = address(verifierV2);
     Types.RolesConfig memory roles = script.snapshot(deployment);
     assertEq(roles.verifiers.length, 2, "one entry per verifier");
     assertEq(roles.verifiers[1].versionTag, VERSION_TAG_V2, "second entry keyed by its tag");

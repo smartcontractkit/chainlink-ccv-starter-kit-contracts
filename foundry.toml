@@ -37,7 +37,7 @@ libs = ["node_modules", "lib"]
 # Scripts read config/ at runtime and write generated Safe batches to out/safe/.
 fs_permissions = [
   { access = "read", path = "./config" },
-  { access = "read-write", path = "./config/deployments" }, # deploy scripts record addresses here
+  { access = "read-write", path = "./config/deployments" }, # deploy scripts record addresses + ctor args here
   { access = "read", path = "./artifacts" },
   { access = "read-write", path = "./out/safe" },
   { access = "read-write", path = "./out/governance" },
