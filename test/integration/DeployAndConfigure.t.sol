@@ -417,6 +417,9 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     roles.resolver.owner = address(this);
     roles.resolver.feeAggregator = RESOLVER_FEE_AGGREGATOR;
     roles.factoryOwner = address(this);
+    // setUp allowlists the deployer so it can drive CREATE2; the clean state says so.
+    roles.factoryAllowlist = new address[](1);
+    roles.factoryAllowlist[0] = address(this);
   }
 
   /// @dev Roles for both verifiers — the ceremony's two-verifier DriftCheck needs an

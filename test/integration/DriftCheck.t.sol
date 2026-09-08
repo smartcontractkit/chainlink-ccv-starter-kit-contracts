@@ -126,6 +126,32 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkRoles(_deployment(), roles), 1, "factory owner mismatch");
   }
 
+  function test_drift_factoryAllowlist_notInConfig() public view {
+    Types.RolesConfig memory roles = _roles();
+    roles.factoryAllowlist = new address[](0);
+    assertEq(script.checkRoles(_deployment(), roles), 1, "account on-chain but not in config");
+  }
+
+  function test_drift_factoryAllowlist_missingOnChain() public view {
+    Types.RolesConfig memory roles = _roles();
+    roles.factoryAllowlist[0] = address(0xBAD);
+    assertEq(script.checkRoles(_deployment(), roles), 1, "config account never allowlisted on-chain");
+  }
+
+  function test_factoryAllowlist_orderIsNotDrift() public {
+    address replacement = address(0xD3B7);
+    address[] memory adds = new address[](1);
+    adds[0] = replacement;
+    factory.applyAllowListUpdates(new address[](0), adds);
+
+    Types.RolesConfig memory roles = _roles();
+    roles.factoryAllowlist = new address[](2);
+    roles.factoryAllowlist[0] = replacement;
+    roles.factoryAllowlist[1] = address(this);
+
+    assertEq(script.checkRoles(_deployment(), roles), 0, "same set, different order");
+  }
+
   /// @dev The two fee aggregators are distinct values on distinct contracts; a stale
   ///      config that reuses one for both must be caught, not silently accepted.
   function test_drift_feeAggregatorsAreNotInterchangeable() public view {
@@ -444,6 +470,9 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     roles.resolver.owner = address(this);
     roles.resolver.feeAggregator = RESOLVER_FEE_AGGREGATOR;
     roles.factoryOwner = address(this);
+    // setUp allowlists the deployer so it can drive CREATE2; the clean state says so.
+    roles.factoryAllowlist = new address[](1);
+    roles.factoryAllowlist[0] = address(this);
   }
 
   function _rolesBothVerifiers() internal view returns (Types.RolesConfig memory roles) {
