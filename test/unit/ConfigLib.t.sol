@@ -139,6 +139,92 @@ contract ConfigLibTest is Test {
   }
 
   // ---------------------------------------------------------------------------
+  //  roles: factory.allowlist
+  // ---------------------------------------------------------------------------
+
+  string internal constant ROLES_EXAMPLE = "config/roles/sepolia.example.json";
+
+  function test_readRolesByPath_parsesFactoryAllowlist() public view {
+    Types.RolesConfig memory roles = ConfigLib.readRolesByPath(ROLES_EXAMPLE);
+    assertEq(roles.factoryAllowlist.length, 1, "one allowlisted account");
+    assertEq(roles.factoryAllowlist[0], address(0x2000000000000000000000000000000000000001), "the example account");
+  }
+
+  function test_readRolesByPath_revertsWhenFactoryAllowlistMissing() public {
+    _expectRolesRevert("no-allowlist", _rolesJson('"factory":{"owner":"0x2000000000000000000000000000000000000001"}'));
+  }
+
+  function test_readRolesByPath_revertsOnZeroInFactoryAllowlist() public {
+    _expectRolesRevert(
+      "zero-in-allowlist",
+      _rolesJson(
+        '"factory":{"owner":"0x2000000000000000000000000000000000000001",'
+        '"allowlist":["0x0000000000000000000000000000000000000000"]}'
+      ),
+      "zero address in factory.allowlist"
+    );
+  }
+
+  function test_readRolesByPath_acceptsEmptyFactoryAllowlist() public {
+    string memory path = "out/governance/roles-empty-allowlist.local.json";
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, _rolesJson('"factory":{"owner":"0x2000000000000000000000000000000000000001","allowlist":[]}'));
+    Types.RolesConfig memory roles = ConfigLib.readRolesByPath(path);
+    assertEq(roles.factoryAllowlist.length, 0, "[] is the deliberate revoke-everyone set");
+    vm.removeFile(path);
+  }
+
+  /// @dev A roles file with no verifiers, so only the `factory` object varies per case.
+  function _rolesJson(
+    string memory factoryObject
+  ) private pure returns (string memory) {
+    return string.concat(
+      '{"alias":"zz-roles-fixture","verifiers":[],',
+      '"resolver":{"owner":"0x2000000000000000000000000000000000000001",',
+      '"feeAggregator":"0x2000000000000000000000000000000000000005"},',
+      factoryObject,
+      "}"
+    );
+  }
+
+  function _expectRolesRevert(
+    string memory caseName,
+    string memory json
+  ) private {
+    _expectRolesRevert(caseName, json, "");
+  }
+
+  /// @dev Own fixture path per case: forge runs tests concurrently on a shared filesystem.
+  ///      An empty `reasonFragment` asserts only that the file is rejected — a missing key
+  ///      reverts inside the cheatcode, so its message is not ours to pin down.
+  function _expectRolesRevert(
+    string memory caseName,
+    string memory json,
+    string memory reasonFragment
+  ) private {
+    string memory path = string.concat("out/governance/roles-", caseName, ".local.json");
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, json);
+    bool reverted = true;
+    try this.callReadRoles(path) {
+      reverted = false;
+    } catch Error(string memory reason) {
+      if (bytes(reasonFragment).length > 0) {
+        assertTrue(vm.contains(reason, reasonFragment), string.concat("reason names the problem: ", reason));
+      }
+    } catch {}
+    vm.removeFile(path);
+    assertTrue(reverted, "readRolesByPath must reject this file");
+  }
+
+  /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
+  function callReadRoles(
+    string calldata path
+  ) external view returns (Types.RolesConfig memory) {
+    return ConfigLib.readRolesByPath(path);
+  }
+
+  // ---------------------------------------------------------------------------
   //  chain-identity preflight (assertChain / assertChainMatches)
   // ---------------------------------------------------------------------------
 

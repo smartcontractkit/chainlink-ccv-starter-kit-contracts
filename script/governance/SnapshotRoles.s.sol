@@ -119,7 +119,9 @@ contract SnapshotRoles is BaseScript {
     // Optional: not every chain records a factory (only the CREATE2 bootstrap chain
     // needs one long-term), so an absent factory is a zero, not a failure.
     if (deployment.factory != address(0)) {
-      roles.factoryOwner = CREATE2Factory(deployment.factory).owner();
+      CREATE2Factory factory = CREATE2Factory(deployment.factory);
+      roles.factoryOwner = factory.owner();
+      roles.factoryAllowlist = factory.getAllowList();
     }
   }
 
@@ -155,7 +157,8 @@ contract SnapshotRoles is BaseScript {
     string memory resolverJson = vm.serializeAddress(resolverObject, "feeAggregator", roles.resolver.feeAggregator);
 
     string memory factoryObject = "factory";
-    string memory factoryJson = vm.serializeAddress(factoryObject, "owner", roles.factoryOwner);
+    vm.serializeAddress(factoryObject, "owner", roles.factoryOwner);
+    string memory factoryJson = vm.serializeAddress(factoryObject, "allowlist", roles.factoryAllowlist);
 
     // vm.serializeString embeds a nested JSON OBJECT as JSON but not an array, so the
     // root is assembled by hand around the two serialized objects.

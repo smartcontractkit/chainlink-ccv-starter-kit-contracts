@@ -375,17 +375,11 @@ library ConfigLib {
     roles.resolver.owner = vm.parseJsonAddress(json, ".resolver.owner");
     roles.resolver.feeAggregator = vm.parseJsonAddress(json, ".resolver.feeAggregator");
     roles.factoryOwner = vm.parseJsonAddress(json, ".factory.owner");
-    // Optional: a roles file that predates the field, or a chain not managing the
-    // allowlist, loads as empty and ApplyFactoryAllowlistUpdates skips it. An explicit
-    // [] is a different statement (prune everything) and is distinguished by the caller.
-    if (vm.keyExistsJson(json, ".factory.allowlist")) {
-      roles.factoryAllowlist = vm.parseJsonAddressArray(json, ".factory.allowlist");
-      for (uint256 i = 0; i < roles.factoryAllowlist.length; ++i) {
-        require(
-          roles.factoryAllowlist[i] != address(0),
-          string.concat("ConfigLib: zero address in factory.allowlist in ", path)
-        );
-      }
+    roles.factoryAllowlist = vm.parseJsonAddressArray(json, ".factory.allowlist");
+    for (uint256 i = 0; i < roles.factoryAllowlist.length; ++i) {
+      require(
+        roles.factoryAllowlist[i] != address(0), string.concat("ConfigLib: zero address in factory.allowlist in ", path)
+      );
     }
   }
 

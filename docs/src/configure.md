@@ -188,8 +188,8 @@ make apply-factory-allowlist CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=
 `factory.allowlist` in `roles/<alias>.json` is the **full** desired set, not a delta. The
 script reads `getAllowList()`, stages only the difference, and does nothing when the two
 already agree — so re-running is safe and a clean run is proof the on-chain set matches
-config. An empty list is valid intent: nobody may `createAndCall` until the owner re-adds
-an account.
+config. An empty list means nobody may `createAndCall` until the owner re-adds an
+account.
 
 **Order matters.** Prune only after the factory owner has accepted ownership and every
 deterministic deploy on that chain is done — removing the deployer earlier blocks the

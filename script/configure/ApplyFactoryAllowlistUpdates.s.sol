@@ -21,8 +21,8 @@ import {console2} from "forge-std/console2.sol";
 ///      To authorize a replacement deployment account later: add it to
 ///      `factory.allowlist`, run this, deploy, remove it, run this again.
 ///
-/// @dev `factory.allowlist` is the desired FULL set. [] is valid intent: nobody may
-///      createAndCall until the owner re-adds an account.
+/// @dev `factory.allowlist` is the desired FULL set and is REQUIRED in the roles file.
+///      [] is valid intent: nobody may createAndCall until the owner re-adds an account.
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyFactoryAllowlistUpdates.s.sol \
@@ -50,7 +50,6 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
     // here with a legible reason rather than as a bare revert inside getAllowList().
     _assertReachable(deployment.factory, "factory");
 
-    // Zero entries are rejected inside readRoles (ConfigLib), so the desired set is clean here.
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
     (address[] memory removes, address[] memory adds) = diff(deployment.factory, roles.factoryAllowlist);

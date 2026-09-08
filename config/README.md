@@ -145,9 +145,10 @@ and refuses a tag with no entry).
   },
   "factory": {
     "owner": "0x...",                   // transferred to governance after bootstrap
-    "allowlist": ["0x..."]              // optional: the FULL createAndCall set the
-                                        // factory should hold. Absent = not managed
-                                        // here; [] = nobody may createAndCall.
+    "allowlist": ["0x..."]              // REQUIRED: the FULL createAndCall set the
+                                        // factory should hold. BootstrapFactory
+                                        // allowlists the deployer at construction, so
+                                        // [] prunes it and nobody may createAndCall.
                                         // Applied by ApplyFactoryAllowlistUpdates.
   }
 }

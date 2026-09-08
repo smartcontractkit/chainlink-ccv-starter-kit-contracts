@@ -83,8 +83,7 @@ library Types {
     ResolverRoles resolver;
     address factoryOwner;
     // The createAndCall allowlist the factory SHOULD hold: the desired full set, not a
-    // delta. Absent means "not managed here" and is left alone; [] means nobody may
-    // createAndCall.
+    // delta. [] means nobody may createAndCall.
     address[] factoryAllowlist;
   }
 
