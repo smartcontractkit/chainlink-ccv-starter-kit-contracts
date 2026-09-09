@@ -22,11 +22,10 @@ import {console2} from "forge-std/console2.sol";
 ///   OUTPUT_MODE=SAFE forge script script/ownership/CancelStorageLocationsAdmin.s.sol \
 ///     --sig "run(string,bytes4)" sepolia 0x00010001
 contract CancelStorageLocationsAdmin is BaseScript {
-  function callsFor(
+  function callFor(
     address verifier
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.transferStorageLocationsAdmin, (address(0)))
     });
   }
@@ -48,7 +47,7 @@ contract CancelStorageLocationsAdmin is BaseScript {
     console2.log("  verifier:", verifier);
     console2.log("  clearing any pending storageLocationsAdmin (re-proposing address(0))");
 
-    _stageMany(callsFor(verifier));
+    _stage(callFor(verifier));
     _flush(string.concat("cancel-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 

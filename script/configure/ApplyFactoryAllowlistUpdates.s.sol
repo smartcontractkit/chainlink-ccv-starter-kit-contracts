@@ -30,14 +30,12 @@ import {console2} from "forge-std/console2.sol";
 ///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyFactoryAllowlistUpdates is BaseScript {
   /// @notice Single source of truth for the applyAllowListUpdates calldata.
-  function callsFor(
+  function callFor(
     address factory,
     address[] memory removes,
     address[] memory adds
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] =
-      Call({to: factory, value: 0, data: abi.encodeCall(CREATE2Factory.applyAllowListUpdates, (removes, adds))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: factory, value: 0, data: abi.encodeCall(CREATE2Factory.applyAllowListUpdates, (removes, adds))});
   }
 
   function run(
@@ -85,7 +83,7 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
       );
     }
 
-    _stageMany(callsFor(deployment.factory, removes, adds));
+    _stage(callFor(deployment.factory, removes, adds));
 
     _flush(string.concat("apply-factory-allowlist-updates-", chainAlias));
   }

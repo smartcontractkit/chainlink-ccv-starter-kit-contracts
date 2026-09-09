@@ -28,13 +28,12 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   function _applyFinality(
     bytes4 value
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), value);
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(verifier), "target is verifier");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(verifier), value);
+    assertEq(call.to, address(verifier), "target is verifier");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
-  function test_callsFor_setsFastPathFinality() public {
+  function test_callFor_setsFastPathFinality() public {
     assertTrue(_applyFinality(BLOCK_DEPTH_1), "apply failed");
     assertEq(verifier.getAllowedFinalityConfig(), BLOCK_DEPTH_1, "finality config set");
   }
@@ -47,9 +46,9 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), BLOCK_DEPTH_1);
+    BaseScript.Call memory call = script.callFor(address(verifier), BLOCK_DEPTH_1);
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
+    (bool ok,) = call.to.call(call.data); // onlyOwner
     assertFalse(ok, "non-owner should not set finality config");
   }
 

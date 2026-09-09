@@ -13,7 +13,7 @@ import {console2} from "forge-std/console2.sol";
 /// @title ApplySignatureConfigs
 /// @notice Sets the signer set + threshold per source chain on the CommitteeVerifier.
 ///         Runs every lane whose DESTINATION is the given chain AND whose versionTag matches
-///         the given one (one verifier per run), one call each, and skips
+///         the given one (one verifier per run), batched into ONE call, and skips
 ///         the lanes already matching on-chain — so --rpc-url is required in BOTH output
 ///         modes.
 ///
@@ -47,13 +47,12 @@ contract ApplySignatureConfigs is BaseScript {
   /// @param verifier The CommitteeVerifier to configure.
   /// @param removals Source chain selectors whose config should be cleared (usually empty).
   /// @param configs  The desired signer configs to set (full-set replacement per source).
-  function callsFor(
+  function callFor(
     address verifier,
     uint64[] memory removals,
     SignatureQuorumValidator.SignatureConfig[] memory configs
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: verifier, value: 0, data: abi.encodeCall(SignatureQuorumValidator.applySignatureConfigs, (removals, configs))
     });
   }
@@ -61,30 +60,59 @@ contract ApplySignatureConfigs is BaseScript {
   /// @notice Translate a lane's config-as-data into the Chainlink arg struct.
   function toSignatureConfig(
     Types.LaneConfig memory lane
-  ) public pure returns (SignatureQuorumValidator.SignatureConfig[] memory configs) {
-    configs = new SignatureQuorumValidator.SignatureConfig[](1);
-    configs[0] = SignatureQuorumValidator.SignatureConfig({
+  ) public pure returns (SignatureQuorumValidator.SignatureConfig memory config) {
+    config = SignatureQuorumValidator.SignatureConfig({
       sourceChainSelector: lane.source.chainSelector,
       threshold: lane.signatureConfig.threshold,
       signers: lane.signatureConfig.signers
     });
   }
 
-  /// @notice Resolves one lane to the calls `run()` stages. Requires a deployment record
-  ///         for the target chain.
-  /// @return calls One applySignatureConfigs call.
-  /// @return targetAlias The chain the calls are addressed to (dest side).
-  function laneCalls(
-    Types.LaneConfig memory lane
-  ) public view returns (Call[] memory calls, string memory targetAlias) {
-    targetAlias = _targetAlias(lane);
-    Types.Deployment memory deployment = ConfigLib.readDeployment(targetAlias);
-    // Reverts when the lane's versionTag has no verifier recorded on the dest chain.
-    address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
+  /// @notice The configs a run would stage: one entry per lane whose DESTINATION is
+  ///         `chainAlias` and whose tag is `versionTag`, minus lanes already current.
+  /// @dev The two filters pin exactly what verifierByTag keys on (dest alias, tag), so
+  ///      every matched lane resolves to the caller's `verifier` and the configs go out
+  ///      as ONE call. Loosen either filter and this batching stops being safe.
+  /// @return configs The entries to send, in lane order. Its length IS the staged count.
+  /// @return matched How many lanes the filters selected, staged or not.
+  function configsFor(
+    Types.LaneConfig[] memory lanes,
+    string memory chainAlias,
+    bytes4 versionTag,
+    address verifier
+  ) public view returns (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) {
+    // Sized to the upper bound, trimmed to the staged count below.
+    configs = new SignatureQuorumValidator.SignatureConfig[](lanes.length);
+    uint256 staged = 0;
 
-    _assertValidConfig(lane);
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      Types.LaneConfig memory lane = lanes[i];
+      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      if (lane.versionTag != versionTag) continue;
+      ++matched;
 
-    return (callsFor(verifier, new uint64[](0), toSignatureConfig(lane)), targetAlias);
+      // Before the isCurrent skip: an invalid config is a config error, not a no-op.
+      _assertValidConfig(lane);
+
+      if (isCurrent(verifier, lane)) {
+        console2.log("[ApplySignatureConfigs] lane UNCHANGED:", lane.name);
+        continue;
+      }
+
+      console2.log("[ApplySignatureConfigs] lane STAGED:", lane.name);
+      console2.log("  source selector:", lane.source.chainSelector);
+      console2.log("  threshold / signers:", lane.signatureConfig.threshold, lane.signatureConfig.signers.length);
+
+      configs[staged] = toSignatureConfig(lane);
+      ++staged;
+    }
+
+    // Drop the unused tail: a memory array's first word is its length, and `staged` only
+    // ever shrinks it. The zero-filled tail would revert InvalidSignatureConfig.
+    // solhint-disable-next-line no-inline-assembly
+    assembly {
+      mstore(configs, staged)
+    }
   }
 
   /// @notice The lanes with this chain as destination that are pinned to `versionTag` —
@@ -102,32 +130,11 @@ contract ApplySignatureConfigs is BaseScript {
     address verifier = ConfigLib.verifierByTag(ConfigLib.readDeployment(chainAlias), versionTag);
     _assertReachable(verifier, "verifier");
 
-    string[] memory lanePaths = ConfigLib.listLanes();
-    uint256 matched = 0;
-    uint256 staged = 0;
+    console2.log("[ApplySignatureConfigs] target chain:", chainAlias);
+    console2.log("  target verifier:", verifier);
 
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
-      if (lane.versionTag != versionTag) continue;
-      ++matched;
-
-      (Call[] memory calls, string memory targetAlias) = laneCalls(lane);
-
-      if (isCurrent(calls[0].to, lane)) {
-        console2.log("[ApplySignatureConfigs] lane UNCHANGED:", lane.name);
-        continue;
-      }
-
-      console2.log("[ApplySignatureConfigs] lane STAGED:", lane.name);
-      console2.log("  target chain:", targetAlias);
-      console2.log("  target verifier:", calls[0].to);
-      console2.log("  source selector:", lane.source.chainSelector);
-      console2.log("  threshold / signers:", lane.signatureConfig.threshold, lane.signatureConfig.signers.length);
-
-      _stageMany(calls);
-      ++staged;
-    }
+    (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
+      configsFor(ConfigLib.readLanes(), chainAlias, versionTag, verifier);
 
     require(
       matched > 0,
@@ -138,11 +145,13 @@ contract ApplySignatureConfigs is BaseScript {
         ConfigLib.tagToString(versionTag)
       )
     );
-    if (staged == 0) {
+    if (configs.length == 0) {
       console2.log("[ApplySignatureConfigs] nothing to do: every lane is already current:", matched);
       return;
     }
-    console2.log("[ApplySignatureConfigs] staged lanes:", staged, "of", matched);
+    console2.log("[ApplySignatureConfigs] staged lanes:", configs.length, "of", matched);
+    _stage(callFor(verifier, new uint64[](0), configs));
+
     // The tag is part of the batch name: per-tag runs on the same chain must not
     // overwrite each other's Safe batch.
     _flush(string.concat("apply-signature-configs-", chainAlias, "-", ConfigLib.tagToString(versionTag)));

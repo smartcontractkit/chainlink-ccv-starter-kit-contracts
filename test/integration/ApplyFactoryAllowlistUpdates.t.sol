@@ -22,10 +22,9 @@ contract ApplyFactoryAllowlistUpdatesTest is CommitteeVerifierSetup {
     address[] memory removes,
     address[] memory adds
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(factory), removes, adds);
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(factory), "target is factory");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == factory owner (this test)
+    BaseScript.Call memory call = script.callFor(address(factory), removes, adds);
+    assertEq(call.to, address(factory), "target is factory");
+    (ok,) = call.to.call(call.data); // msg.sender == factory owner (this test)
   }
 
   function _oneAccount(
@@ -65,7 +64,7 @@ contract ApplyFactoryAllowlistUpdatesTest is CommitteeVerifierSetup {
     assertEq(adds[0], REPLACEMENT, "the replacement account");
   }
 
-  function test_callsFor_removesTheDeployer() public {
+  function test_callFor_removesTheDeployer() public {
     assertTrue(_apply(_oneAccount(address(this)), new address[](0)), "removal failed");
     assertEq(factory.getAllowList().length, 0, "deployer pruned; getAllowList is empty");
   }
@@ -81,10 +80,10 @@ contract ApplyFactoryAllowlistUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    BaseScript.Call[] memory calls = script.callsFor(address(factory), _oneAccount(address(this)), new address[](0));
+    BaseScript.Call memory call = script.callFor(address(factory), _oneAccount(address(this)), new address[](0));
     // Allowlist membership grants createAndCall, NOT allowlist management.
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // Ownable: caller is not the owner
+    (bool ok,) = call.to.call(call.data); // Ownable: caller is not the owner
     assertFalse(ok, "non-owner must not update the allowlist");
     assertEq(factory.getAllowList().length, 1, "allowlist untouched");
   }

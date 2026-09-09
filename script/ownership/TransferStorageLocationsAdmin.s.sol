@@ -15,12 +15,11 @@ import {console2} from "forge-std/console2.sol";
 /// @dev Target call: CommitteeVerifier.transferStorageLocationsAdmin(address).
 contract TransferStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the transfer-storageLocationsAdmin calldata.
-  function callsFor(
+  function callFor(
     address verifier,
     address proposedAdmin
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.transferStorageLocationsAdmin, (proposedAdmin))
     });
   }
@@ -44,7 +43,7 @@ contract TransferStorageLocationsAdmin is BaseScript {
     console2.log("  storageLocationsAdmin PROPOSED to:", proposedAdmin);
     console2.log("  (must acceptStorageLocationsAdmin() to take effect)");
 
-    _stageMany(callsFor(verifier, proposedAdmin));
+    _stage(callFor(verifier, proposedAdmin));
     _flush(string.concat("transfer-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 }

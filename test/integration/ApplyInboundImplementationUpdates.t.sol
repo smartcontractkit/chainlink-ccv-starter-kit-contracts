@@ -40,10 +40,9 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     bytes4 version,
     address impl
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(resolver), script.toInboundArgs(version, impl));
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(resolver), "target is resolver");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(resolver), script.toInboundArgs(version, impl));
+    assertEq(call.to, address(resolver), "target is resolver");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
   function _inboundImplementation(
@@ -52,7 +51,7 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     return resolver.getInboundImplementation(abi.encodePacked(version));
   }
 
-  function test_callsFor_setsInboundImplementation() public {
+  function test_callFor_setsInboundImplementation() public {
     assertTrue(_applyInbound(VERSION, address(verifier)), "apply failed");
     assertEq(_inboundImplementation(VERSION), address(verifier), "version -> verifier mapping");
   }
@@ -69,10 +68,9 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    BaseScript.Call[] memory calls =
-      script.callsFor(address(resolver), script.toInboundArgs(VERSION, address(verifier)));
+    BaseScript.Call memory call = script.callFor(address(resolver), script.toInboundArgs(VERSION, address(verifier)));
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
+    (bool ok,) = call.to.call(call.data); // onlyOwner
     assertFalse(ok, "non-owner should not update inbound implementations");
   }
 

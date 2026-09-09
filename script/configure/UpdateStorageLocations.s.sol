@@ -18,13 +18,11 @@ import {console2} from "forge-std/console2.sol";
 ///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 contract UpdateStorageLocations is BaseScript {
   /// @notice Single source of truth for the updateStorageLocations calldata.
-  function callsFor(
+  function callFor(
     address verifier,
     string[] memory locations
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] =
-      Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.updateStorageLocations, (locations))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.updateStorageLocations, (locations))});
   }
 
   function run(
@@ -47,7 +45,7 @@ contract UpdateStorageLocations is BaseScript {
       console2.log("  WARN storageLocations is empty (clears the on-chain record)");
     }
 
-    _stageMany(callsFor(verifier, chainConfig.storageLocations));
+    _stage(callFor(verifier, chainConfig.storageLocations));
     _flush(string.concat("update-storage-locations-", ConfigLib.tagToString(versionTag)));
   }
 }

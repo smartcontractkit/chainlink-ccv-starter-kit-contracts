@@ -41,11 +41,9 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     address[] memory added,
     address[] memory removed
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls =
-      script.callsFor(address(verifier), _buildAllowlistConfigArgs(enabled, added, removed));
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(verifier), "target is verifier");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(verifier), _buildAllowlistConfigArgs(enabled, added, removed));
+    assertEq(call.to, address(verifier), "target is verifier");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
   function _allowedSenders() internal view returns (address[] memory senders) {
@@ -135,7 +133,7 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     arr[0] = a;
   }
 
-  function test_callsFor_enablesAndAddsSenders() public {
+  function test_callFor_enablesAndAddsSenders() public {
     assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "apply failed");
 
     (BaseVerifier.RemoteChainConfigArgs memory cfg, address[] memory senders) = verifier.getRemoteChainConfig(DEST);
@@ -158,21 +156,121 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotOwnerNorAllowlistAdmin() public {
-    BaseScript.Call[] memory calls =
-      script.callsFor(address(verifier), _buildAllowlistConfigArgs(true, _single(SENDER_A), new address[](0)));
+    BaseScript.Call memory call =
+      script.callFor(address(verifier), _buildAllowlistConfigArgs(true, _single(SENDER_A), new address[](0)));
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // msg.sender == 0xBAD -> OnlyCallableByOwnerOrAllowlistAdmin
+    (bool ok,) = call.to.call(call.data); // msg.sender == 0xBAD -> OnlyCallableByOwnerOrAllowlistAdmin
     assertFalse(ok, "non-owner/admin should not be able to update allowlist");
   }
 
   function test_toAllowlistConfigArgs_translatesExampleLane() public view {
     Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
-    BaseVerifier.AllowlistConfigArgs[] memory args = script.toAllowlistConfigArgs(lane);
+    BaseVerifier.AllowlistConfigArgs memory args = script.toAllowlistConfigArgs(lane);
 
+    assertEq(args.destChainSelector, lane.dest.chainSelector, "dest selector");
+    assertEq(args.allowlistEnabled, false, "example lane has allowlist disabled");
+    assertEq(args.addedAllowlistedSenders.length, 0, "no adds in example");
+    assertEq(args.removedAllowlistedSenders.length, 0, "no removes in example");
+  }
+
+  // ---------------------------------------------------------------------------
+  //  argsFor: selection, skip and ordering across a lane set
+  // ---------------------------------------------------------------------------
+
+  string internal constant SRC_ALIAS = "zz-scratch-src-chain";
+
+  function _selectableLane(
+    string memory sourceAlias,
+    uint64 destSelector,
+    bytes4 tag
+  ) internal pure returns (Types.LaneConfig memory lane) {
+    // allowlistEnabled=true differs from the verifier's untouched state, so these lanes
+    // are selectable AND not already current.
+    lane = _lane(true, new address[](0), new address[](0));
+    lane.source.aliasName = sourceAlias;
+    lane.dest.chainSelector = destSelector;
+    lane.versionTag = tag;
+  }
+
+  function _oneLane(
+    Types.LaneConfig memory lane
+  ) internal pure returns (Types.LaneConfig[] memory lanes) {
+    lanes = new Types.LaneConfig[](1);
+    lanes[0] = lane;
+  }
+
+  function test_argsFor_skipsLanesFromAnotherChain() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lanes[1] = _selectableLane("zz-scratch-other-chain", 999, VERSION_TAG);
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "only the lane sourced on this chain matched");
     assertEq(args.length, 1);
-    assertEq(args[0].destChainSelector, lane.dest.chainSelector, "dest selector");
-    assertEq(args[0].allowlistEnabled, false, "example lane has allowlist disabled");
-    assertEq(args[0].addedAllowlistedSenders.length, 0, "no adds in example");
-    assertEq(args[0].removedAllowlistedSenders.length, 0, "no removes in example");
+    assertEq(args[0].destChainSelector, DEST);
+  }
+
+  function test_argsFor_skipsLanesPinnedToAnotherTag() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lanes[1] = _selectableLane(SRC_ALIAS, 999, VERSION_TAG_V2);
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "the other tag is a different verifier's business");
+    assertEq(args.length, 1);
+  }
+
+  /// @dev The array length IS the staged count: the over-allocated tail must not survive.
+  function test_argsFor_lengthIsTheStagedCount() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](4);
+    lanes[0] = _selectableLane(SRC_ALIAS, 111, VERSION_TAG);
+    lanes[1] = _selectableLane("zz-scratch-other-chain", 222, VERSION_TAG);
+    lanes[2] = _selectableLane(SRC_ALIAS, 333, VERSION_TAG);
+    lanes[3] = _selectableLane(SRC_ALIAS, 444, VERSION_TAG_V2);
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 2, "two lanes matched the filters");
+    assertEq(args.length, 2, "trimmed from the 4-slot upper bound");
+    assertEq(args[0].destChainSelector, 111, "lane order preserved");
+    assertEq(args[1].destChainSelector, 333, "lane order preserved");
+  }
+
+  /// @dev A lane already applied on-chain counts as matched but must not be staged.
+  function test_argsFor_skipsLaneAlreadyCurrentButStillCountsIt() public view {
+    // allowlistEnabled=false with no adds/removes is the verifier's untouched state.
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowlistEnabled = false;
+    assertTrue(script.isCurrent(address(verifier), lane), "setup: already current");
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "the lane still matched the filters");
+    assertEq(args.length, 0, "but nothing to stage");
+  }
+
+  /// @dev The point of batching: two matched lanes become ONE call that applies both.
+  function test_batchedCall_appliesEveryMatchedLaneInOneCall() public {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _selectableLane(SRC_ALIAS, 111, VERSION_TAG);
+    lanes[1] = _selectableLane(SRC_ALIAS, 222, VERSION_TAG);
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(matched, 2);
+    assertEq(args.length, 2, "both lanes staged");
+
+    BaseScript.Call memory call = script.callFor(address(verifier), args);
+    (bool ok,) = call.to.call(call.data);
+    assertTrue(ok, "the single batched call applied");
+
+    assertTrue(script.isCurrent(address(verifier), lanes[0]), "dest 111 configured");
+    assertTrue(script.isCurrent(address(verifier), lanes[1]), "dest 222 configured");
   }
 }

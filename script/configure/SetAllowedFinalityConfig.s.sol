@@ -70,12 +70,11 @@ contract SetAllowedFinalityConfig is BaseScript {
   }
 
   /// @notice Single source of truth for the setAllowedFinalityConfig calldata.
-  function callsFor(
+  function callFor(
     address verifier,
     bytes4 allowedFinality
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.setAllowedFinalityConfig, (allowedFinality))
     });
   }
@@ -99,7 +98,7 @@ contract SetAllowedFinalityConfig is BaseScript {
 
     validateFinalityPolicy(chainConfig.finalityConfig);
 
-    _stageMany(callsFor(verifier, chainConfig.finalityConfig));
+    _stage(callFor(verifier, chainConfig.finalityConfig));
     _flush(string.concat("set-allowed-finality-config-", ConfigLib.tagToString(versionTag)));
   }
 }

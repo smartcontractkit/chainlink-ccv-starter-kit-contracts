@@ -19,12 +19,11 @@ import {console2} from "forge-std/console2.sol";
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract ApplyInboundImplementationUpdates is BaseScript {
   /// @notice Single source of truth for the applyInboundImplementationUpdates calldata.
-  function callsFor(
+  function callFor(
     address resolver,
     VersionedVerifierResolver.InboundImplementationArgs[] memory args
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.applyInboundImplementationUpdates, (args))
     });
   }
@@ -74,7 +73,7 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     }
     console2.log("  staging versions:", staged, "of", tags.length);
 
-    _stageMany(callsFor(deployment.resolver, args));
+    _stage(callFor(deployment.resolver, args));
     _flush("apply-inbound-implementations");
   }
 

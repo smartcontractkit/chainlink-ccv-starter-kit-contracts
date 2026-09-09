@@ -11,7 +11,7 @@ import {console2} from "forge-std/console2.sol";
 /// @title ApplyAllowlistUpdates
 /// @notice Sender allowlist per destination on the CommitteeVerifier.
 ///         Runs every lane whose SOURCE is the given chain AND whose versionTag matches the
-///         given one (one verifier per run), one call each, and skips the
+///         given one (one verifier per run), batched into ONE call, and skips the
 ///         lanes already matching on-chain — so --rpc-url is required in BOTH output
 ///         modes.
 ///         Caller may be EITHER the owner or the DynamicConfig.allowlistAdmin — the
@@ -35,26 +35,69 @@ contract ApplyAllowlistUpdates is BaseScript {
   }
 
   /// @notice Single source of truth for the applyAllowlistUpdates calldata.
-  function callsFor(
+  function callFor(
     address verifier,
     BaseVerifier.AllowlistConfigArgs[] memory args
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.applyAllowlistUpdates, (args))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.applyAllowlistUpdates, (args))});
   }
 
   /// @notice Translate a lane's config-as-data into the Chainlink arg struct, keyed by
   ///         the lane's destination selector.
   function toAllowlistConfigArgs(
     Types.LaneConfig memory lane
-  ) public pure returns (BaseVerifier.AllowlistConfigArgs[] memory args) {
-    args = new BaseVerifier.AllowlistConfigArgs[](1);
-    args[0] = BaseVerifier.AllowlistConfigArgs({
+  ) public pure returns (BaseVerifier.AllowlistConfigArgs memory args) {
+    args = BaseVerifier.AllowlistConfigArgs({
       destChainSelector: lane.dest.chainSelector,
       allowlistEnabled: lane.allowlist.allowlistEnabled,
       addedAllowlistedSenders: lane.allowlist.added,
       removedAllowlistedSenders: lane.allowlist.removed
     });
+  }
+
+  /// @notice The args a run would stage: one entry per lane whose SOURCE is `chainAlias`
+  ///         and whose tag is `versionTag`, minus the lanes already current on-chain.
+  /// @return args The entries to send, in lane order. Its length IS the staged count.
+  /// @return matched How many lanes the filters selected, staged or not.
+  function argsFor(
+    Types.LaneConfig[] memory lanes,
+    string memory chainAlias,
+    bytes4 versionTag,
+    address verifier
+  ) public view returns (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) {
+    // Sized to the upper bound, trimmed to the staged count below.
+    args = new BaseVerifier.AllowlistConfigArgs[](lanes.length);
+    uint256 staged = 0;
+
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      Types.LaneConfig memory lane = lanes[i];
+      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
+      if (lane.versionTag != versionTag) continue;
+      ++matched;
+
+      // Before the isCurrent skip: an invalid config is a config error, not a no-op.
+      _assertValidConfig(lane);
+
+      if (isCurrent(verifier, lane)) {
+        console2.log("[ApplyAllowlistUpdates] lane UNCHANGED:", lane.name);
+        continue;
+      }
+
+      console2.log("[ApplyAllowlistUpdates] lane STAGED:", lane.name);
+      console2.log("  dest selector:", lane.dest.chainSelector);
+      console2.log("  allowlistEnabled:", lane.allowlist.allowlistEnabled);
+      console2.log("    added:", lane.allowlist.added.length, "removed:", lane.allowlist.removed.length);
+
+      args[staged] = toAllowlistConfigArgs(lane);
+      ++staged;
+    }
+
+    // Drop the unused tail: a memory array's first word is its length, and `staged` only
+    // ever shrinks it. The zero-filled tail would apply a meaningless entry for selector 0.
+    // solhint-disable-next-line no-inline-assembly
+    assembly {
+      mstore(args, staged)
+    }
   }
 
   /// @notice The lanes with this chain as source that are pinned to `versionTag` — ONE
@@ -72,31 +115,11 @@ contract ApplyAllowlistUpdates is BaseScript {
     address verifier = ConfigLib.verifierByTag(deployment, versionTag);
     _assertReachable(verifier, "verifier");
 
-    string[] memory lanePaths = ConfigLib.listLanes();
-    uint256 matched = 0;
-    uint256 staged = 0;
+    console2.log("[ApplyAllowlistUpdates] target chain:", chainAlias);
+    console2.log("  target verifier:", verifier);
 
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
-      if (lane.versionTag != versionTag) continue;
-      ++matched;
-      _assertValidConfig(lane);
-
-      if (isCurrent(verifier, lane)) {
-        console2.log("[ApplyAllowlistUpdates] lane UNCHANGED:", lane.name);
-        continue;
-      }
-
-      console2.log("[ApplyAllowlistUpdates] lane STAGED:", lane.name);
-      console2.log("  target verifier:", verifier);
-      console2.log("  dest selector:", lane.dest.chainSelector);
-      console2.log("  allowlistEnabled:", lane.allowlist.allowlistEnabled);
-      console2.log("    added:", lane.allowlist.added.length, "removed:", lane.allowlist.removed.length);
-
-      _stageMany(callsFor(verifier, toAllowlistConfigArgs(lane)));
-      ++staged;
-    }
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
+      argsFor(ConfigLib.readLanes(), chainAlias, versionTag, verifier);
 
     require(
       matched > 0,
@@ -107,11 +130,13 @@ contract ApplyAllowlistUpdates is BaseScript {
         ConfigLib.tagToString(versionTag)
       )
     );
-    if (staged == 0) {
+    if (args.length == 0) {
       console2.log("[ApplyAllowlistUpdates] nothing to do: every lane is already current:", matched);
       return;
     }
-    console2.log("[ApplyAllowlistUpdates] staged lanes:", staged, "of", matched);
+    console2.log("[ApplyAllowlistUpdates] staged lanes:", args.length, "of", matched);
+    _stage(callFor(verifier, args));
+
     // The tag is part of the batch name: per-tag runs on the same chain must not
     // overwrite each other's Safe batch.
     _flush(string.concat("apply-allowlist-updates-", chainAlias, "-", ConfigLib.tagToString(versionTag)));

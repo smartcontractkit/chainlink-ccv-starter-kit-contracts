@@ -12,11 +12,10 @@ import {console2} from "forge-std/console2.sol";
 /// @dev Target call: CommitteeVerifier.acceptStorageLocationsAdmin().
 contract AcceptStorageLocationsAdmin is BaseScript {
   /// @notice Single source of truth for the accept-storageLocationsAdmin calldata.
-  function callsFor(
+  function callFor(
     address verifier
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.acceptStorageLocationsAdmin, ())});
+  ) public pure returns (Call memory call) {
+    call = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.acceptStorageLocationsAdmin, ())});
   }
 
   function run(
@@ -32,7 +31,7 @@ contract AcceptStorageLocationsAdmin is BaseScript {
     console2.log("[AcceptStorageLocationsAdmin] versionTag:", ConfigLib.tagToString(versionTag));
     console2.log("  verifier:", verifier);
 
-    _stageMany(callsFor(verifier));
+    _stage(callFor(verifier));
     _flush(string.concat("accept-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
   }
 }
