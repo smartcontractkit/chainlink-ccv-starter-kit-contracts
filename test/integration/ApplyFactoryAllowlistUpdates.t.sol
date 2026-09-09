@@ -42,13 +42,13 @@ contract ApplyFactoryAllowlistUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_diff_matchingSet_isEmpty() public view {
-    (address[] memory removes, address[] memory adds) = script.diff(address(factory), _oneAccount(address(this)));
+    (address[] memory removes, address[] memory adds) = script.diff(factory.getAllowList(), _oneAccount(address(this)));
     assertEq(removes.length, 0, "nothing to remove");
     assertEq(adds.length, 0, "nothing to add");
   }
 
   function test_diff_emptyDesired_removesTheDeployer() public view {
-    (address[] memory removes, address[] memory adds) = script.diff(address(factory), new address[](0));
+    (address[] memory removes, address[] memory adds) = script.diff(factory.getAllowList(), new address[](0));
     assertEq(removes.length, 1, "one removal");
     assertEq(removes[0], address(this), "the lingering deployer");
     assertEq(adds.length, 0, "nothing to add");
@@ -58,7 +58,7 @@ contract ApplyFactoryAllowlistUpdatesTest is CommitteeVerifierSetup {
     address[] memory desired = new address[](2);
     desired[0] = address(this);
     desired[1] = REPLACEMENT;
-    (address[] memory removes, address[] memory adds) = script.diff(address(factory), desired);
+    (address[] memory removes, address[] memory adds) = script.diff(factory.getAllowList(), desired);
     assertEq(removes.length, 0, "deployer kept");
     assertEq(adds.length, 1, "one addition");
     assertEq(adds[0], REPLACEMENT, "the replacement account");
@@ -75,7 +75,7 @@ contract ApplyFactoryAllowlistUpdatesTest is CommitteeVerifierSetup {
     assertEq(factory.getAllowList().length, 2, "deployer + replacement");
 
     assertTrue(_apply(_oneAccount(REPLACEMENT), new address[](0)), "remove failed");
-    (address[] memory removes, address[] memory adds) = script.diff(address(factory), _oneAccount(address(this)));
+    (address[] memory removes, address[] memory adds) = script.diff(factory.getAllowList(), _oneAccount(address(this)));
     assertEq(removes.length + adds.length, 0, "back to the original set");
   }
 

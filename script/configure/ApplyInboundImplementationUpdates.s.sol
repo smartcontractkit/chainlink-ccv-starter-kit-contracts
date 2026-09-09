@@ -59,7 +59,7 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     console2.log("[ApplyInboundImplementationUpdates] chain:", chainAlias);
     console2.log("  target resolver:", deployment.resolver);
 
-    bytes4[] memory tags = _inboundTags(ConfigLib.listLanes(), chainAlias);
+    bytes4[] memory tags = _dedupedDestTags(ConfigLib.readLanes(), chainAlias);
     if (tags.length == 0) {
       console2.log("  nothing to do: no lane has this chain as destination");
       return;
@@ -78,19 +78,6 @@ contract ApplyInboundImplementationUpdates is BaseScript {
   }
 
   /// @dev The unique `versionTag` set over every lane whose DEST is this chain.
-  function _inboundTags(
-    string[] memory lanePaths,
-    string memory chainAlias
-  ) internal view returns (bytes4[] memory tags) {
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](lanePaths.length);
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      lanes[i] = ConfigLib.readLaneByPath(lanePaths[i]);
-    }
-    return _dedupedDestTags(lanes, chainAlias);
-  }
-
-  /// @dev Selection half of _inboundTags, kept pure so it is testable with
-  ///      in-memory lanes (readLaneByPath validates tags against the repo catalog).
   function _dedupedDestTags(
     Types.LaneConfig[] memory lanes,
     string memory chainAlias
