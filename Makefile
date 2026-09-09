@@ -8,7 +8,7 @@
         bootstrap-factory deploy-resolver deploy-verifier verify \
         apply-remote-config apply-allowlists apply-signature-configs \
         set-dynamic-config set-finality-config update-storage-locations \
-        apply-inbound apply-outbound set-fee-aggregator \
+        apply-inbound apply-outbound set-fee-aggregator apply-factory-allowlist \
         transfer-owner accept-owner cancel-owner \
         transfer-sla accept-sla cancel-sla \
         sweep-fees balance-report \
@@ -129,7 +129,10 @@ deploy-verifier:  ## CommitteeVerifier for TAG; appends to the deployment record
 
 verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag>
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make verify CHAIN=sepolia"; exit 2; }
-	./script/deploy/verify.sh $(CHAIN) $(if $(ONLY),--only $(ONLY))
+# `origin`, not the value: an unset ONLY means "verify everything" and omits the flag,
+# while ONLY= is a target the caller meant to give and forgot, so it is passed through
+# empty for verify.sh to reject.
+	./script/deploy/verify.sh $(CHAIN) $(if $(filter-out undefined,$(origin ONLY)),--only $(ONLY))
 
 # ---- configure: per verifier (CHAIN + TAG; OUTPUT_MODE=EOA|SAFE) ----
 apply-remote-config: ## lane remoteChainConfig on the SOURCE chain's verifier
@@ -165,6 +168,9 @@ apply-outbound:   ## resolver outbound map (dest selector -> verifier) for lanes
 
 set-fee-aggregator: ## resolver feeAggregator from roles
 	$(call run-script,script/configure/SetFeeAggregator.s.sol,"run(string)",$(CHAIN))
+
+apply-factory-allowlist: ## factory createAndCall allowlist from roles; prunes the bootstrap deployer
+	$(call run-script,script/configure/ApplyFactoryAllowlistUpdates.s.sol,"run(string)",$(CHAIN))
 
 # ---- ownership: owner roles (CHAIN + TARGET=verifier:<tag>|resolver|factory) ----
 transfer-owner:   ## current owner PROPOSES the configured holder

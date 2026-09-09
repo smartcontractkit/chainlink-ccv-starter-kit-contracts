@@ -375,6 +375,12 @@ library ConfigLib {
     roles.resolver.owner = vm.parseJsonAddress(json, ".resolver.owner");
     roles.resolver.feeAggregator = vm.parseJsonAddress(json, ".resolver.feeAggregator");
     roles.factoryOwner = vm.parseJsonAddress(json, ".factory.owner");
+    roles.factoryAllowlist = vm.parseJsonAddressArray(json, ".factory.allowlist");
+    for (uint256 i = 0; i < roles.factoryAllowlist.length; ++i) {
+      require(
+        roles.factoryAllowlist[i] != address(0), string.concat("ConfigLib: zero address in factory.allowlist in ", path)
+      );
+    }
   }
 
   function _rolesEntryKey(

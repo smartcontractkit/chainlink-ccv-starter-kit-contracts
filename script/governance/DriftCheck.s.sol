@@ -143,6 +143,12 @@ contract DriftCheck is Script {
     if (deployment.factory != address(0) && roles.factoryOwner != address(0)) {
       drift += _diffAddress("factory owner", roles.factoryOwner, CREATE2Factory(deployment.factory).owner());
     }
+
+    if (deployment.factory != address(0)) {
+      drift += _diffAddressSet(
+        "factory allowlist", roles.factoryAllowlist, CREATE2Factory(deployment.factory).getAllowList()
+      );
+    }
   }
 
   /// @notice Chain-scoped verifier state vs the deployment record + `config/chains/<alias>.json`,
@@ -318,7 +324,7 @@ contract DriftCheck is Script {
       if (_stringsEqual(lane.dest.aliasName, chainConfig.aliasName)) {
         (address[] memory signers, uint8 threshold) = verifier.getSignatureConfig(lane.source.chainSelector);
         drift += _diffUint(string.concat(lanePrefix, "threshold"), lane.signatureConfig.threshold, threshold);
-        drift += _diffSigners(string.concat(lanePrefix, "signers"), lane.signatureConfig.signers, signers);
+        drift += _diffAddressSet(string.concat(lanePrefix, "signers"), lane.signatureConfig.signers, signers);
       }
 
       // Outbound leg: routing/fee/gas for messages LEAVING to lane.dest lives on this
@@ -448,27 +454,38 @@ contract DriftCheck is Script {
   /// @dev The on-chain signer set is an EnumerableSet, so its iteration order is
   ///      insertion order and carries no meaning — compared as a SET, not a list.
   ///      (Ordering only matters for the signatures supplied at verification time.)
-  function _diffSigners(
+  function _diffAddressSet(
     string memory label,
     address[] memory expected,
     address[] memory actual
   ) private pure returns (uint256) {
-    bool same = expected.length == actual.length;
-    for (uint256 i = 0; same && i < expected.length; ++i) {
-      bool found = false;
-      for (uint256 j = 0; j < actual.length; ++j) {
-        if (expected[i] == actual[j]) {
-          found = true;
-          break;
-        }
+    uint256 mismatches = 0;
+    for (uint256 i = 0; i < expected.length; ++i) {
+      if (!_contains(actual, expected[i])) {
+        if (mismatches++ == 0) console2.log(string.concat("DRIFT_DETECTED ", label));
+        console2.log("  in config, MISSING on-chain:", expected[i]);
       }
-      if (!found) same = false;
     }
-    if (same) return 0;
-    console2.log(string.concat("DRIFT_DETECTED ", label));
+    for (uint256 i = 0; i < actual.length; ++i) {
+      if (!_contains(expected, actual[i])) {
+        if (mismatches++ == 0) console2.log(string.concat("DRIFT_DETECTED ", label));
+        console2.log("  on-chain, NOT in config:    ", actual[i]);
+      }
+    }
+    if (mismatches == 0) return 0;
     console2.log("  expected count:", expected.length);
     console2.log("  actual count:  ", actual.length);
     return 1;
+  }
+
+  function _contains(
+    address[] memory set,
+    address needle
+  ) private pure returns (bool) {
+    for (uint256 i = 0; i < set.length; ++i) {
+      if (set[i] == needle) return true;
+    }
+    return false;
   }
 
   function _stringsEqual(

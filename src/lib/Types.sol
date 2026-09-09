@@ -82,6 +82,9 @@ library Types {
     VerifierRoles[] verifiers; // one entry per verifier; tags unique per chain
     ResolverRoles resolver;
     address factoryOwner;
+    // The createAndCall allowlist the factory SHOULD hold: the desired full set, not a
+    // delta. [] means nobody may createAndCall.
+    address[] factoryAllowlist;
   }
 
   // --------------------------- config/deployments ---------------------------

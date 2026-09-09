@@ -87,6 +87,8 @@ contract SnapshotRolesTest is CommitteeVerifierSetup {
     assertEq(reloaded.resolver.owner, snapped.resolver.owner, "resolver owner");
     assertEq(reloaded.resolver.feeAggregator, snapped.resolver.feeAggregator, "resolver feeAggregator");
     assertEq(reloaded.factoryOwner, snapped.factoryOwner, "factory owner");
+    assertEq(reloaded.factoryAllowlist.length, snapped.factoryAllowlist.length, "allowlist size");
+    assertEq(reloaded.factoryAllowlist[0], snapped.factoryAllowlist[0], "allowlisted account");
   }
 
   /// @dev The two governance scripts must agree on the same role surface: a snapshot

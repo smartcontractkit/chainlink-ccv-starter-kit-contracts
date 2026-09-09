@@ -144,7 +144,12 @@ and refuses a tag with no entry).
     "feeAggregator": "0x..."           // resolver setFeeAggregator (a SECOND, distinct fee destination)
   },
   "factory": {
-    "owner": "0x..."                    // transferred to governance after bootstrap
+    "owner": "0x...",                   // transferred to governance after bootstrap
+    "allowlist": ["0x..."]              // REQUIRED: the FULL createAndCall set the
+                                        // factory should hold. BootstrapFactory
+                                        // allowlists the deployer at construction, so
+                                        // [] prunes it and nobody may createAndCall.
+                                        // Applied by ApplyFactoryAllowlistUpdates.
   }
 }
 ```
