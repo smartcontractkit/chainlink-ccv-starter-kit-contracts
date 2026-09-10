@@ -23,11 +23,10 @@ import {console2} from "forge-std/console2.sol";
 ///   OUTPUT_MODE=SAFE forge script script/ownership/CancelOwnership.s.sol \
 ///     --sig "run(string,string)" sepolia verifier
 contract CancelOwnership is BaseScript {
-  function callsFor(
+  function callFor(
     address to
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (address(0)))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (address(0)))});
   }
 
   function run(
@@ -48,7 +47,7 @@ contract CancelOwnership is BaseScript {
     console2.log("  target:", to);
     console2.log("  clearing any pending owner (re-proposing address(0))");
 
-    _stageMany(callsFor(to));
+    _stage(callFor(to));
     _flush(string.concat("cancel-owner-", target));
   }
 }

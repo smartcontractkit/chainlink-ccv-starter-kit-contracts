@@ -21,11 +21,10 @@ import {console2} from "forge-std/console2.sol";
 ///   OUTPUT_MODE=SAFE forge script script/ownership/AcceptOwnership.s.sol \
 ///     --sig "run(string,string)" sepolia verifier
 contract AcceptOwnership is BaseScript {
-  function callsFor(
+  function callFor(
     address to
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.acceptOwnership, ())});
+  ) public pure returns (Call memory call) {
+    call = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.acceptOwnership, ())});
   }
 
   function run(
@@ -41,7 +40,7 @@ contract AcceptOwnership is BaseScript {
 
     console2.log("[AcceptOwnership]", target, "->", to);
 
-    _stageMany(callsFor(to));
+    _stage(callFor(to));
     _flush(string.concat("accept-owner-", target));
   }
 }

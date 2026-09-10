@@ -9,13 +9,6 @@ import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccv
 
 /// @dev Exposes the internal lane-derived tag set for direct testing.
 contract ApplyInboundImplementationUpdatesHarness is ApplyInboundImplementationUpdates {
-  function inboundTags(
-    string[] memory lanePaths,
-    string memory chainAlias
-  ) external view returns (bytes4[] memory) {
-    return _inboundTags(lanePaths, chainAlias);
-  }
-
   function dedupedDestTags(
     Types.LaneConfig[] memory lanes,
     string memory chainAlias
@@ -40,10 +33,9 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     bytes4 version,
     address impl
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(resolver), script.toInboundArgs(version, impl));
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(resolver), "target is resolver");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(resolver), script.toInboundArgs(version, impl));
+    assertEq(call.to, address(resolver), "target is resolver");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
   function _inboundImplementation(
@@ -52,7 +44,7 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     return resolver.getInboundImplementation(abi.encodePacked(version));
   }
 
-  function test_callsFor_setsInboundImplementation() public {
+  function test_callFor_setsInboundImplementation() public {
     assertTrue(_applyInbound(VERSION, address(verifier)), "apply failed");
     assertEq(_inboundImplementation(VERSION), address(verifier), "version -> verifier mapping");
   }
@@ -69,10 +61,9 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    BaseScript.Call[] memory calls =
-      script.callsFor(address(resolver), script.toInboundArgs(VERSION, address(verifier)));
+    BaseScript.Call memory call = script.callFor(address(resolver), script.toInboundArgs(VERSION, address(verifier)));
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
+    (bool ok,) = call.to.call(call.data); // onlyOwner
     assertFalse(ok, "non-owner should not update inbound implementations");
   }
 
@@ -84,45 +75,8 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
   }
 
   // ---------------------------------------------------------------------------
-  //  _inboundTags: the tag set derived from lanes whose DEST is this chain
+  //  _dedupedDestTags: the tag set derived from lanes whose DEST is this chain
   // ---------------------------------------------------------------------------
-
-  /// @dev Forge runs tests concurrently against a shared filesystem, so these
-  ///      fixture lanes use paths unique to this test contract.
-  function _writeLaneFixture(
-    string memory fileName,
-    string memory sourceAlias,
-    string memory destAlias,
-    string memory versionTag
-  ) private returns (string memory path) {
-    path = string.concat("out/governance/inbound-tags-", fileName, ".local.json");
-    vm.createDir("out/governance", true);
-    vm.writeFile(
-      path,
-      string.concat(
-        '{"name":"',
-        sourceAlias,
-        "-to-",
-        destAlias,
-        '",',
-        '"source":{"alias":"',
-        sourceAlias,
-        '","chainSelector":"1"},',
-        '"dest":{"alias":"',
-        destAlias,
-        '","chainSelector":"2"},',
-        '"versionTag":"',
-        versionTag,
-        '",',
-        '"signatureConfig":{"threshold":1,"signers":[]},',
-        // Explicit router: an absent one inherits from chains/<source>.json, which
-        // these synthetic aliases do not have.
-        '"remoteChainConfig":{"router":"0x0000000000000000000000000000000000000001",',
-        '"feeUSDCents":0,"gasForVerification":200000,"payloadSizeBytes":0},',
-        '"allowlist":{"allowlistEnabled":false,"addedAllowlistedSenders":[],"removedAllowlistedSenders":[]}}'
-      )
-    );
-  }
 
   function _lane(
     string memory sourceAlias,
@@ -158,23 +112,5 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     lanes[0] = _lane("a", "b", 0x00010001);
 
     assertEq(script.dedupedDestTags(lanes, "elsewhere").length, 0, "no lane has this chain as destination");
-  }
-
-  /// @dev End-to-end through lane files. Only catalogued tags can appear in a real
-  ///      lane file, so this sticks to the example catalog's tag; the multi-tag
-  ///      dedup cases live on _dedupedDestTags above.
-  function test_inboundTags_readsLaneFilesAndFiltersByDest() public {
-    string[] memory lanePaths = new string[](2);
-    lanePaths[0] = _writeLaneFixture("a-to-x", "a", "x", "0x00010001");
-    lanePaths[1] = _writeLaneFixture("x-to-d", "x", "d", "0x00010001");
-
-    bytes4[] memory tags = script.inboundTags(lanePaths, "x");
-    assertEq(tags.length, 1, "one lane targets x");
-    assertEq(tags[0], bytes4(0x00010001));
-    assertEq(script.inboundTags(lanePaths, "elsewhere").length, 0, "no lane has this chain as destination");
-
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      vm.removeFile(lanePaths[i]);
-    }
   }
 }

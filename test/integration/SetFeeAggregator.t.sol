@@ -22,21 +22,20 @@ contract SetFeeAggregatorTest is CommitteeVerifierSetup {
   function _applyFeeAggregator(
     address feeAggregator
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(resolver), feeAggregator);
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(resolver), "target is resolver");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(resolver), feeAggregator);
+    assertEq(call.to, address(resolver), "target is resolver");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
-  function test_callsFor_setsResolverFeeAggregator() public {
+  function test_callFor_setsResolverFeeAggregator() public {
     assertTrue(_applyFeeAggregator(RESOLVER_FEE_AGG), "apply failed");
     assertEq(resolver.getFeeAggregator(), RESOLVER_FEE_AGG, "resolver feeAggregator");
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    BaseScript.Call[] memory calls = script.callsFor(address(resolver), RESOLVER_FEE_AGG);
+    BaseScript.Call memory call = script.callFor(address(resolver), RESOLVER_FEE_AGG);
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
+    (bool ok,) = call.to.call(call.data); // onlyOwner
     assertFalse(ok, "non-owner should not set resolver fee aggregator");
   }
 

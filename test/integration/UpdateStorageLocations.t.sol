@@ -19,10 +19,9 @@ contract UpdateStorageLocationsTest is CommitteeVerifierSetup {
   function _updateStorageLocations(
     string[] memory locations
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), locations);
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(verifier), "target is verifier");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == storageLocationsAdmin (this test)
+    BaseScript.Call memory call = script.callFor(address(verifier), locations);
+    assertEq(call.to, address(verifier), "target is verifier");
+    (ok,) = call.to.call(call.data); // msg.sender == storageLocationsAdmin (this test)
   }
 
   function _twoLocations(
@@ -45,7 +44,7 @@ contract UpdateStorageLocationsTest is CommitteeVerifierSetup {
     assertEq(verifier.getStorageLocationsAdmin(), address(this), "test is the storageLocationsAdmin");
   }
 
-  function test_callsFor_setsStorageLocations() public {
+  function test_callFor_setsStorageLocations() public {
     assertTrue(
       _updateStorageLocations(_twoLocations("https://agg-a.example/ccv", "https://agg-b.example/ccv")), "update failed"
     );
@@ -74,10 +73,10 @@ contract UpdateStorageLocationsTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotStorageLocationsAdmin() public {
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), _oneLocation("https://x.example/ccv"));
+    BaseScript.Call memory call = script.callFor(address(verifier), _oneLocation("https://x.example/ccv"));
     // Even the owner cannot call this if they are not the storageLocationsAdmin.
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // OnlyCallableByStorageLocationsAdmin
+    (bool ok,) = call.to.call(call.data); // OnlyCallableByStorageLocationsAdmin
     assertFalse(ok, "non-admin should not update storage locations");
   }
 }

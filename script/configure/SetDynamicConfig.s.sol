@@ -17,12 +17,11 @@ import {console2} from "forge-std/console2.sol";
 ///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 contract SetDynamicConfig is BaseScript {
   /// @notice Single source of truth for the setDynamicConfig calldata.
-  function callsFor(
+  function callFor(
     address verifier,
     CommitteeVerifier.DynamicConfig memory dynamicConfig
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.setDynamicConfig, (dynamicConfig))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.setDynamicConfig, (dynamicConfig))});
   }
 
   /// @notice Translate one verifier's roles-as-data into the verifier DynamicConfig struct.
@@ -57,7 +56,7 @@ contract SetDynamicConfig is BaseScript {
       console2.log("  WARN verifier feeAggregator is zero: fee withdrawals will revert until set");
     }
 
-    _stageMany(callsFor(verifier, toDynamicConfig(verifierRoles)));
+    _stage(callFor(verifier, toDynamicConfig(verifierRoles)));
     _flush(string.concat("set-dynamic-config-", ConfigLib.tagToString(versionTag)));
   }
 }

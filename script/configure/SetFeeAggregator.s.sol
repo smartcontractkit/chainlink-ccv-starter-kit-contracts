@@ -15,12 +15,11 @@ import {console2} from "forge-std/console2.sol";
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract SetFeeAggregator is BaseScript {
   /// @notice Single source of truth for the resolver setFeeAggregator calldata.
-  function callsFor(
+  function callFor(
     address resolver,
     address feeAggregator
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] =
+  ) public pure returns (Call memory call) {
+    call =
       Call({to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.setFeeAggregator, (feeAggregator))});
   }
 
@@ -43,7 +42,7 @@ contract SetFeeAggregator is BaseScript {
       console2.log("  WARN resolver feeAggregator is zero: fee withdrawals will revert until set");
     }
 
-    _stageMany(callsFor(deployment.resolver, roles.resolver.feeAggregator));
+    _stage(callFor(deployment.resolver, roles.resolver.feeAggregator));
     _flush("set-fee-aggregator-resolver");
   }
 }

@@ -19,12 +19,11 @@ import {console2} from "forge-std/console2.sol";
 ///     --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
 contract ApplyInboundImplementationUpdates is BaseScript {
   /// @notice Single source of truth for the applyInboundImplementationUpdates calldata.
-  function callsFor(
+  function callFor(
     address resolver,
     VersionedVerifierResolver.InboundImplementationArgs[] memory args
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.applyInboundImplementationUpdates, (args))
     });
   }
@@ -60,7 +59,7 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     console2.log("[ApplyInboundImplementationUpdates] chain:", chainAlias);
     console2.log("  target resolver:", deployment.resolver);
 
-    bytes4[] memory tags = _inboundTags(ConfigLib.listLanes(), chainAlias);
+    bytes4[] memory tags = _dedupedDestTags(ConfigLib.readLanes(), chainAlias);
     if (tags.length == 0) {
       console2.log("  nothing to do: no lane has this chain as destination");
       return;
@@ -74,24 +73,11 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     }
     console2.log("  staging versions:", staged, "of", tags.length);
 
-    _stageMany(callsFor(deployment.resolver, args));
+    _stage(callFor(deployment.resolver, args));
     _flush("apply-inbound-implementations");
   }
 
   /// @dev The unique `versionTag` set over every lane whose DEST is this chain.
-  function _inboundTags(
-    string[] memory lanePaths,
-    string memory chainAlias
-  ) internal view returns (bytes4[] memory tags) {
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](lanePaths.length);
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      lanes[i] = ConfigLib.readLaneByPath(lanePaths[i]);
-    }
-    return _dedupedDestTags(lanes, chainAlias);
-  }
-
-  /// @dev Selection half of _inboundTags, kept pure so it is testable with
-  ///      in-memory lanes (readLaneByPath validates tags against the repo catalog).
   function _dedupedDestTags(
     Types.LaneConfig[] memory lanes,
     string memory chainAlias

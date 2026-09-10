@@ -16,6 +16,9 @@ import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
+import {
+  SignatureQuorumValidator
+} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
 import {MessageV1Codec} from "@chainlink/contracts-ccip/contracts/libraries/MessageV1Codec.sol";
 import {MockCCIPRouter} from "@chainlink/contracts-ccip/contracts/test/mocks/MockRouter.sol";
 
@@ -50,6 +53,26 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   DriftCheck internal driftCheck;
 
   address[] internal signers;
+
+  /// @dev Test fixture: the scripts build ONE batched call per run, so a single lane has
+  ///      to be wrapped into a one-element array here rather than by the script.
+  function _sigCall(
+    address verifier,
+    Types.LaneConfig memory lane
+  ) internal view returns (BaseScript.Call memory) {
+    SignatureQuorumValidator.SignatureConfig[] memory configs = new SignatureQuorumValidator.SignatureConfig[](1);
+    configs[0] = applySig.toSignatureConfig(lane);
+    return applySig.callFor(verifier, new uint64[](0), configs);
+  }
+
+  function _remoteCall(
+    address verifier,
+    Types.LaneConfig memory lane
+  ) internal view returns (BaseScript.Call memory) {
+    BaseVerifier.RemoteChainConfigArgs[] memory args = new BaseVerifier.RemoteChainConfigArgs[](1);
+    args[0] = applyRemote.toRemoteChainConfigArgs(lane);
+    return applyRemote.callFor(verifier, args);
+  }
 
   function setUp() public override {
     super.setUp();
@@ -95,11 +118,11 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   function test_configureLaneThroughScripts_thenDriftCheckIsClean() public {
     Types.LaneConfig memory lane = _lane();
 
-    _exec(applySig.callsFor(address(verifier), new uint64[](0), applySig.toSignatureConfig(lane)));
-    _exec(applyRemote.callsFor(address(verifier), applyRemote.toRemoteChainConfigArgs(lane)));
-    _exec(applyInbound.callsFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG, address(verifier))));
-    _exec(applyOutbound.callsFor(address(resolver), _outboundArgs(lane)));
-    _exec(setFeeAggregator.callsFor(address(resolver), RESOLVER_FEE_AGGREGATOR));
+    _exec(_sigCall(address(verifier), lane));
+    _exec(_remoteCall(address(verifier), lane));
+    _exec(applyInbound.callFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG, address(verifier))));
+    _exec(applyOutbound.callFor(address(resolver), _outboundArgs(lane)));
+    _exec(setFeeAggregator.callFor(address(resolver), RESOLVER_FEE_AGGREGATOR));
 
     Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
     lanes[0] = lane;
@@ -126,9 +149,9 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
       applyOutbound.isCurrent(address(resolver), lane.dest.chainSelector, address(verifier)), "nothing applied yet"
     );
 
-    _exec(applySig.callsFor(address(verifier), new uint64[](0), applySig.toSignatureConfig(lane)));
-    _exec(applyRemote.callsFor(address(verifier), applyRemote.toRemoteChainConfigArgs(lane)));
-    _exec(applyOutbound.callsFor(address(resolver), _outboundArgs(lane)));
+    _exec(_sigCall(address(verifier), lane));
+    _exec(_remoteCall(address(verifier), lane));
+    _exec(applyOutbound.callFor(address(resolver), _outboundArgs(lane)));
 
     assertTrue(applySig.isCurrent(address(verifier), lane), "signature config re-reads as current");
     assertTrue(applyRemote.isCurrent(address(verifier), lane), "remote chain config re-reads as current");
@@ -144,8 +167,8 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   ///      selector, the remote config by DEST selector.
   function test_configureLane_appliesEachSideToItsOwnKey() public {
     Types.LaneConfig memory lane = _lane();
-    _exec(applySig.callsFor(address(verifier), new uint64[](0), applySig.toSignatureConfig(lane)));
-    _exec(applyRemote.callsFor(address(verifier), applyRemote.toRemoteChainConfigArgs(lane)));
+    _exec(_sigCall(address(verifier), lane));
+    _exec(_remoteCall(address(verifier), lane));
 
     (address[] memory onChainSigners, uint8 threshold) = verifier.getSignatureConfig(SOURCE_SELECTOR);
     assertEq(threshold, THRESHOLD, "signer set landed under the SOURCE selector");
@@ -222,26 +245,26 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   function test_upgradeCeremony_gen2TakesTrafficWhileGen1KeepsVerifying() public {
     // ---- verifier 1 fully wired ----
     Types.LaneConfig memory lane = _lane();
-    _exec(applySig.callsFor(address(verifier), new uint64[](0), applySig.toSignatureConfig(lane)));
-    _exec(applyRemote.callsFor(address(verifier), applyRemote.toRemoteChainConfigArgs(lane)));
-    _exec(applyInbound.callsFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG, address(verifier))));
-    _exec(applyOutbound.callsFor(address(resolver), _outboundArgs(lane)));
-    _exec(setFeeAggregator.callsFor(address(resolver), RESOLVER_FEE_AGGREGATOR));
+    _exec(_sigCall(address(verifier), lane));
+    _exec(_remoteCall(address(verifier), lane));
+    _exec(applyInbound.callFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG, address(verifier))));
+    _exec(applyOutbound.callFor(address(resolver), _outboundArgs(lane)));
+    _exec(setFeeAggregator.callFor(address(resolver), RESOLVER_FEE_AGGREGATOR));
 
     // ---- deploy verifier 2 and pin the lane to it ----
     _deploySecondVerifier();
     lane.versionTag = VERSION_TAG_V2;
 
     // Ceremony order: dest side first (inbound + signatures), then source side, then cutover.
-    _exec(applyInbound.callsFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG_V2, address(verifierV2))));
-    _exec(applySig.callsFor(address(verifierV2), new uint64[](0), applySig.toSignatureConfig(lane)));
-    _exec(applyRemote.callsFor(address(verifierV2), applyRemote.toRemoteChainConfigArgs(lane)));
+    _exec(applyInbound.callFor(address(resolver), applyInbound.toInboundArgs(VERSION_TAG_V2, address(verifierV2))));
+    _exec(_sigCall(address(verifierV2), lane));
+    _exec(_remoteCall(address(verifierV2), lane));
     VersionedVerifierResolver.OutboundImplementationArgs[] memory flip =
       new VersionedVerifierResolver.OutboundImplementationArgs[](1);
     flip[0] = VersionedVerifierResolver.OutboundImplementationArgs({
       destChainSelector: lane.dest.chainSelector, verifier: address(verifierV2)
     });
-    _exec(applyOutbound.callsFor(address(resolver), flip));
+    _exec(applyOutbound.callFor(address(resolver), flip));
 
     // ---- flip-then-drain: old tag keeps resolving, new tag takes traffic ----
     assertEq(
@@ -288,7 +311,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   /// @notice `router = 0` is the ONLY outbound kill switch — there is no pause function
   ///         and no inbound halt.
   function test_outboundPauseLever_haltsForwardToVerifier() public {
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(_lane())));
+    _exec(_remoteCall(address(pausableVerifier), _lane()));
 
     vm.prank(onRamp);
     bytes memory ret = pausableVerifier.forwardToVerifier(_message(DEST_SELECTOR), bytes32(0), address(0), 0, "");
@@ -298,7 +321,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     // non-zero even when pausing: BaseVerifier reverts DestGasCannotBeZero regardless.
     Types.LaneConfig memory paused = _lane();
     paused.remote.router = address(0);
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(paused)));
+    _exec(_remoteCall(address(pausableVerifier), paused));
 
     vm.prank(onRamp);
     vm.expectRevert(abi.encodeWithSelector(BaseVerifier.RemoteChainNotSupported.selector, DEST_SELECTOR));
@@ -313,12 +336,12 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     Types.LaneConfig memory other = _lane();
     other.dest.chainSelector = OTHER_SELECTOR;
 
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(_lane())));
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(other)));
+    _exec(_remoteCall(address(pausableVerifier), _lane()));
+    _exec(_remoteCall(address(pausableVerifier), other));
 
     Types.LaneConfig memory paused = _lane();
     paused.remote.router = address(0);
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(paused)));
+    _exec(_remoteCall(address(pausableVerifier), paused));
 
     vm.prank(onRamp);
     bytes memory ret = pausableVerifier.forwardToVerifier(_message(OTHER_SELECTOR), bytes32(0), address(0), 0, "");
@@ -327,7 +350,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
 
   /// @dev An RMN curse is a separate, Chainlink-operated halt that precedes our checks.
   function test_rmnCurse_haltsBeforeRouterCheck() public {
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(_lane())));
+    _exec(_remoteCall(address(pausableVerifier), _lane()));
     rmn.setCursed(true);
 
     vm.prank(onRamp);
@@ -340,7 +363,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   /// @dev Only the router-resolved OnRamp may forward, so a stale or wrong caller is
   ///      rejected even while the lane is fully configured.
   function test_forwardToVerifier_rejectsNonRampCaller() public {
-    _exec(applyRemote.callsFor(address(pausableVerifier), applyRemote.toRemoteChainConfigArgs(_lane())));
+    _exec(_remoteCall(address(pausableVerifier), _lane()));
 
     vm.prank(address(0xBAD));
     vm.expectRevert(abi.encodeWithSelector(BaseVerifier.CallerIsNotARampOnRouter.selector, address(0xBAD)));
@@ -432,17 +455,15 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   }
 
   function _exec(
-    BaseScript.Call[] memory calls
+    BaseScript.Call memory call
   ) internal {
-    for (uint256 i = 0; i < calls.length; ++i) {
-      // a generic executor: the destination is caller-supplied by design
-      // forge-lint: disable-next-line(arbitrary-send-eth)
-      (bool ok, bytes memory ret) = calls[i].to.call{value: calls[i].value}(calls[i].data);
-      if (!ok) {
-        // solhint-disable-next-line no-inline-assembly
-        assembly {
-          revert(add(ret, 0x20), mload(ret))
-        }
+    // a generic executor: the destination is caller-supplied by design
+    // forge-lint: disable-next-line(arbitrary-send-eth)
+    (bool ok, bytes memory ret) = call.to.call{value: call.value}(call.data);
+    if (!ok) {
+      // solhint-disable-next-line no-inline-assembly
+      assembly {
+        revert(add(ret, 0x20), mload(ret))
       }
     }
   }

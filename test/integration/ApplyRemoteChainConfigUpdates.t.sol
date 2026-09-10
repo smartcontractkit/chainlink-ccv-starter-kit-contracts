@@ -42,14 +42,13 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
     address router,
     uint32 gasForVerification
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls =
-      script.callsFor(address(verifier), _buildRemoteChainConfigArgs(router, gasForVerification));
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(verifier), "target is verifier");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call =
+      script.callFor(address(verifier), _buildRemoteChainConfigArgs(router, gasForVerification));
+    assertEq(call.to, address(verifier), "target is verifier");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
-  function test_callsFor_setsRemoteChainConfig() public {
+  function test_callFor_setsRemoteChainConfig() public {
     assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "apply failed");
 
     // the other return values are deliberately ignored
@@ -131,11 +130,109 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
 
   function test_toRemoteChainConfigArgs_translatesExampleLane() public view {
     Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
-    BaseVerifier.RemoteChainConfigArgs[] memory args = script.toRemoteChainConfigArgs(lane);
+    BaseVerifier.RemoteChainConfigArgs memory args = script.toRemoteChainConfigArgs(lane);
 
+    assertEq(args.remoteChainSelector, lane.dest.chainSelector, "remote selector = lane dest");
+    assertEq(address(args.router), lane.remote.router, "router");
+    assertEq(args.gasForVerification, 200000, "gas from example lane");
+  }
+
+  // ---------------------------------------------------------------------------
+  //  argsFor: selection, skip and ordering across a lane set
+  // ---------------------------------------------------------------------------
+
+  string internal constant SRC_ALIAS = "zz-scratch-src-chain";
+
+  function _selectableLane(
+    string memory sourceAlias,
+    uint64 destSelector,
+    bytes4 tag
+  ) internal pure returns (Types.LaneConfig memory lane) {
+    // An unconfigured destination is never current, so these lanes are selectable.
+    lane = _lane();
+    lane.source.aliasName = sourceAlias;
+    lane.dest.chainSelector = destSelector;
+    lane.versionTag = tag;
+  }
+
+  function _oneLane(
+    Types.LaneConfig memory lane
+  ) internal pure returns (Types.LaneConfig[] memory lanes) {
+    lanes = new Types.LaneConfig[](1);
+    lanes[0] = lane;
+  }
+
+  function test_argsFor_skipsLanesFromAnotherChain() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lanes[1] = _selectableLane("zz-scratch-other-chain", 999, VERSION_TAG);
+
+    (BaseVerifier.RemoteChainConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "only the lane sourced on this chain matched");
     assertEq(args.length, 1);
-    assertEq(args[0].remoteChainSelector, lane.dest.chainSelector, "remote selector = lane dest");
-    assertEq(address(args[0].router), lane.remote.router, "router");
-    assertEq(args[0].gasForVerification, 200000, "gas from example lane");
+    assertEq(args[0].remoteChainSelector, DEST);
+  }
+
+  function test_argsFor_skipsLanesPinnedToAnotherTag() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lanes[1] = _selectableLane(SRC_ALIAS, 999, VERSION_TAG_V2);
+
+    (BaseVerifier.RemoteChainConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "the other tag is a different verifier's business");
+    assertEq(args.length, 1);
+  }
+
+  /// @dev The array length IS the staged count: the over-allocated tail must not survive.
+  function test_argsFor_lengthIsTheStagedCount() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](4);
+    lanes[0] = _selectableLane(SRC_ALIAS, 111, VERSION_TAG);
+    lanes[1] = _selectableLane("zz-scratch-other-chain", 222, VERSION_TAG);
+    lanes[2] = _selectableLane(SRC_ALIAS, 333, VERSION_TAG);
+    lanes[3] = _selectableLane(SRC_ALIAS, 444, VERSION_TAG_V2);
+
+    (BaseVerifier.RemoteChainConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 2, "two lanes matched the filters");
+    assertEq(args.length, 2, "trimmed from the 4-slot upper bound");
+    assertEq(args[0].remoteChainSelector, 111, "lane order preserved");
+    assertEq(args[1].remoteChainSelector, 333, "lane order preserved");
+  }
+
+  /// @dev A lane already applied on-chain counts as matched but must not be staged.
+  function test_argsFor_skipsLaneAlreadyCurrentButStillCountsIt() public {
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "setup: apply failed");
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    assertTrue(script.isCurrent(address(verifier), lane), "setup: now current");
+
+    (BaseVerifier.RemoteChainConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "the lane still matched the filters");
+    assertEq(args.length, 0, "but nothing to stage");
+  }
+
+  /// @dev The point of batching: two matched lanes become ONE call that applies both.
+  function test_batchedCall_appliesEveryMatchedLaneInOneCall() public {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _selectableLane(SRC_ALIAS, 111, VERSION_TAG);
+    lanes[1] = _selectableLane(SRC_ALIAS, 222, VERSION_TAG);
+
+    (BaseVerifier.RemoteChainConfigArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(matched, 2);
+    assertEq(args.length, 2, "both lanes staged");
+
+    BaseScript.Call memory call = script.callFor(address(verifier), args);
+    (bool ok,) = call.to.call(call.data);
+    assertTrue(ok, "the single batched call applied");
+
+    assertTrue(script.isCurrent(address(verifier), lanes[0]), "remote 111 configured");
+    assertTrue(script.isCurrent(address(verifier), lanes[1]), "remote 222 configured");
   }
 }

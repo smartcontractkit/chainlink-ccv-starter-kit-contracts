@@ -21,12 +21,11 @@ import {console2} from "forge-std/console2.sol";
 ///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyOutboundImplementationUpdates is BaseScript {
   /// @notice Single source of truth for the applyOutboundImplementationUpdates calldata.
-  function callsFor(
+  function callFor(
     address resolver,
     VersionedVerifierResolver.OutboundImplementationArgs[] memory args
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({
+  ) public pure returns (Call memory call) {
+    call = Call({
       to: resolver, value: 0, data: abi.encodeCall(VersionedVerifierResolver.applyOutboundImplementationUpdates, (args))
     });
   }
@@ -47,9 +46,8 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     // Collect every outbound lane whose SOURCE is this chain; map its dest selector to
     // the local verifier serving the lane's versionTag. Destinations already mapped to
     // it are left out, so re-running after adding a lane stages only the lane that changed.
-    string[] memory lanePaths = ConfigLib.listLanes();
     (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
-      _buildOutboundArgs(lanePaths, chainAlias, deployment);
+      argsFor(ConfigLib.readLanes(), chainAlias, deployment);
     require(matched > 0, string.concat("ApplyOutboundImplementationUpdates: no outbound lanes for ", chainAlias));
 
     if (args.length == 0) {
@@ -58,7 +56,7 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     }
     console2.log("  staging destinations:", args.length, "of", matched);
 
-    _stageMany(callsFor(deployment.resolver, args));
+    _stage(callFor(deployment.resolver, args));
     _flush("apply-outbound-implementations");
   }
 
@@ -73,29 +71,26 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     return VersionedVerifierResolver(resolver).getOutboundImplementation(destChainSelector, "") == verifier;
   }
 
-  /// @dev Two-pass build (count then fill) since Solidity memory arrays are fixed-size.
-  /// @return args One entry per lane that needs writing.
+  /// @notice The args a run would stage: one entry per lane whose SOURCE is `chainAlias`,
+  ///         minus the destinations the resolver already routes to that lane's verifier.
+  /// @dev No versionTag filter, unlike the verifier-scoped scripts: the resolver maps a
+  ///      destination to whichever verifier serves that lane's tag, so one call spans tags.
+  /// @return args The entries to send, in lane order. Its length IS the staged count.
   /// @return matched Lanes with this chain as source, current or not. The two counts
   ///         differ once some are applied, and only `matched == 0` is a config error.
-  function _buildOutboundArgs(
-    string[] memory lanePaths,
+  function argsFor(
+    Types.LaneConfig[] memory lanes,
     string memory chainAlias,
     Types.Deployment memory deployment
-  ) internal view returns (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) {
-    uint256 count = 0;
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
+  ) public view returns (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) {
+    // Sized to the upper bound, trimmed to the staged count below.
+    args = new VersionedVerifierResolver.OutboundImplementationArgs[](lanes.length);
+    uint256 staged = 0;
+
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      Types.LaneConfig memory lane = lanes[i];
       if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       ++matched;
-      address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
-      if (!isCurrent(deployment.resolver, lane.dest.chainSelector, verifier)) count++;
-    }
-
-    args = new VersionedVerifierResolver.OutboundImplementationArgs[](count);
-    uint256 j = 0;
-    for (uint256 i = 0; i < lanePaths.length; ++i) {
-      Types.LaneConfig memory lane = ConfigLib.readLaneByPath(lanePaths[i]);
-      if (!_stringsEqual(lane.source.aliasName, chainAlias)) continue;
       require(lane.dest.chainSelector != 0, "ApplyOutboundImplementationUpdates: destChainSelector cannot be zero");
 
       address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
@@ -103,11 +98,19 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
         console2.log("  lane UNCHANGED:", lane.name);
         continue;
       }
+
       console2.log("  lane STAGED:", lane.name);
       console2.log("    versionTag / verifier:", ConfigLib.tagToString(lane.versionTag), verifier);
-      args[j++] = VersionedVerifierResolver.OutboundImplementationArgs({
+      args[staged++] = VersionedVerifierResolver.OutboundImplementationArgs({
         destChainSelector: lane.dest.chainSelector, verifier: verifier
       });
+    }
+
+    // Drop the unused tail: a memory array's first word is its length, and `staged` only
+    // ever shrinks it. The zero-filled tail would map destination selector 0.
+    // solhint-disable-next-line no-inline-assembly
+    assembly {
+      mstore(args, staged)
     }
   }
 }

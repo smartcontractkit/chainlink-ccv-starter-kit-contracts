@@ -27,13 +27,12 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
   ) internal returns (bool ok) {
     CommitteeVerifier.DynamicConfig memory dynamicConfig =
       CommitteeVerifier.DynamicConfig({feeAggregator: feeAggregator, allowlistAdmin: allowlistAdmin});
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), dynamicConfig);
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(verifier), "target is verifier");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(verifier), dynamicConfig);
+    assertEq(call.to, address(verifier), "target is verifier");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
-  function test_callsFor_setsDynamicConfig() public {
+  function test_callFor_setsDynamicConfig() public {
     assertTrue(_applyDynamicConfig(FEE_AGG, ALLOWLIST_ADMIN), "apply failed");
 
     CommitteeVerifier.DynamicConfig memory dynamicConfig = verifier.getDynamicConfig();
@@ -44,9 +43,9 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
   function test_reverts_whenCallerNotOwner() public {
     CommitteeVerifier.DynamicConfig memory dynamicConfig =
       CommitteeVerifier.DynamicConfig({feeAggregator: FEE_AGG, allowlistAdmin: ALLOWLIST_ADMIN});
-    BaseScript.Call[] memory calls = script.callsFor(address(verifier), dynamicConfig);
+    BaseScript.Call memory call = script.callFor(address(verifier), dynamicConfig);
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
+    (bool ok,) = call.to.call(call.data); // onlyOwner
     assertFalse(ok, "non-owner should not set dynamic config");
   }
 

@@ -65,8 +65,8 @@ real ones.
 
 Every lane a run takes is logged as `[<Script>] lane: <name>` — check that list against
 the lanes you meant to configure. The Safe batch under `out/safe/<alias>/` is not a
-per-lane view: `ApplyOutboundImplementationUpdates` collapses every lane into one call.
-Keep retired and in-progress lanes outside `config/lanes/`.
+per-lane view: each configure script collapses every matched lane into a single call, so
+one entry covers all of them. Keep retired and in-progress lanes outside `config/lanes/`.
 
 ## What each script configures
 

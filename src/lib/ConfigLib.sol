@@ -257,6 +257,15 @@ library ConfigLib {
     }
   }
 
+  /// @notice Every lane in `config/lanes/`, parsed.
+  function readLanes() internal view returns (Types.LaneConfig[] memory lanes) {
+    string[] memory paths = listLanes();
+    lanes = new Types.LaneConfig[](paths.length);
+    for (uint256 i = 0; i < paths.length; ++i) {
+      lanes[i] = readLaneByPath(paths[i]);
+    }
+  }
+
   function readLaneByPath(
     string memory path
   ) internal view returns (Types.LaneConfig memory lane) {

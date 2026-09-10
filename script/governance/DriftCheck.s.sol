@@ -57,7 +57,7 @@ contract DriftCheck is Script {
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    Types.LaneConfig[] memory lanes = _readLanes();
+    Types.LaneConfig[] memory lanes = ConfigLib.readLanes();
 
     console2.log("[DriftCheck] chain:", chainAlias);
     console2.log("  lanes considered:", lanes.length);
@@ -372,14 +372,6 @@ contract DriftCheck is Script {
       deployment.factory == address(0) || deployment.factory.code.length != 0,
       "DriftCheck: no code at recorded factory (wrong --rpc-url?)"
     );
-  }
-
-  function _readLanes() private view returns (Types.LaneConfig[] memory lanes) {
-    string[] memory paths = ConfigLib.listLanes();
-    lanes = new Types.LaneConfig[](paths.length);
-    for (uint256 i = 0; i < paths.length; ++i) {
-      lanes[i] = ConfigLib.readLaneByPath(paths[i]);
-    }
   }
 
   // ---------------------------------------------------------------------------

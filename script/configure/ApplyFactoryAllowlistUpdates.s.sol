@@ -30,14 +30,12 @@ import {console2} from "forge-std/console2.sol";
 ///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyFactoryAllowlistUpdates is BaseScript {
   /// @notice Single source of truth for the applyAllowListUpdates calldata.
-  function callsFor(
+  function callFor(
     address factory,
     address[] memory removes,
     address[] memory adds
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] =
-      Call({to: factory, value: 0, data: abi.encodeCall(CREATE2Factory.applyAllowListUpdates, (removes, adds))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: factory, value: 0, data: abi.encodeCall(CREATE2Factory.applyAllowListUpdates, (removes, adds))});
   }
 
   function run(
@@ -52,12 +50,13 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
 
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
 
-    (address[] memory removes, address[] memory adds) = diff(deployment.factory, roles.factoryAllowlist);
+    address[] memory current = CREATE2Factory(deployment.factory).getAllowList();
+    (address[] memory removes, address[] memory adds) = diff(current, roles.factoryAllowlist);
 
     console2.log("[ApplyFactoryAllowlistUpdates] chain:", chainAlias);
     console2.log("  target factory:", deployment.factory);
     console2.log("  desired size:", roles.factoryAllowlist.length);
-    console2.log("  on-chain size:", CREATE2Factory(deployment.factory).getAllowList().length);
+    console2.log("  on-chain size:", current.length);
 
     if (removes.length == 0 && adds.length == 0) {
       console2.log("[ApplyFactoryAllowlistUpdates] nothing to do: allowlist already matches config");
@@ -85,18 +84,17 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
       );
     }
 
-    _stageMany(callsFor(deployment.factory, removes, adds));
+    _stage(callFor(deployment.factory, removes, adds));
 
     _flush(string.concat("apply-factory-allowlist-updates-", chainAlias));
   }
 
-  /// @notice Delta between the desired full set and getAllowList(): what to remove and
+  /// @notice Delta between the desired full set and the current one: what to remove and
   ///         what to add. Both empty when already current.
   function diff(
-    address factory,
+    address[] memory current,
     address[] memory desired
-  ) public view returns (address[] memory removes, address[] memory adds) {
-    address[] memory current = CREATE2Factory(factory).getAllowList();
+  ) public pure returns (address[] memory removes, address[] memory adds) {
     removes = _difference(current, desired);
     adds = _difference(desired, current);
   }

@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {ApplyOutboundImplementationUpdates} from "../../script/configure/ApplyOutboundImplementationUpdates.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 
@@ -30,10 +31,9 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
   function _applyOutbound(
     VersionedVerifierResolver.OutboundImplementationArgs[] memory args
   ) internal returns (bool ok) {
-    BaseScript.Call[] memory calls = script.callsFor(address(resolver), args);
-    assertEq(calls.length, 1, "one call expected");
-    assertEq(calls[0].to, address(resolver), "target is resolver");
-    (ok,) = calls[0].to.call(calls[0].data); // msg.sender == owner (this test)
+    BaseScript.Call memory call = script.callFor(address(resolver), args);
+    assertEq(call.to, address(resolver), "target is resolver");
+    (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
 
   function _outboundImplementation(
@@ -42,7 +42,7 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
     return resolver.getOutboundImplementation(destSelector, "");
   }
 
-  function test_callsFor_setsOutboundImplementation() public {
+  function test_callFor_setsOutboundImplementation() public {
     assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "apply failed");
     assertEq(_outboundImplementation(DEST_FUJI), address(verifier), "dest -> verifier mapping");
   }
@@ -102,9 +102,103 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_reverts_whenCallerNotOwner() public {
-    BaseScript.Call[] memory calls = script.callsFor(address(resolver), _singleArg(DEST_FUJI, address(verifier)));
+    BaseScript.Call memory call = script.callFor(address(resolver), _singleArg(DEST_FUJI, address(verifier)));
     vm.prank(address(0xBAD));
-    (bool ok,) = calls[0].to.call(calls[0].data); // onlyOwner
+    (bool ok,) = call.to.call(call.data); // onlyOwner
     assertFalse(ok, "non-owner should not update outbound implementations");
+  }
+
+  // ---------------------------------------------------------------------------
+  //  argsFor: selection, skip and ordering across a lane set
+  // ---------------------------------------------------------------------------
+
+  string internal constant SRC_ALIAS = "zz-scratch-src-chain";
+
+  function _deployment() internal view returns (Types.Deployment memory deployment) {
+    deployment.aliasName = SRC_ALIAS;
+    deployment.resolver = address(resolver);
+    deployment.verifiers = _verifiersOf(address(verifier));
+  }
+
+  function _outboundLane(
+    string memory sourceAlias,
+    uint64 destSelector,
+    bytes4 tag
+  ) internal pure returns (Types.LaneConfig memory lane) {
+    lane.name = "test-lane";
+    lane.source.aliasName = sourceAlias;
+    lane.dest.chainSelector = destSelector;
+    lane.versionTag = tag;
+  }
+
+  function test_argsFor_skipsLanesFromAnotherChain() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _outboundLane(SRC_ALIAS, DEST_FUJI, VERSION_TAG);
+    lanes[1] = _outboundLane("zz-scratch-other-chain", DEST_AMOY, VERSION_TAG);
+
+    (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, _deployment());
+
+    assertEq(matched, 1, "only the lane sourced on this chain matched");
+    assertEq(args.length, 1);
+    assertEq(args[0].destChainSelector, DEST_FUJI);
+    assertEq(args[0].verifier, address(verifier), "mapped to the verifier serving its tag");
+  }
+
+  /// @dev The array length IS the staged count: the over-allocated tail must not survive.
+  function test_argsFor_lengthIsTheStagedCount() public view {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](3);
+    lanes[0] = _outboundLane(SRC_ALIAS, DEST_FUJI, VERSION_TAG);
+    lanes[1] = _outboundLane("zz-scratch-other-chain", 999, VERSION_TAG);
+    lanes[2] = _outboundLane(SRC_ALIAS, DEST_AMOY, VERSION_TAG);
+
+    (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, _deployment());
+
+    assertEq(matched, 2, "two lanes matched the filter");
+    assertEq(args.length, 2, "trimmed from the 3-slot upper bound");
+    assertEq(args[0].destChainSelector, DEST_FUJI, "lane order preserved");
+    assertEq(args[1].destChainSelector, DEST_AMOY, "lane order preserved");
+  }
+
+  /// @dev A destination already routed to that verifier counts as matched, stages nothing.
+  function test_argsFor_skipsDestinationAlreadyCurrentButStillCountsIt() public {
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "setup: apply failed");
+
+    (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
+      script.argsFor(_oneLane(_outboundLane(SRC_ALIAS, DEST_FUJI, VERSION_TAG)), SRC_ALIAS, _deployment());
+
+    assertEq(matched, 1, "the lane still matched");
+    assertEq(args.length, 0, "but nothing to stage");
+  }
+
+  function test_argsFor_revertsOnZeroDestSelector() public {
+    vm.expectRevert("ApplyOutboundImplementationUpdates: destChainSelector cannot be zero");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
+    script.argsFor(_oneLane(_outboundLane(SRC_ALIAS, 0, VERSION_TAG)), SRC_ALIAS, _deployment());
+  }
+
+  /// @dev The point of batching: two matched lanes become ONE call that applies both.
+  function test_batchedCall_appliesEveryMatchedLaneInOneCall() public {
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    lanes[0] = _outboundLane(SRC_ALIAS, DEST_FUJI, VERSION_TAG);
+    lanes[1] = _outboundLane(SRC_ALIAS, DEST_AMOY, VERSION_TAG);
+
+    (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
+      script.argsFor(lanes, SRC_ALIAS, _deployment());
+    assertEq(matched, 2);
+    assertEq(args.length, 2, "both lanes staged");
+
+    assertTrue(_applyOutbound(args), "the single batched call applied");
+    assertEq(_outboundImplementation(DEST_FUJI), address(verifier));
+    assertEq(_outboundImplementation(DEST_AMOY), address(verifier));
+  }
+
+  function _oneLane(
+    Types.LaneConfig memory lane
+  ) internal pure returns (Types.LaneConfig[] memory lanes) {
+    lanes = new Types.LaneConfig[](1);
+    lanes[0] = lane;
   }
 }

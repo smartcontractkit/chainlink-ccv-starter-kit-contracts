@@ -24,12 +24,11 @@ import {console2} from "forge-std/console2.sol";
 ///   OUTPUT_MODE=SAFE forge script script/ownership/TransferOwnership.s.sol \
 ///     --sig "run(string,string)" sepolia verifier
 contract TransferOwnership is BaseScript {
-  function callsFor(
+  function callFor(
     address to,
     address proposedOwner
-  ) public pure returns (Call[] memory calls) {
-    calls = new Call[](1);
-    calls[0] = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (proposedOwner))});
+  ) public pure returns (Call memory call) {
+    call = Call({to: to, value: 0, data: abi.encodeCall(IOwnable.transferOwnership, (proposedOwner))});
   }
 
   function run(
@@ -54,7 +53,7 @@ contract TransferOwnership is BaseScript {
     console2.log("  owner PROPOSED to:", proposedOwner);
     console2.log("  (must acceptOwnership() to take effect)");
 
-    _stageMany(callsFor(to, proposedOwner));
+    _stage(callFor(to, proposedOwner));
     _flush(string.concat("transfer-owner-", target));
   }
 }
