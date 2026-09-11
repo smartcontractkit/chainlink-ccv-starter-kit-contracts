@@ -4,6 +4,7 @@
 # default, and RPC URLs usually carry an API key. Keep the `@` when editing them.
 
 .PHONY: help install build build-dev clean \
+        check-forge seed-version-tags \
         test sync-selftest fmt fmt-check lint lint-sh lint-typos \
         bootstrap-factory deploy-resolver deploy-verifier verify \
         apply-remote-config apply-allowlists apply-signature-configs \
@@ -14,6 +15,11 @@
         sweep-fees balance-report \
         snapshot drift parity parity-config deployments-doc deployments-check validate-config \
         discover add-chain sync-check sync-chain
+
+# Build, fmt and lint are version-sensitive: the forge-lint disable comments name lint
+# ids that older releases reject as "unknown id". Keep in step with the version pinned
+# in .github/workflows/ci.yml.
+FOUNDRY_VERSION = 1.8.1
 
 CHAIN   ?=
 LANE    ?=
@@ -61,13 +67,27 @@ install:          ## npm ci + git submodules
 	npm ci
 	git submodule update --init --recursive
 
-build:            ## production (deterministic) profile
+# Warn only. A mismatch already fails the build; this says why.
+check-forge:      ## warn when forge is not the pinned version
+	@forge --version | head -1 | grep -q "$(FOUNDRY_VERSION)" || { \
+		echo "WARNING: this repo pins forge $(FOUNDRY_VERSION), you have $$(forge --version | head -1)."; \
+		echo "         fmt, lint and build output differ between releases."; \
+		echo "         install the pinned version: foundryup --install $(FOUNDRY_VERSION)"; \
+	}
+
+# The catalog is gitignored (config privacy) but lane reads validate every versionTag
+# against it, so seed it from the committed example, like `cp .env.example .env`.
+# Copy-if-absent: never overwrite an existing catalog. CI calls this target too.
+seed-version-tags: ## seed config/version-tags.json from the example if absent
+	@[ -f config/version-tags.json ] || cp config/version-tags.example.json config/version-tags.json
+
+build: check-forge ## production (deterministic) profile
 	forge build
 
 build-dev:        ## fast iteration profile (NOT address-compatible)
 	FOUNDRY_PROFILE=dev forge build
 
-test:             ## hermetic; no RPC needed
+test: check-forge seed-version-tags ## hermetic; no RPC needed
 	forge test -vvv
 
 fmt:              ## forge fmt (writes)

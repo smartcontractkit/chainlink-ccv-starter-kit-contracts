@@ -92,13 +92,9 @@ jobs:
           FOUNDRY_PROFILE: ci
         run: forge build
 
-      # The real catalog is gitignored (config privacy policy) but lane reads validate
-      # every versionTag against it, so seed it from the committed example — the same
-      # convention as `cp .env.example .env`. Copy-if-absent: never overwrite a catalog
-      # that made it into the checkout by some other means.
+      # Same target `make test` runs, so CI and a fresh clone seed identically.
       - name: Seed version-tag catalog
-        run: |
-          [ -f config/version-tags.json ] || cp config/version-tags.example.json config/version-tags.json
+        run: make seed-version-tags
 
       # No `always()` here: if the build failed, the test failure says nothing new.
       - name: Test
