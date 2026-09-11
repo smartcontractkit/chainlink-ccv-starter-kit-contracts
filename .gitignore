@@ -25,9 +25,12 @@ node_modules/
 config/**/*.json
 !config/**/_template.json
 !config/**/*.example.json
-# Test fixture, not a real deployment: run()-path tests need a chain file whose
-# chainId (31337) matches the test EVM. Holds no addresses or operator data.
+# Test fixtures, not real deployments: run()-path tests need a chain file whose
+# chainId (31337) matches the test EVM. They hold no addresses or operator data.
+# zz-scratch-zero-salt carries the template's all-zero resolverSalt so the deploy
+# guard that rejects it can be tested through run().
 !config/chains/zz-scratch-ownership-factory.json
+!config/chains/zz-scratch-zero-salt.json
 
 # -----------------------------------------------------------------------------
 # Generated outputs

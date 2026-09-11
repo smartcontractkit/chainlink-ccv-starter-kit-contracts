@@ -36,6 +36,13 @@ contract DeployResolver is Script {
     // CREATE2 makes a wrong-chain deploy succeed at the expected address, so verify first.
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     ConfigLib.assertChainMatches(chainConfig, chainAlias);
+    // config/chains/_template.json ships resolverSalt as 32 zero bytes, so an unfilled
+    // template deploys to a deterministic address every other unfilled template also
+    // picks. Checked before the roles and deployment reads: it is a chain-config fault.
+    require(
+      chainConfig.resolverSalt != bytes32(0),
+      "DeployResolver: resolverSalt is zero (the _template.json placeholder); set a real salt in config/chains"
+    );
     Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
