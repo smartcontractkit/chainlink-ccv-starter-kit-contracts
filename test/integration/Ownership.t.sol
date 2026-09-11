@@ -239,27 +239,38 @@ contract OwnershipTest is CommitteeVerifierSetup {
   }
 
   // ---- SAFE-mode executor preflight: the generic mechanism is BaseScript's and ----
-  // ---- unit-tested in SafeOutput.t.sol; here only the CancelStorageLocations-  ----
-  // ---- Admin wrapper, whose role getter is verifier-specific.                  ----
+  // ---- unit-tested in SafeOutput.t.sol; here only the storageLocationsAdmin    ----
+  // ---- wrappers, whose role getter is verifier-specific.                       ----
 
   function test_executorPreflight_acceptsCurrentAdmin() public view {
     cancelSla.requireExecutorIsCurrentAdmin(address(verifier), address(this));
   }
 
   function test_executorPreflight_rejectsNonAdmin() public {
-    vm.expectRevert(
-      bytes(
-        string.concat(
-          "BaseScript: SAFE_ADDRESS ",
-          vm.toString(INTERLOPER),
-          " is not the current storageLocationsAdmin of ",
-          vm.toString(address(verifier)),
-          "; the current storageLocationsAdmin is ",
-          vm.toString(address(this))
-        )
-      )
-    );
+    vm.expectRevert(bytes(_notAdminMessage(INTERLOPER)));
     cancelSla.requireExecutorIsCurrentAdmin(address(verifier), INTERLOPER);
+  }
+
+  function test_transferSlaPreflight_acceptsCurrentAdmin() public view {
+    transferSla.requireExecutorIsCurrentAdmin(address(verifier), address(this));
+  }
+
+  function test_transferSlaPreflight_rejectsNonAdmin() public {
+    vm.expectRevert(bytes(_notAdminMessage(INTERLOPER)));
+    transferSla.requireExecutorIsCurrentAdmin(address(verifier), INTERLOPER);
+  }
+
+  function _notAdminMessage(
+    address executor
+  ) internal view returns (string memory) {
+    return string.concat(
+      "BaseScript: SAFE_ADDRESS ",
+      vm.toString(executor),
+      " is not the current storageLocationsAdmin of ",
+      vm.toString(address(verifier)),
+      "; the current storageLocationsAdmin is ",
+      vm.toString(address(this))
+    );
   }
 
   // ===========================================================================
