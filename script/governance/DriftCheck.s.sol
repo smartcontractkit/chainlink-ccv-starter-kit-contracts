@@ -337,6 +337,13 @@ contract DriftCheck is Script {
         drift += _diffBool(
           string.concat(lanePrefix, "allowlistEnabled"), lane.allowlist.allowlistEnabled, remote.allowlistEnabled
         );
+        // Only allowlistEnabled can be compared: senders are configured as add/remove
+        // deltas, not a desired set, so there is no declared membership to diff against.
+        if (lane.allowlist.added.length > 0 || lane.allowlist.removed.length > 0) {
+          console2.log(
+            string.concat("  NOTE ", lanePrefix, "allowlist membership is NOT compared (config is add/remove deltas)")
+          );
+        }
         drift += _diffUint(string.concat(lanePrefix, "feeUSDCents"), lane.remote.feeUSDCents, remote.feeUSDCents);
         drift += _diffUint(
           string.concat(lanePrefix, "gasForVerification"), lane.remote.gasForVerification, remote.gasForVerification
