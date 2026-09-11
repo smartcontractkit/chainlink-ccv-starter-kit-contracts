@@ -27,7 +27,7 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "rmn":              "0x...",                 // Chainlink-provided RMN address. MUST be non-zero.
   "router":           "0x...",                 // Chainlink's local CCIP router; synced from the API. Lanes inherit it unless they override.
                                                // Synced fields: router, rmn, chainId, feeTokens, explorerAddressPath.
-  "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
+  "finalityConfig":   "0x00000000",            // bytes4 FinalityCodec value: full finality. See the note below for the other shapes.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
   "feeTokens":        ["0x..."],               // fee tokens to report on / sweep. Empty => fee scripts no-op.
   "resolverSalt":     "0x0000...0001",         // CREATE2 salt for the resolver. MUST be identical on every chain.
@@ -57,11 +57,13 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > a broken entry is a misconfiguration, never treated as an empty balance. `BalanceReport`
 > flags such an entry as `UNREADABLE`.
 
-> **`finalityConfig` defaults to `0x00000000`.** It is the `bytes4` ALLOWED finality
-> (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`. Encoding:
-> `0x00000000` = wait for full finality (safest, production default); the low 16 bits are
-> a block depth (`0x00000001` = depth-1, the fast path Chainlink uses for staging tests);
-> bit 16 (`0x00010000`) is the `safe`-tag flag.
+> `finalityConfig` is the `bytes4` FinalityCodec value that bounds what finality a sender
+> may request on this chain. `0x00000000` is full finality: the default, and the strictest
+> setting. A depth is a floor rather than a ceiling, so a smaller number permits more, and
+> `0x00000001` permits any depth at all. Note that the depth is hex like the rest of the
+> value, so ten blocks is `0x0000000A`; `0x00000010` is sixteen. The "What `finalityConfig`
+> allows" section of the Configuration chapter has the full encoding, the combinations that
+> are valid for a cap but not for a request, and the trade-off involved.
 
 Notes:
 - `storageLocations` is a **cross-workstream input** from the off-chain/infra team
