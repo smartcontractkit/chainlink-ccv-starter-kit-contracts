@@ -8,7 +8,7 @@ import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/Commit
 import {console2} from "forge-std/console2.sol";
 
 /// @title TransferStorageLocationsAdmin
-/// @notice Outline step 13 (propose leg for the SEPARATE storageLocationsAdmin role).
+/// @notice Proposes a transfer of the storageLocationsAdmin role.
 /// @dev The storageLocationsAdmin is a distinct two-step admin role on the
 ///      CommitteeVerifier, separate from the contract owner. Current admin proposes;
 ///      new admin accepts (AcceptStorageLocationsAdmin).

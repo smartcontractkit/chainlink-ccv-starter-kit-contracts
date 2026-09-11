@@ -24,7 +24,7 @@
 #   7  NOT_EVM          the chain exists but its family is not EVM (Solana, Aptos, ...);
 #                       this kit is EVM-only (Foundry/cast, 20-byte addresses)
 #
-# CCIP_API_BASE overrides the base (e.g. the indexer host api.ccip.cldev.cloud/v2).
+# CCIP_API_BASE overrides the API base URL (default https://api.ccip.chain.link/v2).
 #
 # This serves the CCV v2 deployment. Router 1.2.0 multiplexes per destination, so the one
 # active chainConfig.router reaches OnRamp 1.6.0 or OnRamp 2.0.0 depending on the lane —

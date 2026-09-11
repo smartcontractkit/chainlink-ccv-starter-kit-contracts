@@ -27,8 +27,8 @@ import {MockCCIPRouter} from "@chainlink/contracts-ccip/contracts/test/mocks/Moc
 ///         cover one operation in isolation; these assert the operations compose into a
 ///         working lane, and that the emergency lever actually stops traffic.
 /// @dev No fork, no RPC, so this suite runs in the PR gate. `test_endToEndAcceptance` is
-///      the one test that will need one; it stays skipped until its fixtures (token,
-///      token pools, CCV-requiring receiver) land from Chainlink Labs (open point 12).
+///      the one test that will need an RPC. It is skipped until its fixtures exist
+///      (token, token pools, CCV-requiring receiver).
 contract DeployAndConfigureTest is CommitteeVerifierSetup {
   uint64 internal constant SOURCE_SELECTOR = 1111;
   uint64 internal constant DEST_SELECTOR = 2222;
