@@ -128,23 +128,26 @@ sync-chain:       ## accept upstream CCIP values for ONE chain
 	./script/config/sync-ccip-config.sh sync $(CHAIN)
 
 # ---- deploy (EOA path) ----
+# FOUNDRY_PROFILE is pinned inline: the resolver's CREATE2 address depends on its
+# initcode, and the `dev` profile compiles different bytecode. The inline prefix wins
+# over a profile exported in the shell or passed on the make command line.
 bootstrap-factory: ## CREATE2Factory; must be the deployer's FIRST tx on the chain
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make bootstrap-factory CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";            exit 2; }
-	@OUTPUT_MODE=EOA forge script script/deploy/BootstrapFactory.s.sol \
+	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/BootstrapFactory.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
 deploy-resolver:  ## resolver via CREATE2; must land at the same address on every chain
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-resolver CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
-	@OUTPUT_MODE=EOA forge script script/deploy/DeployResolver.s.sol \
+	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployResolver.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
 deploy-verifier:  ## CommitteeVerifier for TAG; appends to the deployment record
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-verifier CHAIN=sepolia TAG=0x00010001"; exit 2; }
 	@test -n "$(TAG)"     || { echo "TAG is required (the verifier's bytes4 versionTag, e.g. TAG=0x00010001)"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
-	@OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
+	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
 		--sig "run(string,bytes4)" $(CHAIN) $(TAG) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
 verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag>
