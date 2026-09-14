@@ -22,26 +22,21 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     script = new ApplyAllowlistUpdates();
   }
 
-  function _buildAllowlistConfigArgs(
+  /// @dev One entry for DEST: the script's delta from the current on-chain set to `senders`.
+  function _argsFor(
     bool enabled,
-    address[] memory added,
-    address[] memory removed
-  ) internal pure returns (BaseVerifier.AllowlistConfigArgs[] memory args) {
+    address[] memory senders
+  ) internal view returns (BaseVerifier.AllowlistConfigArgs[] memory args) {
     args = new BaseVerifier.AllowlistConfigArgs[](1);
-    args[0] = BaseVerifier.AllowlistConfigArgs({
-      destChainSelector: DEST,
-      allowlistEnabled: enabled,
-      addedAllowlistedSenders: added,
-      removedAllowlistedSenders: removed
-    });
+    args[0] = script.toAllowlistConfigArgs(_lane(enabled, senders), _allowedSenders());
   }
 
-  function _applyAllowlistUpdate(
+  /// @dev Applies the desired set through the script's own builders.
+  function _apply(
     bool enabled,
-    address[] memory added,
-    address[] memory removed
+    address[] memory senders
   ) internal returns (bool ok) {
-    BaseScript.Call memory call = script.callFor(address(verifier), _buildAllowlistConfigArgs(enabled, added, removed));
+    BaseScript.Call memory call = script.callFor(address(verifier), _argsFor(enabled, senders));
     assertEq(call.to, address(verifier), "target is verifier");
     (ok,) = call.to.call(call.data); // msg.sender == owner (this test)
   }
@@ -52,69 +47,25 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     (, senders) = verifier.getRemoteChainConfig(DEST);
   }
 
-  // ---- isCurrent: what keeps a re-run from restaging applied lanes ----
-  // This call is a DELTA, not a full-set replacement, so "current" means the flag
-  // matches, every `added` is already present, and no `removed` still is.
-
   function _lane(
     bool enabled,
-    address[] memory added,
-    address[] memory removed
+    address[] memory allowedSenders
   ) internal pure returns (Types.LaneConfig memory lane) {
     lane.name = "test-lane";
     lane.dest.chainSelector = DEST;
     lane.allowlist.allowlistEnabled = enabled;
-    lane.allowlist.added = added;
-    lane.allowlist.removed = removed;
+    lane.allowlist.allowedSenders = allowedSenders;
   }
 
-  function test_isCurrent_falseWhenAddedSenderIsMissing() public view {
-    assertFalse(
-      script.isCurrent(address(verifier), _lane(true, _single(SENDER_A), new address[](0))), "sender not yet added"
-    );
+  function _none() internal pure returns (address[] memory arr) {
+    arr = new address[](0);
   }
 
-  function test_isCurrent_trueOnceAddedSendersArePresent() public {
-    assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "apply failed");
-    assertTrue(
-      script.isCurrent(address(verifier), _lane(true, _pair(SENDER_A, SENDER_B), new address[](0))), "both present"
-    );
-  }
-
-  function test_isCurrent_falseWhenOnlySomeAddedSendersArePresent() public {
-    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "apply failed");
-    assertFalse(
-      script.isCurrent(address(verifier), _lane(true, _pair(SENDER_A, SENDER_B), new address[](0))), "B still missing"
-    );
-  }
-
-  function test_isCurrent_falseWhileARemovedSenderIsStillPresent() public {
-    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "apply failed");
-    assertFalse(
-      script.isCurrent(address(verifier), _lane(true, new address[](0), _single(SENDER_A))), "removal still pending"
-    );
-  }
-
-  function test_isCurrent_trueOnceARemovedSenderIsGone() public {
-    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "add failed");
-    assertTrue(_applyAllowlistUpdate(true, new address[](0), _single(SENDER_A)), "remove failed");
-    assertTrue(
-      script.isCurrent(address(verifier), _lane(true, new address[](0), _single(SENDER_A))), "removal already applied"
-    );
-  }
-
-  function test_isCurrent_falseWhenOnlyTheEnabledFlagDiffers() public {
-    assertTrue(_applyAllowlistUpdate(true, _single(SENDER_A), new address[](0)), "apply failed");
-    assertFalse(
-      script.isCurrent(address(verifier), _lane(false, new address[](0), new address[](0))), "flag flip must stage"
-    );
-  }
-
-  /// @dev A sender the lane file never mentions is not drift: the delta shape gives this
-  ///      script no way to express its removal, so it must not force a pointless restage.
-  function test_isCurrent_ignoresSendersTheLaneDoesNotMention() public {
-    assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "apply failed");
-    assertTrue(script.isCurrent(address(verifier), _lane(true, _single(SENDER_A), new address[](0))), "B is not drift");
+  function _single(
+    address a
+  ) internal pure returns (address[] memory arr) {
+    arr = new address[](1);
+    arr[0] = a;
   }
 
   function _pair(
@@ -126,51 +77,155 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     arr[1] = b;
   }
 
-  function _single(
-    address a
-  ) internal pure returns (address[] memory arr) {
-    arr = new address[](1);
-    arr[0] = a;
+  // ---- isCurrent: what keeps a re-run from restaging applied lanes ----
+  // `allowedSenders` is the desired FULL set, so "current" means the flag matches and the
+  // on-chain set equals it exactly, order ignored.
+
+  function test_isCurrent_falseWhenADesiredSenderIsMissing() public view {
+    assertFalse(script.isCurrent(address(verifier), _lane(true, _single(SENDER_A))), "sender not yet added");
   }
 
+  function test_isCurrent_trueOnceTheSetMatches() public {
+    assertTrue(_apply(true, _pair(SENDER_A, SENDER_B)), "apply failed");
+    assertTrue(script.isCurrent(address(verifier), _lane(true, _pair(SENDER_A, SENDER_B))), "both present");
+  }
+
+  function test_isCurrent_falseWhenOnlySomeDesiredSendersArePresent() public {
+    assertTrue(_apply(true, _single(SENDER_A)), "apply failed");
+    assertFalse(script.isCurrent(address(verifier), _lane(true, _pair(SENDER_A, SENDER_B))), "B still missing");
+  }
+
+  /// @dev The point of the desired-set shape: a sender on-chain that the lane file does
+  ///      not list IS a difference, and the reconciler removes it.
+  function test_isCurrent_falseWhenAnUndeclaredSenderIsOnChain() public {
+    assertTrue(_apply(true, _pair(SENDER_A, SENDER_B)), "apply failed");
+    assertFalse(script.isCurrent(address(verifier), _lane(true, _single(SENDER_A))), "B is not in config");
+  }
+
+  function test_isCurrent_ignoresSenderOrder() public {
+    assertTrue(_apply(true, _pair(SENDER_A, SENDER_B)), "apply failed");
+    assertTrue(script.isCurrent(address(verifier), _lane(true, _pair(SENDER_B, SENDER_A))), "same set");
+  }
+
+  function test_isCurrent_falseWhenOnlyTheEnabledFlagDiffers() public {
+    assertTrue(_apply(true, _none()), "apply failed");
+    assertFalse(script.isCurrent(address(verifier), _lane(false, _none())), "flag flip must stage");
+  }
+
+  // ---- toAllowlistConfigArgs: the delta against a given on-chain set ----
+
+  function test_toAllowlistConfigArgs_stagesOnlyTheDelta() public view {
+    BaseVerifier.AllowlistConfigArgs memory args =
+      script.toAllowlistConfigArgs(_lane(true, _pair(SENDER_A, SENDER_B)), _pair(SENDER_B, address(0xA3)));
+
+    assertEq(args.destChainSelector, DEST, "dest selector");
+    assertTrue(args.allowlistEnabled, "flag carried through");
+    assertEq(args.addedAllowlistedSenders.length, 1, "one add");
+    assertEq(args.addedAllowlistedSenders[0], SENDER_A, "A is desired but absent");
+    assertEq(args.removedAllowlistedSenders.length, 1, "one remove");
+    assertEq(args.removedAllowlistedSenders[0], address(0xA3), "0xA3 is present but not desired");
+  }
+
+  function test_toAllowlistConfigArgs_translatesExampleLane() public view {
+    Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
+    BaseVerifier.AllowlistConfigArgs memory args = script.toAllowlistConfigArgs(lane, _none());
+
+    assertEq(args.destChainSelector, lane.dest.chainSelector, "dest selector");
+    assertEq(args.allowlistEnabled, false, "example lane has allowlist disabled");
+    assertEq(args.addedAllowlistedSenders.length, 0, "no adds in example");
+    assertEq(args.removedAllowlistedSenders.length, 0, "no removes in example");
+  }
+
+  // ---- reconciliation end to end ----
+
+  function test_reconcile_removesAnUndeclaredSender() public {
+    assertTrue(_apply(true, _pair(SENDER_A, SENDER_B)), "setup failed");
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowedSenders = _single(SENDER_A);
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args,) =
+      script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(args.length, 1, "staged");
+    assertEq(args[0].removedAllowlistedSenders.length, 1, "B removed");
+    assertEq(args[0].addedAllowlistedSenders.length, 0, "A already present");
+
+    (bool ok,) = address(verifier).call(script.callFor(address(verifier), args).data);
+    assertTrue(ok, "apply failed");
+    address[] memory senders = _allowedSenders();
+    assertEq(senders.length, 1, "one sender remains");
+    assertEq(senders[0], SENDER_A, "remaining sender is A");
+    assertTrue(script.isCurrent(address(verifier), lane), "current after reconciling");
+  }
+
+  /// @dev Removals apply even with the flag off, so disabling with an empty desired set
+  ///      also clears residual members rather than leaving a dormant list behind.
+  function test_reconcile_disablingWithEmptySetClearsResidualSenders() public {
+    assertTrue(_apply(true, _single(SENDER_A)), "setup failed");
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowlistEnabled = false;
+
+    (BaseVerifier.AllowlistConfigArgs[] memory args,) =
+      script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(args.length, 1, "staged");
+    assertFalse(args[0].allowlistEnabled, "flag off");
+    assertEq(args[0].removedAllowlistedSenders.length, 1, "residual A removed");
+
+    (bool ok,) = address(verifier).call(script.callFor(address(verifier), args).data);
+    assertTrue(ok, "apply failed");
+    assertEq(_allowedSenders().length, 0, "set cleared");
+    assertTrue(script.isCurrent(address(verifier), lane), "current after reconciling");
+  }
+
+  // ---- raw call behaviour of the audited contract ----
+
   function test_callFor_enablesAndAddsSenders() public {
-    assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "apply failed");
+    assertTrue(_apply(true, _pair(SENDER_A, SENDER_B)), "apply failed");
 
     (BaseVerifier.RemoteChainConfigArgs memory cfg, address[] memory senders) = verifier.getRemoteChainConfig(DEST);
     assertTrue(cfg.allowlistEnabled, "allowlist should be enabled");
     assertEq(senders.length, 2, "two senders allowed");
   }
 
-  function test_removeSender_leavesRemainder() public {
-    assertTrue(_applyAllowlistUpdate(true, _pair(SENDER_A, SENDER_B), new address[](0)), "add failed");
-    assertTrue(_applyAllowlistUpdate(true, new address[](0), _single(SENDER_A)), "remove failed");
-
-    address[] memory senders = _allowedSenders();
-    assertEq(senders.length, 1, "one sender remains");
-    assertEq(senders[0], SENDER_B, "remaining sender is B");
-  }
-
   function test_reverts_whenAddingWithAllowlistDisabled() public {
     // Contract reverts InvalidAllowListRequest (adds require allowlistEnabled == true).
-    assertFalse(_applyAllowlistUpdate(false, _single(SENDER_A), new address[](0)), "should have reverted");
+    assertFalse(_apply(false, _single(SENDER_A)), "should have reverted");
   }
 
   function test_reverts_whenCallerNotOwnerNorAllowlistAdmin() public {
-    BaseScript.Call memory call =
-      script.callFor(address(verifier), _buildAllowlistConfigArgs(true, _single(SENDER_A), new address[](0)));
+    BaseScript.Call memory call = script.callFor(address(verifier), _argsFor(true, _single(SENDER_A)));
     vm.prank(address(0xBAD));
     (bool ok,) = call.to.call(call.data); // msg.sender == 0xBAD -> OnlyCallableByOwnerOrAllowlistAdmin
     assertFalse(ok, "non-owner/admin should not be able to update allowlist");
   }
 
-  function test_toAllowlistConfigArgs_translatesExampleLane() public view {
-    Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
-    BaseVerifier.AllowlistConfigArgs memory args = script.toAllowlistConfigArgs(lane);
+  // ---- config validation: a config error, never a silent no-op ----
 
-    assertEq(args.destChainSelector, lane.dest.chainSelector, "dest selector");
-    assertEq(args.allowlistEnabled, false, "example lane has allowlist disabled");
-    assertEq(args.addedAllowlistedSenders.length, 0, "no adds in example");
-    assertEq(args.removedAllowlistedSenders.length, 0, "no removes in example");
+  function test_reverts_whenSendersListedWithAllowlistDisabled() public {
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowlistEnabled = false;
+    lane.allowlist.allowedSenders = _single(SENDER_A);
+    vm.expectRevert("ApplyAllowlistUpdates: allowedSenders requires allowlistEnabled=true");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
+    script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+  }
+
+  function test_reverts_whenSenderIsZeroAddress() public {
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowedSenders = _single(address(0));
+    vm.expectRevert("ApplyAllowlistUpdates: zero-address sender in allowedSenders");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
+    script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+  }
+
+  function test_reverts_whenSendersDuplicated() public {
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowedSenders = _pair(SENDER_A, SENDER_A);
+    vm.expectRevert("ApplyAllowlistUpdates: duplicate sender in allowedSenders");
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
+    script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
   }
 
   // ---------------------------------------------------------------------------
@@ -186,7 +241,7 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
   ) internal pure returns (Types.LaneConfig memory lane) {
     // allowlistEnabled=true differs from the verifier's untouched state, so these lanes
     // are selectable AND not already current.
-    lane = _lane(true, new address[](0), new address[](0));
+    lane = _lane(true, _none());
     lane.source.aliasName = sourceAlias;
     lane.dest.chainSelector = destSelector;
     lane.versionTag = tag;
@@ -243,7 +298,7 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
 
   /// @dev A lane already applied on-chain counts as matched but must not be staged.
   function test_argsFor_skipsLaneAlreadyCurrentButStillCountsIt() public view {
-    // allowlistEnabled=false with no adds/removes is the verifier's untouched state.
+    // allowlistEnabled=false with no senders is the verifier's untouched state.
     Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
     lane.allowlist.allowlistEnabled = false;
     assertTrue(script.isCurrent(address(verifier), lane), "setup: already current");
@@ -260,6 +315,7 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
     lanes[0] = _selectableLane(SRC_ALIAS, 111, VERSION_TAG);
     lanes[1] = _selectableLane(SRC_ALIAS, 222, VERSION_TAG);
+    lanes[1].allowlist.allowedSenders = _single(SENDER_B);
 
     (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
       script.argsFor(lanes, SRC_ALIAS, VERSION_TAG, address(verifier));

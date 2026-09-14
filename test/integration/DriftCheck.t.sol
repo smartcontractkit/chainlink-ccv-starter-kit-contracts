@@ -273,6 +273,56 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 5, "each remote field counted separately");
   }
 
+  function _seedAllowlist(
+    bool enabled,
+    address[] memory added
+  ) internal {
+    BaseVerifier.AllowlistConfigArgs[] memory args = new BaseVerifier.AllowlistConfigArgs[](1);
+    args[0] = BaseVerifier.AllowlistConfigArgs({
+      destChainSelector: REMOTE_SELECTOR,
+      allowlistEnabled: enabled,
+      addedAllowlistedSenders: added,
+      removedAllowlistedSenders: new address[](0)
+    });
+    verifier.applyAllowlistUpdates(args);
+  }
+
+  /// @dev `allowedSenders` is the desired full set, so membership is compared both ways,
+  ///      as one drift item per lane like the signer set.
+  function test_drift_allowlist_senderOnChainNotInConfig() public {
+    address[] memory onChain = new address[](1);
+    onChain[0] = address(0xA9);
+    _seedAllowlist(true, onChain);
+
+    Types.LaneConfig[] memory lanes = _lanes();
+    lanes[0].allowlist.allowlistEnabled = true; // flag agrees; only membership differs
+    assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 1, "undeclared sender is drift");
+  }
+
+  function test_drift_allowlist_senderInConfigMissingOnChain() public {
+    _seedAllowlist(true, new address[](0));
+
+    Types.LaneConfig[] memory lanes = _lanes();
+    lanes[0].allowlist.allowlistEnabled = true;
+    lanes[0].allowlist.allowedSenders = new address[](1);
+    lanes[0].allowlist.allowedSenders[0] = address(0xA9);
+    assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 1, "declared sender never added is drift");
+  }
+
+  function test_allowlist_senderOrderIsNotDrift() public {
+    address[] memory onChain = new address[](2);
+    onChain[0] = address(0xA8);
+    onChain[1] = address(0xA9);
+    _seedAllowlist(true, onChain);
+
+    Types.LaneConfig[] memory lanes = _lanes();
+    lanes[0].allowlist.allowlistEnabled = true;
+    lanes[0].allowlist.allowedSenders = new address[](2);
+    lanes[0].allowlist.allowedSenders[0] = address(0xA9);
+    lanes[0].allowlist.allowedSenders[1] = address(0xA8);
+    assertEq(script.checkLanes(_deployment(), _chainConfig(), lanes), 0, "same set, different order");
+  }
+
   /// @dev An unconfigured lane reads back as a zeroed struct, not a revert. That must
   ///      surface as drift on every field rather than passing silently.
   function test_drift_unconfiguredOutboundLane() public view {

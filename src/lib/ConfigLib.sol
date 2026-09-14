@@ -329,8 +329,7 @@ library ConfigLib {
       _toUint16(vm.parseJsonUint(json, ".remoteChainConfig.payloadSizeBytes"), ".remoteChainConfig.payloadSizeBytes");
 
     lane.allowlist.allowlistEnabled = vm.parseJsonBool(json, ".allowlist.allowlistEnabled");
-    lane.allowlist.added = vm.parseJsonAddressArray(json, ".allowlist.addedAllowlistedSenders");
-    lane.allowlist.removed = vm.parseJsonAddressArray(json, ".allowlist.removedAllowlistedSenders");
+    lane.allowlist.allowedSenders = vm.parseJsonAddressArray(json, ".allowlist.allowedSenders");
   }
 
   // --------------------------------------------------------------------------

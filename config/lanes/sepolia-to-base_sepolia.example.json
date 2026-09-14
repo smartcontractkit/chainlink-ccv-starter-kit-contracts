@@ -32,7 +32,6 @@
   },
   "allowlist": {
     "allowlistEnabled": false,
-    "addedAllowlistedSenders": [],
-    "removedAllowlistedSenders": []
+    "allowedSenders": []
   }
 }

@@ -113,10 +113,11 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
   },
 
   // -> applyAllowlistUpdates, keyed by DEST chain selector.
+  //    allowedSenders is the desired FULL set; the script stages only the delta.
+  //    Listing senders requires allowlistEnabled: true.
   "allowlist": {
-    "allowlistEnabled":         false,
-    "addedAllowlistedSenders":   [],
-    "removedAllowlistedSenders": []
+    "allowlistEnabled": false,
+    "allowedSenders":   []
   }
 }
 ```

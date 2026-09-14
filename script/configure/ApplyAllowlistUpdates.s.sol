@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {AddressSetLib} from "../../src/lib/AddressSetLib.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
@@ -9,24 +10,28 @@ import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/
 import {console2} from "forge-std/console2.sol";
 
 /// @title ApplyAllowlistUpdates
-/// @notice Sender allowlist per destination on the CommitteeVerifier.
+/// @notice Reconciles the sender allowlist per destination on the CommitteeVerifier with
+///         `allowlist.allowedSenders` in each lane file, the desired FULL set.
 ///         Runs every lane whose SOURCE is the given chain AND whose versionTag matches the
-///         given one (one verifier per run), batched into ONE call, and skips the
-///         lanes already matching on-chain — so --rpc-url is required in BOTH output
-///         modes.
+///         given one (one verifier per run), batched into ONE call. Each entry carries only
+///         the delta (removes + adds) against the current on-chain set, and lanes already
+///         matching are skipped — so --rpc-url is required in BOTH output modes.
 ///         Caller may be EITHER the owner or the DynamicConfig.allowlistAdmin — the
 ///         contract accepts both (else reverts OnlyCallableByOwnerOrAllowlistAdmin).
 ///
 /// @dev Contract rules mirrored in _assertValidConfig:
 ///        - Adding senders requires allowlistEnabled == true, else InvalidAllowListRequest.
 ///        - Added senders must be non-zero, else InvalidAllowListRequest.
-///        - Removals always apply (no-op if the sender wasn't present).
+///        - Removals always apply, so a disabled lane with `allowedSenders: []` also
+///          clears any residual members.
 ///
 /// Usage (chainAlias is the lane's SOURCE chain — sender gating lives there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplyAllowlistUpdates.s.sol \
 ///     --sig "run(string,bytes4)" sepolia 0x00010001 --rpc-url $SEPOLIA_RPC_URL
 ///   (EOA path: OUTPUT_MODE=EOA + --broadcast --aws)
 contract ApplyAllowlistUpdates is BaseScript {
+  using AddressSetLib for address[];
+
   /// @notice Which deployment a lane's allowlist config targets: the SOURCE chain.
   function _targetAlias(
     Types.LaneConfig memory lane
@@ -42,16 +47,19 @@ contract ApplyAllowlistUpdates is BaseScript {
     call = Call({to: verifier, value: 0, data: abi.encodeCall(CommitteeVerifier.applyAllowlistUpdates, (args))});
   }
 
-  /// @notice Translate a lane's config-as-data into the Chainlink arg struct, keyed by
-  ///         the lane's destination selector.
+  /// @notice Translate a lane's desired set into the Chainlink delta struct, keyed by the
+  ///         lane's destination selector.
+  /// @param current The senders currently allowlisted on-chain for that destination.
   function toAllowlistConfigArgs(
-    Types.LaneConfig memory lane
+    Types.LaneConfig memory lane,
+    address[] memory current
   ) public pure returns (BaseVerifier.AllowlistConfigArgs memory args) {
+    (address[] memory removes, address[] memory adds) = current.diff(lane.allowlist.allowedSenders);
     args = BaseVerifier.AllowlistConfigArgs({
       destChainSelector: lane.dest.chainSelector,
       allowlistEnabled: lane.allowlist.allowlistEnabled,
-      addedAllowlistedSenders: lane.allowlist.added,
-      removedAllowlistedSenders: lane.allowlist.removed
+      addedAllowlistedSenders: adds,
+      removedAllowlistedSenders: removes
     });
   }
 
@@ -78,7 +86,14 @@ contract ApplyAllowlistUpdates is BaseScript {
       // Before the isCurrent skip: an invalid config is a config error, not a no-op.
       _assertValidConfig(lane);
 
-      if (isCurrent(verifier, lane)) {
+      (BaseVerifier.RemoteChainConfigArgs memory remote, address[] memory current) =
+        CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
+      BaseVerifier.AllowlistConfigArgs memory entry = toAllowlistConfigArgs(lane, current);
+      // The call writes the flag too, so an empty delta with a differing flag still stages.
+      if (
+        remote.allowlistEnabled == lane.allowlist.allowlistEnabled && entry.addedAllowlistedSenders.length == 0
+          && entry.removedAllowlistedSenders.length == 0
+      ) {
         console2.log("[ApplyAllowlistUpdates] lane UNCHANGED:", lane.name);
         continue;
       }
@@ -86,9 +101,15 @@ contract ApplyAllowlistUpdates is BaseScript {
       console2.log("[ApplyAllowlistUpdates] lane STAGED:", lane.name);
       console2.log("  dest selector:", lane.dest.chainSelector);
       console2.log("  allowlistEnabled:", lane.allowlist.allowlistEnabled);
-      console2.log("    added:", lane.allowlist.added.length, "removed:", lane.allowlist.removed.length);
+      console2.log("  desired size:", lane.allowlist.allowedSenders.length, "on-chain size:", current.length);
+      for (uint256 j = 0; j < entry.removedAllowlistedSenders.length; ++j) {
+        console2.log("  REMOVE:", entry.removedAllowlistedSenders[j]);
+      }
+      for (uint256 j = 0; j < entry.addedAllowlistedSenders.length; ++j) {
+        console2.log("  ADD:   ", entry.addedAllowlistedSenders[j]);
+      }
 
-      args[staged] = toAllowlistConfigArgs(lane);
+      args[staged] = entry;
       ++staged;
     }
 
@@ -142,32 +163,15 @@ contract ApplyAllowlistUpdates is BaseScript {
     _flush(string.concat("apply-allowlist-updates-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 
-  /// @notice True when the config already matches on-chain: the flag matches, every
-  ///         `added` sender is present, and no `removed` sender is.
+  /// @notice True when the config already matches on-chain: the flag matches and the
+  ///         on-chain senders equal `allowedSenders` as a set, order ignored.
   function isCurrent(
     address verifier,
     Types.LaneConfig memory lane
   ) public view returns (bool) {
     (BaseVerifier.RemoteChainConfigArgs memory remote, address[] memory senders) =
       CommitteeVerifier(verifier).getRemoteChainConfig(lane.dest.chainSelector);
-    if (remote.allowlistEnabled != lane.allowlist.allowlistEnabled) return false;
-    for (uint256 i = 0; i < lane.allowlist.added.length; ++i) {
-      if (!_contains(senders, lane.allowlist.added[i])) return false;
-    }
-    for (uint256 i = 0; i < lane.allowlist.removed.length; ++i) {
-      if (_contains(senders, lane.allowlist.removed[i])) return false;
-    }
-    return true;
-  }
-
-  function _contains(
-    address[] memory haystack,
-    address needle
-  ) private pure returns (bool) {
-    for (uint256 i = 0; i < haystack.length; ++i) {
-      if (haystack[i] == needle) return true;
-    }
-    return false;
+    return remote.allowlistEnabled == lane.allowlist.allowlistEnabled && senders.sameSet(lane.allowlist.allowedSenders);
   }
 
   // ---------------------------------------------------------------------------
@@ -177,11 +181,14 @@ contract ApplyAllowlistUpdates is BaseScript {
     Types.LaneConfig memory lane
   ) internal pure {
     require(lane.dest.chainSelector != 0, "ApplyAllowlistUpdates: destChainSelector cannot be zero");
-    Types.AllowlistConfig memory allowlist = lane.allowlist;
-    if (allowlist.added.length > 0) {
-      require(allowlist.allowlistEnabled, "ApplyAllowlistUpdates: adding senders requires allowlistEnabled=true");
-      for (uint256 i = 0; i < allowlist.added.length; ++i) {
-        require(allowlist.added[i] != address(0), "ApplyAllowlistUpdates: zero-address sender in adds");
+    address[] memory senders = lane.allowlist.allowedSenders;
+    if (senders.length > 0) {
+      require(lane.allowlist.allowlistEnabled, "ApplyAllowlistUpdates: allowedSenders requires allowlistEnabled=true");
+    }
+    for (uint256 i = 0; i < senders.length; ++i) {
+      require(senders[i] != address(0), "ApplyAllowlistUpdates: zero-address sender in allowedSenders");
+      for (uint256 j = i + 1; j < senders.length; ++j) {
+        require(senders[i] != senders[j], "ApplyAllowlistUpdates: duplicate sender in allowedSenders");
       }
     }
   }
