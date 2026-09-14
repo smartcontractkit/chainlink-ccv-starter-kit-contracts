@@ -105,10 +105,23 @@ Foundry's native KMS support, so no raw private key touches disk:
 # requires: AWS credentials in the environment (the default SIGNER=--aws)
 make deploy-verifier CHAIN=sepolia TAG=0x00010001 RPC_URL=$SEPOLIA_RPC_URL
 
-# or a local key instead
+# an encrypted local keystore, for local and testnet work
+make deploy-verifier CHAIN=sepolia TAG=0x00010001 RPC_URL=$SEPOLIA_RPC_URL \
+  SIGNER="--account my-deployer"
+
+# or a raw key
 make deploy-verifier CHAIN=sepolia TAG=0x00010001 RPC_URL=$SEPOLIA_RPC_URL \
   SIGNER="--private-key $PRIVATE_KEY"
 ```
+
+`SIGNER` is passed through to `forge script` untouched, so any Foundry wallet flag
+works: `--aws`, `--gcp`, `--account <name>` for a keystore under `~/.foundry/keystores`,
+`--keystore <path>` for one elsewhere, `--private-key`, or a hardware wallet. Import a
+keystore once with `cast wallet import <name> --interactive`; forge then prompts for the
+password, or reads it from `--password-file`.
+
+Prefer `--account` over `--private-key` for local work. A raw key on the command line
+lands in shell history and is visible in the process list.
 
 This covers the deployer and broadcaster key only. The verifier committee's off-chain
 signing keys are a separate concern, handled outside this repo.
