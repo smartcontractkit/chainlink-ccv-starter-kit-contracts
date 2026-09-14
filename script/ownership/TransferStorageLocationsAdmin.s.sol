@@ -34,6 +34,9 @@ contract TransferStorageLocationsAdmin is BaseScript {
 
     address verifier = ConfigLib.verifierByTag(deployment, versionTag);
     _assertReachable(verifier, "verifier");
+    // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already
+    // reverts on a non-admin sender. Only a deferred batch can hide the mismatch.
+    if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentAdmin(verifier, outputSafeAddress);
     address proposedAdmin =
       ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag).storageLocationsAdmin;
     require(proposedAdmin != address(0), "storageLocationsAdmin role unset");
@@ -45,5 +48,20 @@ contract TransferStorageLocationsAdmin is BaseScript {
 
     _stage(callFor(verifier, proposedAdmin));
     _flush(string.concat("transfer-storage-locations-admin-", ConfigLib.tagToString(versionTag)));
+  }
+
+  /// @notice Reverts unless expectedExecutor is the verifier's current storageLocationsAdmin.
+  /// @dev Thin wrapper: only the role getter is CommitteeVerifier-specific, the
+  ///      assertion itself is BaseScript's. Mirrors CancelStorageLocationsAdmin.
+  function requireExecutorIsCurrentAdmin(
+    address verifier,
+    address expectedExecutor
+  ) public view {
+    _requireExecutorHoldsRole(
+      verifier,
+      expectedExecutor,
+      CommitteeVerifier(verifier).getStorageLocationsAdmin(),
+      "current storageLocationsAdmin"
+    );
   }
 }
