@@ -56,6 +56,10 @@ contract DeployVerifier is Script {
     require(
       verifierRoles.storageLocationsAdmin != address(0), "DeployVerifier: verifier.storageLocationsAdmin role unset"
     );
+    // Stricter than CommitteeVerifier on purpose: the contract accepts a zero
+    // feeAggregator, which leaves fee withdrawals reverting until someone sets one.
+    // Requiring it here means fees are never stranded. Do not loosen this to match
+    // the contract.
     require(verifierRoles.feeAggregator != address(0), "DeployVerifier: verifier.feeAggregator role unset");
 
     address deployer = msg.sender;
