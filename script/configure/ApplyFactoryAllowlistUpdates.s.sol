@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {AddressSetLib} from "../../src/lib/AddressSetLib.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
@@ -95,33 +96,6 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
     address[] memory current,
     address[] memory desired
   ) public pure returns (address[] memory removes, address[] memory adds) {
-    removes = _difference(current, desired);
-    adds = _difference(desired, current);
-  }
-
-  /// @dev Elements of `from` that are not in `exclude` (both treated as sets).
-  function _difference(
-    address[] memory from,
-    address[] memory exclude
-  ) private pure returns (address[] memory out) {
-    address[] memory scratch = new address[](from.length);
-    uint256 n = 0;
-    for (uint256 i = 0; i < from.length; ++i) {
-      if (!_contains(exclude, from[i])) scratch[n++] = from[i];
-    }
-    out = new address[](n);
-    for (uint256 i = 0; i < n; ++i) {
-      out[i] = scratch[i];
-    }
-  }
-
-  function _contains(
-    address[] memory haystack,
-    address needle
-  ) private pure returns (bool) {
-    for (uint256 i = 0; i < haystack.length; ++i) {
-      if (haystack[i] == needle) return true;
-    }
-    return false;
+    return AddressSetLib.diff(current, desired);
   }
 }

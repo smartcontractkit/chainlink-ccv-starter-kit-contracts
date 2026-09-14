@@ -48,11 +48,7 @@ What counts as "already matching" is per script, and matches what
 | `ApplyRemoteChainConfigUpdates` | router, `allowlistEnabled`, fee, gas and payload size all equal |
 | `ApplySignatureConfigs` | threshold equal and the signer *set* equal — order is not compared |
 | `ApplyOutboundImplementationUpdates` | the destination already resolves to the local verifier |
-| `ApplyAllowlistUpdates` | the flag matches, every added sender is present, no removed sender is |
-
-`ApplyAllowlistUpdates` is a delta, not a full-set replacement: a sender on-chain that no
-lane file mentions is not a difference it can express — removing one means listing it in
-`removedAllowlistedSenders`.
+| `ApplyAllowlistUpdates` | the flag matches and the sender *set* equals `allowedSenders`, order is not compared |
 
 ## The lane directory is the input set
 
@@ -113,9 +109,10 @@ make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_R
   warns rather than refusing. `gasForVerification` must be non-zero or `BaseVerifier`
   reverts `DestGasCannotBeZero`.
 - **`ApplyAllowlistUpdates`** — which senders on this chain may send to each destination.
-  The call is a **delta**, not a full-set replacement: it adds `addedAllowlistedSenders`
-  and removes `removedAllowlistedSenders` and touches nothing else. Adding senders with
-  `allowlistEnabled: false` reverts `InvalidAllowListRequest`.
+  `allowedSenders` is the desired **full** set: the script reads the on-chain set, stages
+  only the delta, and a sender on-chain that the lane file does not list is removed. The
+  contract only accepts adds while the allowlist is enabled, so the script refuses a
+  non-empty `allowedSenders` with `allowlistEnabled: false`.
 - **`ApplySignatureConfigs`** — the committee that verifies messages arriving *from* each
   source. This one **is** a full-set replacement: list the complete desired signer set
   every time, because the contract clears the existing set first. The script enforces two

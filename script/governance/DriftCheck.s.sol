@@ -330,20 +330,13 @@ contract DriftCheck is Script {
       // Outbound leg: routing/fee/gas for messages LEAVING to lane.dest lives on this
       // chain only when this chain is the source.
       if (_stringsEqual(lane.source.aliasName, chainConfig.aliasName)) {
-        // the other return values are deliberately ignored
-        // forge-lint: disable-next-line(unused-return)
-        (BaseVerifier.RemoteChainConfigArgs memory remote,) = verifier.getRemoteChainConfig(lane.dest.chainSelector);
+        (BaseVerifier.RemoteChainConfigArgs memory remote, address[] memory senders) =
+          verifier.getRemoteChainConfig(lane.dest.chainSelector);
         drift += _diffAddress(string.concat(lanePrefix, "router"), lane.remote.router, address(remote.router));
         drift += _diffBool(
           string.concat(lanePrefix, "allowlistEnabled"), lane.allowlist.allowlistEnabled, remote.allowlistEnabled
         );
-        // Only allowlistEnabled can be compared: senders are configured as add/remove
-        // deltas, not a desired set, so there is no declared membership to diff against.
-        if (lane.allowlist.added.length > 0 || lane.allowlist.removed.length > 0) {
-          console2.log(
-            string.concat("  NOTE ", lanePrefix, "allowlist membership is NOT compared (config is add/remove deltas)")
-          );
-        }
+        drift += _diffAddressSet(string.concat(lanePrefix, "allowedSenders"), lane.allowlist.allowedSenders, senders);
         drift += _diffUint(string.concat(lanePrefix, "feeUSDCents"), lane.remote.feeUSDCents, remote.feeUSDCents);
         drift += _diffUint(
           string.concat(lanePrefix, "gasForVerification"), lane.remote.gasForVerification, remote.gasForVerification

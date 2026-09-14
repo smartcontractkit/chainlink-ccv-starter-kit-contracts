@@ -45,10 +45,10 @@ library Types {
     uint16 payloadSizeBytes;
   }
 
+  /// @dev `allowedSenders` is the desired FULL set for the lane's destination.
   struct AllowlistConfig {
     bool allowlistEnabled;
-    address[] added;
-    address[] removed;
+    address[] allowedSenders;
   }
 
   struct LaneConfig {

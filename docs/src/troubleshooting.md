@@ -32,7 +32,7 @@ are always **0** clean, **1** finding, **2** could not run.
 | `BaseScript: SAFE output needs SAFE_ADDRESS` | SAFE mode without executing Safe | set `SAFE_ADDRESS=0x…` to the Safe that will import the batch |
 | `BaseScript: no code at verifier …` | RPC points at wrong network or verifier not deployed | check `--rpc-url` matches the chain alias; confirm tag is in deployment record |
 | stray lane configured | extra file in `config/lanes/` | only files in that directory are live inputs — move retired lanes out; see [configure § lane directory](configure.md#the-lane-directory-is-the-input-set) |
-| `InvalidAllowListRequest` | adding senders while `allowlistEnabled: false` | enable allowlist first, or remove the added senders |
+| `allowedSenders requires allowlistEnabled=true` / `InvalidAllowListRequest` | senders listed while `allowlistEnabled: false` | enable the allowlist, or empty `allowedSenders` |
 | committee has no redundancy | threshold == signer count (N-of-N): one offline signer halts the lane | add signers or lower the threshold, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
 | committee threshold too low | threshold ≤ 2/3 of the signer set | raise the threshold, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
 
