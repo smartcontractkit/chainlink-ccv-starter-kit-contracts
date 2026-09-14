@@ -143,8 +143,9 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
     lane.allowlist.allowedSenders = _single(SENDER_A);
 
-    (BaseVerifier.AllowlistConfigArgs[] memory args,) =
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
       script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(matched, 1, "lane matched");
     assertEq(args.length, 1, "staged");
     assertEq(args[0].removedAllowlistedSenders.length, 1, "B removed");
     assertEq(args[0].addedAllowlistedSenders.length, 0, "A already present");
@@ -164,8 +165,9 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
     Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
     lane.allowlist.allowlistEnabled = false;
 
-    (BaseVerifier.AllowlistConfigArgs[] memory args,) =
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
       script.argsFor(_oneLane(lane), SRC_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(matched, 1, "lane matched");
     assertEq(args.length, 1, "staged");
     assertFalse(args[0].allowlistEnabled, "flag off");
     assertEq(args[0].removedAllowlistedSenders.length, 1, "residual A removed");
