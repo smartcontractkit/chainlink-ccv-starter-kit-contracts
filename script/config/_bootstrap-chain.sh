@@ -87,7 +87,10 @@ PLACEHOLDERS="$(jq -r '
     | map(.key) | join(", ")
 ' "$TMP")"
 
-mv "$TMP" "$CONFIG_PATH"
+mv "$TMP" "$CONFIG_PATH" || {
+    echo "  ERROR could not move $TMP to $CONFIG_PATH" >&2
+    exit 2
+}
 trap - EXIT
 
 echo "  CREATED $CONFIG_PATH from $SOURCE_NAME: $SEEDED"

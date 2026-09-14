@@ -87,7 +87,10 @@ jq -e . "$TMP" > /dev/null 2>&1 || {
     exit 2
 }
 
-mv "$TMP" "$CONFIG_PATH"
+mv "$TMP" "$CONFIG_PATH" || {
+    echo "  ERROR $NAME: could not move $TMP to $CONFIG_PATH" >&2
+    exit 2
+}
 trap - EXIT
 echo "  WROTE $NAME: $CHANGED"
 exit 0
