@@ -204,13 +204,21 @@ contract ApplySignatureConfigs is BaseScript {
       }
     }
 
-    // Committee policy: not 1-of-1, and threshold must exceed 2/3. Fatal unless explicitly waived.
+    // Committee policy: threshold < signers.length (N-of-N halts the lane when one signer is
+    // offline; 1-of-1 is the degenerate case) and threshold must exceed 2/3. Together these
+    // make 3-of-4 the smallest compliant committee. Fatal unless explicitly waived.
     if (signerCount == 1) {
       require(
         allowWeakCommittee,
         "ApplySignatureConfigs: 1-of-1 signer set (set ALLOW_WEAK_COMMITTEE=true for test committees)"
       );
       console2.log("  WARN 1-of-1 signer set, waived by ALLOW_WEAK_COMMITTEE");
+    } else if (threshold == signerCount) {
+      require(
+        allowWeakCommittee,
+        "ApplySignatureConfigs: N-of-N committee halts on one offline signer (set ALLOW_WEAK_COMMITTEE=true)"
+      );
+      console2.log("  WARN N-of-N committee, waived by ALLOW_WEAK_COMMITTEE");
     } else if (uint256(threshold) * 3 <= signerCount * 2) {
       require(
         allowWeakCommittee,

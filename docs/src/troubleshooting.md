@@ -33,7 +33,7 @@ are always **0** clean, **1** finding, **2** could not run.
 | `BaseScript: no code at verifier …` | RPC points at wrong network or verifier not deployed | check `--rpc-url` matches the chain alias; confirm tag is in deployment record |
 | stray lane configured | extra file in `config/lanes/` | only files in that directory are live inputs — move retired lanes out; see [configure § lane directory](configure.md#the-lane-directory-is-the-input-set) |
 | `InvalidAllowListRequest` | adding senders while `allowlistEnabled: false` | enable allowlist first, or remove the added senders |
-| weak committee rejected | 1-of-1 or threshold ≤ 2/3 | fix signer set, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
+| weak committee rejected | N-of-N or threshold ≤ 2/3 | fix signer set, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
 
 ## Governance checks
 

@@ -77,7 +77,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   function setUp() public override {
     super.setUp();
 
-    // Committee policy: not 1-of-1, threshold above 2/3 (7-of-10).
+    // Committee policy: threshold below the signer count and above 2/3 (7-of-10).
     for (uint160 i = 1; i <= 10; ++i) {
       signers.push(address(0x1000 + i));
     }

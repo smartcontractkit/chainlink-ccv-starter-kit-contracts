@@ -118,9 +118,10 @@ make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_R
   `allowlistEnabled: false` reverts `InvalidAllowListRequest`.
 - **`ApplySignatureConfigs`** — the committee that verifies messages arriving *from* each
   source. This one **is** a full-set replacement: list the complete desired signer set
-  every time, because the contract clears the existing set first. The script refuses a
-  1-of-1 committee, or a threshold at or below 2/3 of the set, unless
-  `ALLOW_WEAK_COMMITTEE=true`.
+  every time, because the contract clears the existing set first. The script refuses an
+  N-of-N committee (one offline signer would halt the lane), or a
+  threshold at or below 2/3 of the set, unless `ALLOW_WEAK_COMMITTEE=true`. The smallest
+  committee that needs no waiver is 3-of-4.
 
 ### Per chain (verifier)
 

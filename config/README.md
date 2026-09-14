@@ -95,7 +95,8 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
 
   // -> applySignatureConfigs, keyed by SOURCE chain selector (inbound verification set).
   //    Full-set REPLACEMENT every time — list the complete desired signer set.
-  //    Constraint: not 1-of-1, threshold must exceed 2/3 (e.g. 10 signers -> threshold 7).
+  //    Constraint: threshold below the signer count (no N-of-N) and above 2/3
+  //    (e.g. 10 signers -> threshold 7; 3-of-4 is the smallest compliant committee).
   "signatureConfig": {
     "threshold": 7,
     "signers": ["0x...", "0x..."]
