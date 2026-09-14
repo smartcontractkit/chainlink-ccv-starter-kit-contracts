@@ -247,7 +247,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   }
 
   // ---- committee policy: fatal unless ALLOW_WEAK_COMMITTEE waives it ----
-  // Neither rule is enforced onchain, so this script is the only gate. The waiver is a
+  // None of these rules is enforced onchain, so this script is the only gate. The waiver is a
   // field rather than an env read so these stay order-independent: forge reverts EVM
   // state between tests but memoises vm.env*, so vm.setEnv could not be undone.
 
@@ -260,10 +260,32 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_reverts_whenThresholdDoesNotExceedTwoThirds() public {
     // 2-of-3: 2*3 == 6, not > 3*2 == 6.
-    vm.expectRevert("ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true)");
+    vm.expectRevert(
+      "ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true for test committees)"
+    );
     // the expected revert is the assertion; the call returns no value
     // forge-lint: disable-next-line(unused-return)
     script.configsFor(_oneLane(_lane(DEST_ALIAS, 2, _generateSigners(3))), DEST_ALIAS, VERSION_TAG, address(verifier));
+  }
+
+  function test_reverts_onNofNCommittee() public {
+    // 4-of-4 clears the 2/3 rule but one offline signer halts the lane.
+    vm.expectRevert(
+      "ApplySignatureConfigs: N-of-N committee has no redundancy, one offline signer halts the lane (set ALLOW_WEAK_COMMITTEE=true for test committees)"
+    );
+    // the expected revert is the assertion; the call returns no value
+    // forge-lint: disable-next-line(unused-return)
+    script.configsFor(_oneLane(_lane(DEST_ALIAS, 4, _generateSigners(4))), DEST_ALIAS, VERSION_TAG, address(verifier));
+  }
+
+  function test_allowWeakCommittee_waivesNofN() public {
+    script.setAllowWeakCommittee(true);
+    (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
+      script.configsFor(_oneLane(_lane(DEST_ALIAS, 4, _generateSigners(4))), DEST_ALIAS, VERSION_TAG, address(verifier));
+
+    assertEq(matched, 1, "the lane matched");
+    assertEq(configs.length, 1, "staged despite the weak committee");
+    assertEq(configs[0].threshold, 4, "threshold carried through");
   }
 
   function test_allowWeakCommittee_waives1of1() public {
@@ -277,7 +299,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   }
 
   function test_threeOfFour_passesPolicy() public view {
-    // 3*3 == 9 > 4*2 == 8, so the boundary case is accepted with no waiver.
+    // 3 < 4 and 3*3 == 9 > 4*2 == 8: the smallest committee that needs no waiver.
     (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
       script.configsFor(_oneLane(_lane(DEST_ALIAS, 3, _generateSigners(4))), DEST_ALIAS, VERSION_TAG, address(verifier));
 

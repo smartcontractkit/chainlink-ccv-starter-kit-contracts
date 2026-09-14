@@ -37,10 +37,10 @@ contract ConfigLibTest is Test {
     assertEq(lane.dest.chainSelector, 10344971235874465080);
     assertEq(lane.versionTag, bytes4(0x00010001), "mandatory versionTag parsed");
 
-    // Signature config must respect the "not 1-of-1, threshold > 2/3" constraint.
+    // Signature config must respect the "threshold < signers, threshold > 2/3" constraint.
     assertEq(lane.signatureConfig.threshold, 7);
     assertEq(lane.signatureConfig.signers.length, 10);
-    assertGt(lane.signatureConfig.threshold, 1); // not 1-of-1
+    assertLt(lane.signatureConfig.threshold, lane.signatureConfig.signers.length); // not N-of-N
     assertGt(uint256(lane.signatureConfig.threshold) * 3, lane.signatureConfig.signers.length * 2); // > 2/3
   }
 
