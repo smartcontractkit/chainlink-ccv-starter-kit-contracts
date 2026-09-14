@@ -260,7 +260,9 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   function test_reverts_whenThresholdDoesNotExceedTwoThirds() public {
     // 2-of-3: 2*3 == 6, not > 3*2 == 6.
-    vm.expectRevert("ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true)");
+    vm.expectRevert(
+      "ApplySignatureConfigs: threshold must exceed 2/3 of the committee (set ALLOW_WEAK_COMMITTEE=true for test committees)"
+    );
     // the expected revert is the assertion; the call returns no value
     // forge-lint: disable-next-line(unused-return)
     script.configsFor(_oneLane(_lane(DEST_ALIAS, 2, _generateSigners(3))), DEST_ALIAS, VERSION_TAG, address(verifier));
@@ -269,7 +271,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   function test_reverts_onNofNCommittee() public {
     // 4-of-4 clears the 2/3 rule but one offline signer halts the lane.
     vm.expectRevert(
-      "ApplySignatureConfigs: N-of-N committee has no redundancy, one offline signer halts the lane (set ALLOW_WEAK_COMMITTEE=true)"
+      "ApplySignatureConfigs: N-of-N committee has no redundancy, one offline signer halts the lane (set ALLOW_WEAK_COMMITTEE=true for test committees)"
     );
     // the expected revert is the assertion; the call returns no value
     // forge-lint: disable-next-line(unused-return)
