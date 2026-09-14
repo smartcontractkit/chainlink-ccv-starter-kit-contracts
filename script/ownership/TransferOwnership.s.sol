@@ -8,8 +8,8 @@ import {IOwnable} from "@chainlink/contracts/src/v0.8/shared/interfaces/IOwnable
 import {console2} from "forge-std/console2.sol";
 
 /// @title TransferOwnership
-/// @notice Outline step 13 (propose leg). Two-step ownable: the CURRENT owner
-///         proposes the transfer; the new owner accepts separately (AcceptOwnership).
+/// @notice Proposes an ownership transfer. Two-step ownable: the CURRENT owner proposes
+///         here; the new owner accepts separately (AcceptOwnership).
 /// @dev Generic over target ("verifier[:<versionTag>]" | "resolver" | "factory"); the tag
 ///      form selects a verifier when several are recorded. New owner is read
 ///      from config/roles/<alias>.json.

@@ -8,9 +8,9 @@ import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 
 /// @title SnapshotRolesTest
-/// @notice Outline step 16. Verifies the snapshot reads every live role and that what
-///         it writes is loadable by `ConfigLib` as a real roles file — the property
-///         that makes "review, then copy into config/roles/" a safe promotion path.
+/// @notice Verifies the snapshot reads every live role, and that the file it writes is
+///         loadable by `ConfigLib` as a real roles file. That is what makes it safe to
+///         review a snapshot and copy it into config/roles/.
 contract SnapshotRolesTest is CommitteeVerifierSetup {
   SnapshotRoles internal script;
 
