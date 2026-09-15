@@ -4,7 +4,7 @@
   "chainSelector": "16015286601757825753",
   "router": "0x0000000000000000000000000000000000000000",
   "rmn": "0x0000000000000000000000000000000000000000",
-  "finalityConfig": "0x00000000",
+  "allowedFinality": {},
   "storageLocations": [
     "https://aggregator.operator.example/ccv"
   ],

@@ -12,7 +12,7 @@
 #
 # The sync OWNS (overwrites) only the CCIP-core fields the source provides that the target already
 # carries: router, rmn, feeTokens, explorerAddressPath (+ chainId refresh). It PRESERVES everything
-# else byte-for-byte: alias, chainSelector, finalityConfig, storageLocations,
+# else byte-for-byte: alias, chainSelector, allowedFinality, storageLocations,
 # resolverSalt. The immutable chainSelector is a GUARD (source.chainSelector must equal the file's).
 # A core field the source serves as null (explorerAddressPath is nullable) is skipped, not zeroed.
 # feeTokens is APPEND-ONLY: upstream additions merge in, but a token upstream drops is kept (and

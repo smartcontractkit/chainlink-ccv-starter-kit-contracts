@@ -82,7 +82,6 @@ SEEDED="$(jqlib -r --slurpfile src "$FLAT_PATH" \
 PLACEHOLDERS="$(jq -r '
     to_entries
     | map(select(.value == "" or .value == 0 or .value == []
-                 or .value == "0x00000000"
                  or (.value | type == "string" and test("^0x0+$"))))
     | map(.key) | join(", ")
 ' "$TMP")"

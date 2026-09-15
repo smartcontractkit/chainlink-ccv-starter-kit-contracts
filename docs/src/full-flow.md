@@ -52,7 +52,8 @@ make add-chain CHAIN=sepolia      SELECTOR=16015286601757825753
 make add-chain CHAIN=base_sepolia SELECTOR=10344971235874465080
 
 # then hand-fill the operator fields each bootstrap lists as "still to fill in":
-#   resolverSalt (same value on BOTH chains), storageLocations, finalityConfig
+#   resolverSalt (same value on BOTH chains), storageLocations
+# allowedFinality starts as {} (full finality only) and needs no edit unless a fast path is wanted
 ```
 
 And create by hand, from the templates in `config/`:

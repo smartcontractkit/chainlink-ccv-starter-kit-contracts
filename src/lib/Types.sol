@@ -21,10 +21,17 @@ library Types {
     uint64 chainSelector; // parsed from a JSON string (selectors exceed 2^53)
     address rmn; // Chainlink-provided; MUST be non-zero
     address router; // Chainlink's local CCIP router, synced from the API; default for lanes
-    bytes4 finalityConfig; // FinalityCodec bytes4. 0x00000000 (full finality only) is the default.
+    AllowedFinality allowedFinality; // what a sender may request; empty block = full finality only
     string[] storageLocations; // operator's own aggregator endpoint(s)
     address[] feeTokens; // fee tokens to report on / sweep. Empty = no-op for fee scripts.
     bytes32 resolverSalt; // identical on every chain
+  }
+
+  /// @dev Alternatives a sender may request, not a conjunction. Full finality is always
+  ///      allowed; `minBlockDepth` is a floor on depth requests. FinalityConfigLib encodes it.
+  struct AllowedFinality {
+    bool allowSafeTag; // accept a request for the `safe` tag
+    uint16 minBlockDepth; // accept a depth request of at least this many blocks; 0 = none
   }
 
   // ------------------------------ config/lanes ------------------------------

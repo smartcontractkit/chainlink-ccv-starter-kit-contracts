@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {SetAllowedFinalityConfig} from "../../script/configure/SetAllowedFinalityConfig.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
+import {FinalityConfigLib} from "../../src/lib/FinalityConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {FinalityCodec} from "@chainlink/contracts-ccip/contracts/libraries/FinalityCodec.sol";
@@ -16,7 +17,6 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   // Sourced from the codec so the test cannot drift from the encoding it asserts.
   bytes4 internal constant FULL_FINALITY = FinalityCodec.WAIT_FOR_FINALITY_FLAG;
   bytes4 internal constant WAIT_FOR_SAFE = FinalityCodec.WAIT_FOR_SAFE_FLAG;
-  bytes4 internal constant MAX_DEPTH = FinalityCodec.BLOCK_DEPTH_MASK;
   bytes4 internal constant BLOCK_DEPTH_1 = bytes4(uint32(1));
   bytes4 internal constant SAFE_OR_DEPTH_1 = WAIT_FOR_SAFE | BLOCK_DEPTH_1;
 
@@ -52,34 +52,12 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
     assertFalse(ok, "non-owner should not set finality config");
   }
 
-  // --------------------------------------------------------------------------
-  //  encoding validation
-  // --------------------------------------------------------------------------
-  /// @dev Reserved bits 17-31 are unassigned, so a value setting them expresses no mode
-  ///      that exists. FinalityCodec accepts unknown flags on the wire, but here the value
-  ///      is hand-written config, where a reserved bit is a typo.
-  function test_validateEncoding_rejectsReservedBits() public {
-    // Boundary: bit 17 alone is the lowest reserved bit (bit 16 = WAIT_FOR_SAFE is assigned).
-    vm.expectRevert(bytes(script.RESERVED_BITS_ERROR()));
-    script.validateEncoding(bytes4(uint32(1) << 17));
-
-    vm.expectRevert(bytes(script.RESERVED_BITS_ERROR()));
-    script.validateEncoding(bytes4(0xDEADBEEF));
-
-    vm.expectRevert(bytes(script.RESERVED_BITS_ERROR()));
-    script.validateEncoding(bytes4(0xFFFFFFFF));
-  }
-
-  /// @dev `allowedFinality` may combine a flag with a depth — that is what
-  ///      `FinalityCodec._encodeBlockDepthAndSafeFlag` produces, and it is valid here even
-  ///      though a sender's REQUESTED finality may only carry one mode. Applying the
-  ///      single-mode rule would reject legitimate config, so these must all pass.
-  function test_validateEncoding_acceptsEveryAssignedShape() public view {
-    script.validateEncoding(FULL_FINALITY); // 0x00000000
-    script.validateEncoding(BLOCK_DEPTH_1); // depth 1
-    script.validateEncoding(MAX_DEPTH); // max depth
-    script.validateEncoding(WAIT_FOR_SAFE); // safe flag, no depth
-    script.validateEncoding(SAFE_OR_DEPTH_1); // safe flag + depth
+  /// @dev The typed block is what an operator writes; the verifier must store exactly the
+  ///      value the codec would check a request against.
+  function test_encodedConfig_isWhatTheVerifierStores() public {
+    Types.AllowedFinality memory finality = Types.AllowedFinality({allowSafeTag: true, minBlockDepth: 1});
+    assertTrue(_applyFinality(FinalityConfigLib.encode(finality)), "apply failed");
+    assertEq(verifier.getAllowedFinalityConfig(), SAFE_OR_DEPTH_1, "safe tag or depth >= 1");
   }
 
   // ---- finality policy: fatal unless ALLOW_WEAK_FINALITY waives it ----
@@ -105,19 +83,12 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
     script.validateFinalityPolicy(SAFE_OR_DEPTH_1);
   }
 
-  /// @dev The waiver relaxes policy, not the encoding: a reserved bit stays fatal.
-  function test_allowWeakFinality_doesNotWaiveReservedBits() public {
-    script.setAllowWeakFinality(true);
-    vm.expectRevert(bytes(script.RESERVED_BITS_ERROR()));
-    script.validateFinalityPolicy(bytes4(0xDEADBEEF));
-  }
-
   /// @dev Guards the robust bytes4 parser: a 4-byte hex value must round-trip exactly
-  ///      (independent of Foundry's fixed-bytes padding convention). The lane example
-  ///      covers the non-zero case (versionTag), the chain example the zero case.
-  function test_configReaders_parseBytes4FieldsExactly() public view {
+  ///      (independent of Foundry's fixed-bytes padding convention). The chain example
+  ///      covers the typed finality block, which must load as full finality only.
+  function test_configReaders_parseExampleFilesExactly() public view {
     Types.ChainConfig memory chainConfig = ConfigLib.readChainByPath("config/chains/sepolia.example.json");
-    assertEq(chainConfig.finalityConfig, bytes4(0), "finalityConfig parsed exactly (full finality)");
+    assertEq(FinalityConfigLib.encode(chainConfig.allowedFinality), FULL_FINALITY, "empty block is full finality only");
 
     Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
     assertEq(lane.versionTag, bytes4(0x00010001), "versionTag parsed exactly");

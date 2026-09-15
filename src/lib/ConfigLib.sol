@@ -5,6 +5,7 @@ pragma solidity 0.8.26;
 // forge-lint: disable-start(unused-return)
 
 import {Types} from "./Types.sol";
+import {FinalityCodec} from "@chainlink/contracts-ccip/contracts/libraries/FinalityCodec.sol";
 import {Vm, VmSafe} from "forge-std/Vm.sol";
 
 /// @title ConfigLib
@@ -51,9 +52,7 @@ library ConfigLib {
   }
 
   /// @dev Parses a versionTag field and enforces the documented scheme: 2 bytes operator
-  ///      id + 2 bytes version, both halves non-zero. The scheme lives here (not in
-  ///      `_parseBytes4`) because other bytes4 fields have different rules —
-  ///      finalityConfig 0x00000000 is the legitimate production default.
+  ///      id + 2 bytes version, both halves non-zero.
   function _parseVersionTag(
     string memory json,
     string memory key,
@@ -133,7 +132,7 @@ library ConfigLib {
     chainConfig.rmn = vm.parseJsonAddress(json, ".rmn");
     // Optional while older configs predate the field; the sync tooling maintains it.
     chainConfig.router = vm.keyExistsJson(json, ".router") ? vm.parseJsonAddress(json, ".router") : address(0);
-    chainConfig.finalityConfig = _parseBytes4(json, ".finalityConfig");
+    chainConfig.allowedFinality = _parseAllowedFinality(json, path);
     chainConfig.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
     // Optional by design: fee sweeping is opt-in per chain, and the token list mirrors a
     // Chainlink-governed set (see config/README.md). A chain whose list is not decided yet
@@ -141,6 +140,45 @@ library ConfigLib {
     chainConfig.feeTokens =
       vm.keyExistsJson(json, ".feeTokens") ? vm.parseJsonAddressArray(json, ".feeTokens") : new address[](0);
     chainConfig.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
+  }
+
+  /// @dev Typed block, so the FinalityCodec encoding is generated rather than typed by hand.
+  ///      A misspelt key is rejected because it would otherwise read as full finality only.
+  function _parseAllowedFinality(
+    string memory json,
+    string memory path
+  ) private view returns (Types.AllowedFinality memory finality) {
+    require(vm.keyExistsJson(json, ".allowedFinality"), string.concat("ConfigLib: ", path, " has no allowedFinality"));
+    string[] memory keys = vm.parseJsonKeys(json, ".allowedFinality");
+    for (uint256 i = 0; i < keys.length; ++i) {
+      require(
+        _stringsEqual(keys[i], "allowSafeTag") || _stringsEqual(keys[i], "minBlockDepth"),
+        string.concat(
+          "ConfigLib: allowedFinality in ",
+          path,
+          " has unknown key '",
+          keys[i],
+          "' - keys are allowSafeTag, minBlockDepth"
+        )
+      );
+    }
+    if (vm.keyExistsJson(json, ".allowedFinality.allowSafeTag")) {
+      finality.allowSafeTag = vm.parseJsonBool(json, ".allowedFinality.allowSafeTag");
+    }
+    if (vm.keyExistsJson(json, ".allowedFinality.minBlockDepth")) {
+      uint256 depth = vm.parseJsonUint(json, ".allowedFinality.minBlockDepth");
+      require(
+        depth >= 1 && depth <= FinalityCodec.MAX_BLOCK_DEPTH,
+        string.concat(
+          "ConfigLib: allowedFinality.minBlockDepth in ",
+          path,
+          " must be 1..65535 - omit it to allow full finality only"
+        )
+      );
+      // casting to 'uint16' is safe because the require above bounds `depth`
+      // forge-lint: disable-next-line(unsafe-typecast)
+      finality.minBlockDepth = uint16(depth);
+    }
   }
 
   /// @notice Fail-fast chain-identity preflight: the named chain config must exist,

@@ -6,7 +6,7 @@ script serves every chain and every lane with nothing hardcoded — you select t
 ```
 config/
   version-tags.json           repo-wide catalog of every versionTag in use (one spelling everywhere)
-  chains/<alias>.json         per chain: router, RMN, storage locations, resolver salt, finalityConfig
+  chains/<alias>.json         per chain: router, RMN, storage locations, resolver salt, allowedFinality
   lanes/<source>-to-<dest>.json   per DIRECTED lane: versionTag, signers, fees, allowlist
   roles/<alias>.json          per chain: who should hold each privileged role (per verifier tag)
   deployments/<alias>.json    per chain: recorded addresses; verifiers[] maps tag → address
@@ -22,7 +22,7 @@ See [Config file schema](config-schema.md) for the full field-by-field reference
 
 The Chainlink-provided fields in a chain file — `router`, `rmn`, `chainId`, `feeTokens`,
 `explorerAddressPath` — are fetched from the public CCIP API, never typed by hand.
-Everything else (`resolverSalt`, `storageLocations`, `finalityConfig`) is operator-owned;
+Everything else (`resolverSalt`, `storageLocations`, `allowedFinality`) is operator-owned;
 the sync tooling never touches those.
 
 Onboarding a new chain:
@@ -133,41 +133,36 @@ The practical consequence for `config/lanes/*.json`: if two verifiers share comm
 members, giving them different `versionTag`s does not isolate them. Separate the signer
 sets instead.
 
-## What `finalityConfig` allows
+## What `allowedFinality` allows
 
-A `bytes4` FinalityCodec value, set per verifier by `SetAllowedFinalityConfig`. It caps
-what a **sender** may request; it is not a setting the verifier applies to itself.
-
-One `bytes4` split in half — 16 flag bits above, a 16-bit block depth below:
+A typed block, set per verifier by `SetAllowedFinalityConfig`. It caps what a **sender**
+may request; it is not a setting the verifier applies to itself.
 
 ```
- bits 31..16  flags                        bits 15..0  block depth (max 65535)
-   bit 16      WAIT_FOR_SAFE_FLAG
-   bits 17..31 reserved, accepted but unassigned
+"allowedFinality": {}                                          full finality only
+"allowedFinality": { "allowSafeTag": true }                    full finality, or the safe tag
+"allowedFinality": { "minBlockDepth": 5 }                      full finality, or a depth of 5 or more
+"allowedFinality": { "allowSafeTag": true, "minBlockDepth": 5 } any of the three
 ```
 
-Three modes come out of that:
+Both keys are optional. The entries are **alternatives** a sender picks one of, not a
+conjunction: a request must be exactly one mode, and requested full finality is always
+allowed whatever the cap says. `allowSafeTag` accepts a request for the `safe` head.
+`minBlockDepth` is a **floor** on depth requests, so a bigger number permits less:
 
-| value | meaning |
+| `minBlockDepth` | a sender may request |
 |---|---|
-| `0x00000000` | wait for full finality |
-| `0x00010000` | wait for the `safe` head — flag only, no depth |
-| `0x00000001`–`0x0000FFFF` | wait for N blocks |
-
-An encoded depth of zero *is* finality, not "no wait". A **request** must be exactly one
-mode; the **cap** may combine several — `0x00010005` permits both `safe` and depth
-requests. Requested full finality is always allowed, whatever the cap says.
-
-The cap's depth is a **floor**, so a bigger number permits less:
-
-| `finalityConfig` | a sender may request |
-|---|---|
-| `0x00000000` | full finality only — **strictest, and the default** |
-| `0x00000005` | full finality, or a depth of 5 or more |
-| `0x00000001` | full finality, or **any** depth at all — the most permissive setting |
+| absent | full finality only — **strictest, and the default** |
+| `5` | full finality, or a depth of 5 or more |
+| `1` | full finality, or **any** depth at all — the most permissive setting |
 
 A low floor is a real trade: a depth-1 attestation can be reorged out on the source after
-the destination has already acted on the message. `0x00000000` is the safe default.
+the destination has already acted on the message. `{}` is the safe default.
+
+The scripts encode the block into the FinalityCodec `bytes4` the verifier stores — the
+`safe` flag at bit 16, the depth in the low 16 bits (1..65535) — so a config value can
+never set one of the codec's reserved bits 17-31. Drift output prints both the hex and
+its reading in words, so a value set by other tooling is legible too.
 
 The cap is enforced on the **source**, at quote time: a disallowed finality fails in the
 verifier's `getFee`; the inbound path never looks at finality. And it applies per
