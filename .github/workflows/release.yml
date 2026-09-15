@@ -1,0 +1,30 @@
+name: Draft release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Draft GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Draft, so a maintainer reviews the notes before anything goes public.
+      # --generate-notes appends the merged-PR list since the previous tag; the
+      # changelog file, when present, is the curated summary above it.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes_file="changelogs/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes_file" ]; then
+            gh release create "$GITHUB_REF_NAME" --draft --title "CCV Starter Kit $GITHUB_REF_NAME" --notes-file "$notes_file" --generate-notes
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "CCV Starter Kit $GITHUB_REF_NAME" --generate-notes
+          fi
