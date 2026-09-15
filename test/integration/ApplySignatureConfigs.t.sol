@@ -36,7 +36,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   string internal constant SOURCE_ALIAS = "zz-scratch-src-chain";
   string internal constant PARTIAL_ALIAS = "zz-scratch-partial-chain";
 
-  // Sepolia selector (matches the staging config).
+  // Sepolia selector.
   uint64 internal constant SOURCE_SELECTOR = 16015286601757825753;
 
   function setUp() public override {

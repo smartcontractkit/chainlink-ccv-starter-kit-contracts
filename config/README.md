@@ -60,7 +60,7 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > **`finalityConfig` defaults to `0x00000000`.** It is the `bytes4` ALLOWED finality
 > (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`. Encoding:
 > `0x00000000` = wait for full finality (safest, production default); the low 16 bits are
-> a block depth (`0x00000001` = depth-1, the fast path Chainlink uses for staging tests);
+> a block depth (`0x00000001` = depth-1, i.e. wait one block instead of full finality, for lower latency);
 > bit 16 (`0x00010000`) is the `safe`-tag flag.
 
 Notes:

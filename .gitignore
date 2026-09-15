@@ -17,7 +17,7 @@ node_modules/
 # -----------------------------------------------------------------------------
 # Config privacy policy
 # -----------------------------------------------------------------------------
-# Real per-deployment config (staging AND prod addresses) must not be committed
+# Real per-deployment config (deployed addresses) must not be committed
 # to this repo
 # Commit ONLY the schema templates (_template.json) and illustrative examples
 # (*.example.json); ignore every other config/*.json (the real, per-deployment

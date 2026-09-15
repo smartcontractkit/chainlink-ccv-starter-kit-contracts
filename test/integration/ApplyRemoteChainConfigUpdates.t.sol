@@ -14,9 +14,10 @@ import {IRouter} from "@chainlink/contracts-ccip/contracts/interfaces/IRouter.so
 contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
   ApplyRemoteChainConfigUpdates internal script;
 
-  // Fuji selector (matches the staging config) used as the remote (dest) chain.
-  uint64 internal constant DEST = 14767482510784806043;
-  address internal constant ROUTER = address(0x784d49a71BB4C48eB7dA4cD7e6Ecb424f9b5EAB1);
+  // Local chain Sepolia, remote (dest) Arbitrum Sepolia on a CCIP v2 lane.
+  // RemoteChainConfig.router is the LOCAL (Sepolia) router the verifier resolves the OnRamp from.
+  uint64 internal constant DEST = 3478487238524512106;
+  address internal constant ROUTER = address(0x0BF3dE8c5D3e8A2B34D2BEeB17ABfCeBaf363A59);
 
   function setUp() public override {
     super.setUp();
