@@ -12,7 +12,7 @@
 #      bytecode_hash="none" across all chains => identical bytecode => identical
 #      address. Any drift is silent and only surfaces later as fee-quoting reverts.
 #
-#   2. Source verification (outline step 17). Matching Chainlink's release
+#   2. Source verification. Matching Chainlink's release
 #      settings lets the deployed bytecode reproduce/verify against the audited
 #      artifacts shipped in the npm package.
 #
@@ -84,5 +84,5 @@ single_line_statement_blocks = "preserve"
 # arbitrum_sepolia   = "${ARBITRUM_SEPOLIA_RPC_URL}"
 
 [etherscan]
-# One entry per chain for `forge verify-contract` (outline step 17).
+# One entry per chain for `forge verify-contract`.
 # sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
