@@ -428,7 +428,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     chainConfig.aliasName = "local";
     chainConfig.chainSelector = SOURCE_SELECTOR;
     chainConfig.rmn = RMN;
-    chainConfig.finalityConfig = 0x00000000;
+    // allowedFinality stays empty: full finality only
     chainConfig.storageLocations = new string[](1);
     chainConfig.storageLocations[0] = "https://aggregator.example/ccv";
     chainConfig.resolverSalt = RESOLVER_SALT;

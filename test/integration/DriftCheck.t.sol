@@ -185,10 +185,10 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkVerifierConfig(deployment, _chainConfig()), 1, "immutable versionTag mismatch");
   }
 
-  function test_drift_finalityConfig() public view {
+  function test_drift_allowedFinality() public view {
     Types.ChainConfig memory chainConfig = _chainConfig();
-    chainConfig.finalityConfig = 0x00000009;
-    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "allowedFinalityConfig mismatch");
+    chainConfig.allowedFinality.minBlockDepth = 9;
+    assertEq(script.checkVerifierConfig(_deployment(), chainConfig), 1, "allowedFinality mismatch");
   }
 
   function test_drift_storageLocations_content() public view {
@@ -484,7 +484,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     roles.resolver.feeAggregator = address(0xBAD);
 
     Types.ChainConfig memory chainConfig = _chainConfig();
-    chainConfig.finalityConfig = 0x00000009;
+    chainConfig.allowedFinality.minBlockDepth = 9;
 
     Types.LaneConfig[] memory lanes = _lanes();
     lanes[0].remote.router = address(0xBAD);
@@ -507,7 +507,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     chainConfig.aliasName = ALIAS;
     chainConfig.chainSelector = LOCAL_SELECTOR;
     chainConfig.rmn = RMN;
-    chainConfig.finalityConfig = 0x00000000; // constructor default; never set in the fixture
+    // allowedFinality stays empty: the constructor default (full finality only); never set in the fixture
     chainConfig.storageLocations = new string[](1);
     chainConfig.storageLocations[0] = STORAGE_LOCATION;
     chainConfig.resolverSalt = RESOLVER_SALT;

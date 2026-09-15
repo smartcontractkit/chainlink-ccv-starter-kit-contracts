@@ -225,6 +225,87 @@ contract ConfigLibTest is Test {
   }
 
   // ---------------------------------------------------------------------------
+  //  allowedFinality: the typed block
+  // ---------------------------------------------------------------------------
+  function test_readChainByPath_parsesAllowedFinalityBlock() public {
+    Types.ChainConfig memory chainConfig =
+      _readChain("finality-both", '"allowedFinality":{"allowSafeTag":true,"minBlockDepth":5},');
+    assertTrue(chainConfig.allowedFinality.allowSafeTag, "safe tag read");
+    assertEq(chainConfig.allowedFinality.minBlockDepth, 5, "depth read");
+
+    chainConfig = _readChain("finality-empty", '"allowedFinality":{},');
+    assertFalse(chainConfig.allowedFinality.allowSafeTag, "empty block: no safe tag");
+    assertEq(chainConfig.allowedFinality.minBlockDepth, 0, "empty block: no depth");
+
+    chainConfig = _readChain("finality-max", '"allowedFinality":{"minBlockDepth":65535},');
+    assertEq(chainConfig.allowedFinality.minBlockDepth, 65535, "max depth read");
+  }
+
+  function test_readChainByPath_revertsWhenAllowedFinalityMissing() public {
+    _expectChainRevert("finality-missing", "", "has no allowedFinality");
+  }
+
+  /// @dev A misspelt key would otherwise load as full finality only, with no error.
+  function test_readChainByPath_revertsOnUnknownAllowedFinalityKey() public {
+    _expectChainRevert("finality-typo", '"allowedFinality":{"minBlockDepht":5},', "unknown key 'minBlockDepht'");
+  }
+
+  /// @dev Zero depth is the codec's spelling of full finality, so a written zero is a
+  ///      contradiction; above 65535 does not fit the 16-bit field.
+  function test_readChainByPath_revertsOnOutOfRangeMinBlockDepth() public {
+    _expectChainRevert("finality-zero", '"allowedFinality":{"minBlockDepth":0},', "must be 1..65535");
+    _expectChainRevert("finality-over", '"allowedFinality":{"minBlockDepth":65536},', "must be 1..65535");
+  }
+
+  function _chainJson(
+    string memory allowedFinalityLine
+  ) private pure returns (string memory) {
+    return string.concat(
+      '{"alias":"tmp-chain","chainId":31337,"chainSelector":"1",',
+      '"router":"0x0000000000000000000000000000000000000001",',
+      '"rmn":"0x0000000000000000000000000000000000000001",',
+      allowedFinalityLine,
+      '"storageLocations":[],"feeTokens":[],',
+      '"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}'
+    );
+  }
+
+  /// @dev Own fixture path per case: forge runs tests concurrently on a shared filesystem.
+  function _readChain(
+    string memory caseName,
+    string memory allowedFinalityLine
+  ) private returns (Types.ChainConfig memory chainConfig) {
+    string memory path = string.concat("out/governance/chain-", caseName, ".local.json");
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, _chainJson(allowedFinalityLine));
+    chainConfig = ConfigLib.readChainByPath(path);
+    vm.removeFile(path);
+  }
+
+  function _expectChainRevert(
+    string memory caseName,
+    string memory allowedFinalityLine,
+    string memory reasonFragment
+  ) private {
+    string memory path = string.concat("out/governance/chain-", caseName, ".local.json");
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, _chainJson(allowedFinalityLine));
+    try this.callReadChain(path) {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, reasonFragment), string.concat("reason names the problem: ", reason));
+    }
+    vm.removeFile(path);
+  }
+
+  /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
+  function callReadChain(
+    string calldata path
+  ) external view returns (Types.ChainConfig memory) {
+    return ConfigLib.readChainByPath(path);
+  }
+
+  // ---------------------------------------------------------------------------
   //  chain-identity preflight (assertChain / assertChainMatches)
   // ---------------------------------------------------------------------------
 

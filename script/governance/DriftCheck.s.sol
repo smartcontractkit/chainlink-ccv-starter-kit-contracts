@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
+import {FinalityConfigLib} from "../../src/lib/FinalityConfigLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
@@ -176,8 +177,10 @@ contract DriftCheck is Script {
         ++drift;
       }
 
-      drift += _diffBytes4(
-        string.concat(prefix, "allowedFinalityConfig"), chainConfig.finalityConfig, verifier.getAllowedFinalityConfig()
+      drift += _diffFinality(
+        string.concat(prefix, "allowedFinality"),
+        FinalityConfigLib.encode(chainConfig.allowedFinality),
+        verifier.getAllowedFinalityConfig()
       );
       drift += _diffStrings(
         string.concat(prefix, "storageLocations"), chainConfig.storageLocations, verifier.getStorageLocations()
@@ -413,15 +416,17 @@ contract DriftCheck is Script {
     return 1;
   }
 
-  function _diffBytes4(
+  /// @dev Prints each side in words too: the hex alone does not show which requests the
+  ///      on-chain value admits, and a reserved bit set by other tooling is only visible there.
+  function _diffFinality(
     string memory label,
     bytes4 expected,
     bytes4 actual
   ) private pure returns (uint256) {
     if (expected == actual) return 0;
     console2.log(string.concat("DRIFT_DETECTED ", label));
-    console2.log("  expected:", ConfigLib.tagToString(expected));
-    console2.log("  actual:  ", ConfigLib.tagToString(actual));
+    console2.log("  expected:", ConfigLib.tagToString(expected), FinalityConfigLib.describe(expected));
+    console2.log("  actual:  ", ConfigLib.tagToString(actual), FinalityConfigLib.describe(actual));
     return 1;
   }
 

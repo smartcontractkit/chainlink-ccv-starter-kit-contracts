@@ -10,7 +10,7 @@
 #
 #  Owns (overwrites) ONLY the fields core-fields.jq lists — and only when the target
 #  already carries the key, and only when the source supplies a non-null value.
-#  Preserves every other key byte-for-byte (finalityConfig,
+#  Preserves every other key byte-for-byte (allowedFinality,
 #  storageLocations, resolverSalt, ...).
 #  chainSelector is the immutable join GUARD and is never rewritten.
 #

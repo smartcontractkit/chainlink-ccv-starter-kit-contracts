@@ -74,7 +74,7 @@ Ten scripts across three contracts. Every one is a single privileged call.
 | `ApplyAllowlistUpdates` | verifier | **source** of each lane | owner *or* `allowlistAdmin` | `run(string,bytes4)` | `lanes/*.json` → `allowlist` |
 | `ApplySignatureConfigs` | verifier | **dest** of each lane | verifier owner | `run(string,bytes4)` | `lanes/*.json` → `signatureConfig` |
 | `SetDynamicConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `roles/*.json` → `verifiers[]` for tag |
-| `SetAllowedFinalityConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `chains/*.json` → `finalityConfig` |
+| `SetAllowedFinalityConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `chains/*.json` → `allowedFinality` |
 | `UpdateStorageLocations` | verifier | the chain | **`storageLocationsAdmin`** | `run(string,bytes4)` | `chains/*.json` → `storageLocations` |
 | `ApplyOutboundImplementationUpdates` | resolver | **source** of each lane | resolver owner | `run(string)` | `lanes/*.json` → dest selector + lane `versionTag` |
 | `ApplyInboundImplementationUpdates` | resolver | the chain | resolver owner | `run(string)` | `lanes/*.json` → lane `versionTag` for inbound dest |
@@ -135,9 +135,9 @@ make update-storage-locations CHAIN=sepolia TAG=$TAG RPC_URL=$SEPOLIA_RPC_URL OU
   selected verifier, so it always writes both. Changing one means passing the current value
   of the other; both come from the `verifiers[]` entry for `$TAG` in
   `config/roles/<alias>.json`.
-- **`SetAllowedFinalityConfig`** — the `bytes4` FinalityCodec value the verifier will
-  accept. `0x00000000` is full finality; the low 16 bits are a block depth, so
-  `0x00000001` permits the depth-1 fast path. One value per verifier, **not per lane** —
+- **`SetAllowedFinalityConfig`** — the finality requests the verifier will accept, from
+  the `allowedFinality` block. `{}` is full finality only; `{ "minBlockDepth": 1 }` also
+  permits the depth-1 fast path. One value per verifier, **not per lane** —
   you cannot run one destination on the fast path and another on full finality from the
   same verifier. Enforced on the outbound `getFee` call, so a disallowed finality fails at
   quote time.

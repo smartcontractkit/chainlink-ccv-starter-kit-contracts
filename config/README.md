@@ -27,7 +27,7 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
   "rmn":              "0x...",                 // Chainlink-provided RMN address. MUST be non-zero.
   "router":           "0x...",                 // Chainlink's local CCIP router; synced from the API. Lanes inherit it unless they override.
                                                // Synced fields: router, rmn, chainId, feeTokens, explorerAddressPath.
-  "finalityConfig":   "0x00000001",            // bytes4 FinalityCodec value. ⚠️ PLACEHOLDER — see note below.
+  "allowedFinality":  {},                      // what a SENDER may request; {} = full finality only. See note below.
   "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
   "feeTokens":        ["0x..."],               // fee tokens to report on / sweep. Empty => fee scripts no-op.
   "resolverSalt":     "0x0000...0001",         // CREATE2 salt for the resolver. MUST be identical on every chain.
@@ -57,11 +57,13 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > a broken entry is a misconfiguration, never treated as an empty balance. `BalanceReport`
 > flags such an entry as `UNREADABLE`.
 
-> **`finalityConfig` defaults to `0x00000000`.** It is the `bytes4` ALLOWED finality
-> (FinalityCodec) set on the verifier via `setAllowedFinalityConfig`. Encoding:
-> `0x00000000` = wait for full finality (safest, production default); the low 16 bits are
-> a block depth (`0x00000001` = depth-1, i.e. wait one block instead of full finality, for lower latency);
-> bit 16 (`0x00010000`) is the `safe`-tag flag.
+> **`allowedFinality` is the ALLOWED finality** set on the verifier via
+> `setAllowedFinalityConfig`: the requests a sender may make, as alternatives. Full finality
+> is always allowed. Two optional keys widen it: `"allowSafeTag": true` also accepts a
+> request for the `safe` tag; `"minBlockDepth": N` (1..65535) also accepts a depth request
+> of N blocks or more. `{}` allows full finality only, the production default. The scripts
+> generate the FinalityCodec `bytes4` from this block, so the encoding is never typed by
+> hand; `{ "minBlockDepth": 1 }` waits one block instead of full finality, for lower latency.
 
 Notes:
 - `storageLocations` is a **cross-workstream input** from the off-chain/infra team

@@ -218,7 +218,7 @@ rm -f "$CFG2"
 
 echo "check --all: a chain the upstream does not know is SKIPPED, not a failure"
 cat > "$TMP/config/chains/localchain.json" <<'JSON'
-{"alias":"localchain","chainId":31337,"chainSelector":"424242","router":"0x0000000000000000000000000000000000000001","rmn":"0x0000000000000000000000000000000000000001","finalityConfig":"0x00000001","storageLocations":[],"feeTokens":[],"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}
+{"alias":"localchain","chainId":31337,"chainSelector":"424242","router":"0x0000000000000000000000000000000000000001","rmn":"0x0000000000000000000000000000000000000001","allowedFinality":{"minBlockDepth":1},"storageLocations":[],"feeTokens":[],"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}
 JSON
 before="$(hash_of "$TMP/config/chains/localchain.json")"
 out="$(run check --all)"
