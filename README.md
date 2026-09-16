@@ -2,11 +2,6 @@
 
 Starter Kit for Chainlink Cross-Chain Verifiers (CCVs) on-chain deployment and configuration.
 
-> **Note**
->
-> _This repository provides on-chain deployment, configuration, and governance tooling for the Chainlink CCIP Cross-Chain Verifier (Foundry scripts that deploy and configure the audited CCIP CCV contracts). It has not been independently audited by a third-party security firm. It is provided "AS IS" and "AS AVAILABLE", without warranties of any kind, and is not a substitute for your own security review. You are responsible for adapting it to your own infrastructure, following the minimum committee sizing and operational recommendations in the documentation, and for reviewing, testing, configuring, and auditing your deployment before production use. Neither Chainlink Labs, the Chainlink Foundation, nor Chainlink node operators are responsible for any losses or unintended outcomes arising from its use._
-
-
 The onchain workstream for the Chainlink **CCV (Crosschain Verifier) Starter Kit**.
 It deploys and configures existing, already-audited Chainlink CCV contracts and
 provides the deploy / config / governance tooling around them. **No new Solidity is
