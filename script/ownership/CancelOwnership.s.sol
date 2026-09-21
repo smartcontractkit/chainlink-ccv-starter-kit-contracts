@@ -11,7 +11,7 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Cancels a pending (proposed but not yet accepted) ownership transfer by
 ///         re-proposing address(0): Ownable2Step keeps exactly one pending owner, so
 ///         overwriting it with zero leaves nobody able to accept.
-/// @dev Generic over target ("verifier[:<versionTag>]" | "resolver" | "factory"), like TransferOwnership.
+/// @dev Generic over target ("verifier:<versionTag>" | "resolver" | "factory"), like TransferOwnership.
 ///      Executed by the CURRENT owner (onlyOwner on-chain); the zero address lives only
 ///      here so TransferOwnership keeps rejecting it as a proposed owner.
 /// @dev Harmless when nothing is pending: the call just overwrites zero with zero.
@@ -21,7 +21,7 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/ownership/CancelOwnership.s.sol \
-///     --sig "run(string,string)" sepolia verifier
+///     --sig "run(string,string)" sepolia verifier:0x00010001
 contract CancelOwnership is BaseScript {
   function callFor(
     address to

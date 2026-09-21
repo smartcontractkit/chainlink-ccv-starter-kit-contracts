@@ -5,25 +5,27 @@ script serves every chain and every lane with nothing hardcoded — you select t
 
 ```
 config/
-  version-tags.json           repo-wide catalog of every versionTag in use (one spelling everywhere)
-  chains/<alias>.json         per chain: router, RMN, storage locations, resolver salt, allowedFinality
-  lanes/<source>-to-<dest>.json   per DIRECTED lane: versionTag, signers, fees, allowlist
-  roles/<alias>.json          per chain: who should hold each privileged role (per verifier tag)
+  chains/<alias>.json         per chain, Chainlink's synced reference: router, RMN, chainId, fee tokens, explorer
+  operator.json               repo-wide operator identities: resolverSalt, the versionTag catalog (one spelling everywhere)
+  operator/chains/<alias>.json       per chain: one verifiers[] entry per versionTag (allowedFinality, storage locations, committee, roles), plus resolver and factory roles
+  operator/lanes/<source>-to-<dest>.json   per DIRECTED lane: versionTag, fees, allowlist
   deployments/<alias>.json    per chain: recorded addresses; verifiers[] maps tag → address
 ```
 
 Files named `_template.json` document the full schema. Files ending `.example.json` are
-illustrative. Real per-deployment files are named after the chain alias (`sepolia.json`)
-or the lane (`sepolia-to-base_sepolia.json`).
+illustrative. Real files are named after the chain alias (`sepolia.json`) or the lane
+(`sepolia-to-base_sepolia.json`).
 
 See [Config file schema](config-schema.md) for the full field-by-field reference.
 
 ## Where the Chainlink fields come from
 
-The Chainlink-provided fields in a chain file — `router`, `rmn`, `chainId`, `feeTokens`,
-`explorerAddressPath` — are fetched from the public CCIP API, never typed by hand.
-Everything else (`resolverSalt`, `storageLocations`, `allowedFinality`) is operator-owned;
-the sync tooling never touches those.
+A chain file holds only Chainlink-provided fields — `router`, `rmn`, `chainId`, `feeTokens`,
+`explorerAddressPath` — fetched from the public CCIP API and never typed by hand, so a
+sync shows up as a diff over those fields alone. The operator's own values
+(`resolverSalt`, and each verifier's storage locations, finality and committee) live in
+the operator files, which
+the sync tooling never touches.
 
 Onboarding a new chain:
 
@@ -35,7 +37,7 @@ make discover
 #    requires: CHAIN, SELECTOR
 make add-chain CHAIN=sepolia SELECTOR=16015286601757825753
 
-# 3. hand-fill the operator fields it lists as "still to fill in", then deploy
+# 3. declare config/operator/chains/<alias>.json, then deploy
 ```
 
 `add-chain` never overwrites an existing file — re-running it prints `OK` if the file
@@ -44,7 +46,7 @@ agrees with the API, or a field-by-field `WARN` diff if it does not, and writes 
 Staying in sync:
 
 ```bash
-make sync-check                # read-only, all chains; run on a schedule
+make sync-check                # read-only, all chains
 make sync-chain CHAIN=sepolia  # accept upstream values, one chain — requires: CHAIN
 ```
 
@@ -76,7 +78,7 @@ changes what every value means:
 |---|---|
 | `versionTag` | both — must match in the two directions' files |
 | router used | the **source's** local router |
-| `signatureConfig` | written to the **destination's** verifier |
+| signer set | declared once in the **source's** operator file, on that tag's verifier entry; written to every **destination's** verifier, keyed by the source selector |
 | `allowlist` | senders on the **source** chain |
 
 The router is the **local** router of whichever chain is the *source* — not the remote
@@ -85,8 +87,9 @@ of the lane file and it is inherited from the source chain's `chains/<alias>.jso
 is kept correct by the [sync tooling](#where-the-chainlink-fields-come-from). Set it explicitly only to
 `0x0`, to pause the lane.
 
-The two committees may also differ legitimately. Nothing requires the signer set that
-verifies A → B to equal the one that verifies B → A.
+The two directions have separate committees: A → B uses the `signatureConfig` on A's
+entry for the tag, B → A uses B's. Every destination of one source applies that source's
+committee, because all of them read the same entry.
 
 ## Values that must match across chains
 
@@ -96,16 +99,16 @@ Two fields must agree on both chains of a lane:
   with that tag and record it in `deployments/<alias>.json`. The destination verifier
   rejects any message whose tag is not its own; the tag is immutable, so a mismatch means
   redeploying the verifier.
-- **`resolverSalt`** — in each chain file. Determines the resolver's CREATE2 address.
-  Different salts mean different addresses.
+- **`resolverSalt`** — one repo-wide value in `config/operator.json`. Determines the
+  resolver's CREATE2 address.
 
-`LaneParityCheck` asserts both, plus that the recorded resolver addresses actually agree —
-matching salts are necessary but not sufficient, since the factory address and initcode
-must match too. See [Governance checks](governance.md).
+`LaneParityCheck` asserts the tag, plus that the recorded resolver salts and addresses
+agree — a matching salt is necessary but not sufficient, since the factory address and
+initcode must match too. See [Governance checks](governance.md).
 
-The tag must also appear in `config/version-tags.json` before deploy, and each chain's
-`config/roles/<alias>.json` must declare a `verifiers[]` entry for it — `DeployVerifier`
-reads that entry and refuses a tag with no roles row.
+The tag must also appear in `config/operator.json` before deploy, and each chain's
+`config/operator/chains/<alias>.json` must declare a `verifiers[]` entry for it — `DeployVerifier`
+reads that entry and refuses a tag with no entry.
 
 ## What `versionTag` is, and is not
 
@@ -117,7 +120,7 @@ it.
 Each **lane** pins the tag it uses via its mandatory `versionTag` field. A chain can run
 several verifiers at once (each with a different tag); lanes migrate individually by
 flipping their tag and re-running configure. The repo-wide spelling lives in
-`config/version-tags.json`.
+`config/operator.json`.
 
 The suggested scheme is two bytes of operator id and two of version, so `0xAABBCCDD` reads
 as operator `AABB` at version `CCDD`. The catalog loader enforces non-zero halves; the
@@ -129,7 +132,7 @@ never be the primary defence — that job belongs to **non-overlapping signer se
 signature produced for one verifier is not valid for another regardless of tags. Treat the
 tag as protection against *accidental* misuse, not against an attacker.
 
-The practical consequence for `config/lanes/*.json`: if two verifiers share committee
+The practical consequence for `config/operator/lanes/*.json`: if two verifiers share committee
 members, giving them different `versionTag`s does not isolate them. Separate the signer
 sets instead.
 

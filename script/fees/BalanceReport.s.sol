@@ -14,7 +14,7 @@ import {console2} from "forge-std/console2.sol";
 ///         verifier and the resolver (old verifiers keep accruing fees
 ///         while they drain). Also reads each contract's configured feeAggregator ADDRESS (no
 ///         aggregator balances): zero means withdrawFeeTokens would revert, a mismatch
-///         vs config/roles means a sweep would pay out to an unintended destination.
+///         vs config/operator/chains/<alias>.json means a sweep would pay out to an unintended destination.
 /// @dev Read-only: no broadcasting, no Safe output. Run without --broadcast. Extends
 ///      BaseScript for its shared preflights only; the staging plumbing goes unused.
 ///
@@ -93,7 +93,7 @@ contract BalanceReport is BaseScript {
     ConfigLib.assertChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
 
     console2.log("[BalanceReport] chain:", chainAlias);
     console2.log("  verifiers recorded:", deployment.verifiers.length);
@@ -111,7 +111,7 @@ contract BalanceReport is BaseScript {
 
     // ---- every recorded verifier ----
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
-      _reportVerifier(deployment.verifiers[i], roles, chainConfig.feeTokens);
+      _reportVerifier(deployment.verifiers[i], operator, chainConfig.feeTokens);
     }
 
     // ---- resolver ----
@@ -124,8 +124,11 @@ contract BalanceReport is BaseScript {
     } else {
       console2.log("  resolver feeAggregator:", rAgg);
     }
-    if (rOk && roles.resolver.feeAggregator != address(0) && rAgg != roles.resolver.feeAggregator) {
-      console2.log("  DRIFT resolver feeAggregator != config/roles; expected:", roles.resolver.feeAggregator);
+    if (rOk && operator.resolver.roles.feeAggregator != address(0) && rAgg != operator.resolver.roles.feeAggregator) {
+      console2.log(
+        "  DRIFT resolver feeAggregator != config/operator/chains/<alias>.json; expected:",
+        operator.resolver.roles.feeAggregator
+      );
     }
 
     if (chainConfig.feeTokens.length == 0) {
@@ -148,7 +151,7 @@ contract BalanceReport is BaseScript {
   ///      gap, so a missing roles entry is a WARN here (DriftCheck flags it as drift).
   function _reportVerifier(
     Types.VerifierDeployment memory entry,
-    Types.RolesConfig memory roles,
+    Types.OperatorConfig memory operator,
     address[] memory feeTokens
   ) private view {
     console2.log(string.concat("  verifier ", ConfigLib.tagToString(entry.versionTag), ":"), entry.addr);
@@ -163,12 +166,12 @@ contract BalanceReport is BaseScript {
       console2.log("    feeAggregator:", vAgg);
     }
 
-    if (!ConfigLib.hasVerifierRolesTag(roles, entry.versionTag)) {
-      console2.log("    WARN no roles entry for this versionTag in config/roles");
+    if (!ConfigLib.hasVerifierConfigTag(operator, entry.versionTag)) {
+      console2.log("    WARN no roles entry for this versionTag in config/operator/chains/<alias>.json");
     } else {
-      address intended = ConfigLib.verifierRolesByTag(roles, entry.versionTag).feeAggregator;
+      address intended = ConfigLib.verifierConfigByTag(operator, entry.versionTag).roles.feeAggregator;
       if (vOk && intended != address(0) && vAgg != intended) {
-        console2.log("    DRIFT feeAggregator != config/roles; expected:", intended);
+        console2.log("    DRIFT feeAggregator != config/operator/chains/<alias>.json; expected:", intended);
       }
     }
 

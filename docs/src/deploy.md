@@ -15,13 +15,13 @@ submitting anything, so this is what keeps a simulated address out of
 
 **Before `deploy-verifier`**, ensure:
 
-1. The tag is listed in `config/version-tags.json`.
-2. `config/roles/<alias>.json` has a `verifiers[]` entry for that tag (owner,
+1. The tag is listed in `config/operator.json`.
+2. `config/operator/chains/<alias>.json` has a `verifiers[]` entry for that tag (owner,
    `storageLocationsAdmin`, `feeAggregator`, `allowlistAdmin`).
 3. `rmn` in the chain config is non-zero and correct — it is immutable with no getter.
 
 **Deploying also hands over roles.** All three scripts read
-`config/roles/<alias>.json` and *propose* the roles declared there to their intended
+`config/operator/chains/<alias>.json` and *propose* the roles declared there to their intended
 holders. Every one of these roles is two-step, so proposing changes nothing on its own:
 the deployer keeps the role until the incoming holder accepts, via
 [handover](handover.md). A role whose configured holder is the deployer is left alone.
@@ -43,7 +43,7 @@ require(vm.getNonce(deployer) == 0, "BootstrapFactory: deployer nonce != 0 (addr
 
 The deployer is placed in the factory's allowlist at construction so it can drive the
 CREATE2 deploy in the next step. Ownership then goes to the configured
-`factory.owner` from `config/roles/<alias>.json` — as a *proposal*, since `CREATE2Factory`
+`factory.roles.owner` from `config/operator/chains/<alias>.json` — as a *proposal*, since `CREATE2Factory`
 is `Ownable2Step`. Leave it unset (or equal to the deployer) to keep the deployer as owner.
 
 The factory is recorded into `config/deployments/<alias>.json`, along with the deploy-time
@@ -59,7 +59,7 @@ These pin what was deployed — they do not move when config changes — and the
 make deploy-resolver CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 ```
 
-Deployed through the factory with the fixed `resolverSalt` from the chain config. The
+Deployed through the factory with the repo-wide `resolverSalt` from `config/operator.json`. The
 resolver has no constructor arguments, so its initcode is just its creation bytecode —
 nothing per-chain can perturb the address.
 
@@ -69,7 +69,7 @@ The script precomputes the address, deploys, and asserts they match:
 require(resolver == predicted, "DeployResolver: deployed address != predicted (determinism broken)");
 ```
 
-Ownership is proposed to `resolver.owner`. If that is the deployer, the script accepts
+Ownership is proposed to `resolver.roles.owner`. If that is the deployer, the script accepts
 in-place so the resolver is immediately usable.
 
 **Confirm the resolver address matches the other chains before continuing.** Divergence
@@ -86,21 +86,22 @@ The `bytes4` tag is an explicit deploy argument — each run appends a new entry
 `deployments/<alias>.json`'s `verifiers[]` array. A duplicate tag reverts unless
 `ALLOW_TAG_REPLACE=true` (for redoing a failed deploy before anything references it).
 
-Five values must be set before this runs — two from the chain config, three from the roles
-file for this tag. The script checks all five up front:
+Five values must be set before this runs — `rmn` from the chain config, the tag in the
+`config/operator.json` catalog, three from the operator file's entry for this tag. The
+script checks all five up front:
 
 | Requirement | Source file | Revert message |
 |---|---|---|
 | `rmn` non-zero | `config/chains/<alias>.json` | `DeployVerifier: rmn must be non-zero` |
-| tag non-zero and catalogued | deploy argument + `config/version-tags.json` | `DeployVerifier: versionTag must be non-zero` / catalog error |
-| `verifier.owner` set | `config/roles/<alias>.json` → `verifiers[]` for tag | `DeployVerifier: verifier.owner role unset` |
+| tag non-zero and catalogued | deploy argument + `config/operator.json` | `DeployVerifier: versionTag must be non-zero` / catalog error |
+| `verifier.owner` set | `config/operator/chains/<alias>.json` → `verifiers[]` entry for tag | `DeployVerifier: verifier.owner role unset` |
 | `verifier.storageLocationsAdmin` set | same | `DeployVerifier: verifier.storageLocationsAdmin role unset` |
 | `verifier.feeAggregator` set | same | `DeployVerifier: verifier.feeAggregator role unset` |
 
 `allowlistAdmin` is read from the same roles entry but is *not* checked — a zero value
 deploys fine.
 
-Plain `CREATE` with constructor arguments from config: dynamic config (from roles),
+Plain `CREATE` with constructor arguments from config: dynamic config and storage locations (from the verifier's operator entry), RMN (from the chain config),
 storage locations and RMN (from chain config), and the deploy-time `versionTag`. Its
 address will differ per chain — that is fine, because callers reach it through the resolver.
 
@@ -143,8 +144,8 @@ address matches the other chains before configuring anything on top of it.
 
 To run an upgrade alongside the old verifier:
 
-1. Add the new tag to `config/version-tags.json`.
-2. Add a `verifiers[]` roles entry for it.
+1. Add the new tag to `config/operator.json`.
+2. Add a `verifiers[]` entry for it in every chain's operator file.
 3. `make deploy-verifier CHAIN=… TAG=<new> RPC_URL=…` on every chain.
 4. Migrate lanes one at a time — flip `versionTag` in the lane file, re-run configure.
 5. Retire the old verifier once in-flight messages drain — see

@@ -12,8 +12,8 @@ contract Harness is BaseScript {
   /// @dev Stands in for the executing Safe; only its presence in the batch JSON matters.
   address public constant SAFE = address(0x5AFE);
 
-  /// @dev Scoped to "test" so the batch lands in out/safe/test/, which .gitignore
-  ///      excludes as a directory. Everything else under out/safe/ is committed.
+  /// @dev Scoped to "test" so the batch lands in out/safe/test/, apart from the batches a
+  ///      real run produces.
   function initSafe() external {
     _initOutput(OutputMode.SAFE, "test", SAFE);
   }

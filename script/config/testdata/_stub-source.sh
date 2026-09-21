@@ -11,10 +11,15 @@
 #  non-zero exit plus a stderr reason on failure.
 #
 #  Exit: 0 OK | 4 NOT_FOUND (no fixture for this selector)
+#        5 API_UNREACHABLE (a <selector>.unreachable marker exists)
 # =============================================================================
 set -uo pipefail
 SELECTOR="${1:?usage: _stub-source.sh <chainSelector>}"
 FIXTURE="${FIXTURE_DIR:?FIXTURE_DIR must be set}/$SELECTOR.json"
+[ -f "$FIXTURE_DIR/$SELECTOR.unreachable" ] && {
+    echo "[stub-source] API_UNREACHABLE: simulated for selector $SELECTOR" >&2
+    exit 5
+}
 [ -f "$FIXTURE" ] || {
     echo "[stub-source] NOT_FOUND: no fixture for selector $SELECTOR" >&2
     exit 4

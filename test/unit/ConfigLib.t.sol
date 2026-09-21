@@ -25,7 +25,7 @@ contract ChainAssertHarness {
 /// @notice Unit tests for the config-as-data loader. Uses the shipped example files
 ///         directly (path-based) so it does not depend on operator-specific configs.
 contract ConfigLibTest is Test {
-  string internal constant LANE_EXAMPLE = "config/lanes/sepolia-to-base_sepolia.example.json";
+  string internal constant LANE_EXAMPLE = "config/operator/lanes/sepolia-to-base_sepolia.example.json";
 
   function test_readLaneByPath_parsesExample() public view {
     Types.LaneConfig memory lane = ConfigLib.readLaneByPath(LANE_EXAMPLE);
@@ -36,12 +36,54 @@ contract ConfigLibTest is Test {
     assertEq(lane.dest.aliasName, "base_sepolia");
     assertEq(lane.dest.chainSelector, 10344971235874465080);
     assertEq(lane.versionTag, bytes4(0x00010001), "mandatory versionTag parsed");
+  }
 
-    // Signature config must respect the "threshold < signers, threshold > 2/3" constraint.
-    assertEq(lane.signatureConfig.threshold, 7);
-    assertEq(lane.signatureConfig.signers.length, 10);
-    assertLt(lane.signatureConfig.threshold, lane.signatureConfig.signers.length); // not N-of-N
-    assertGt(uint256(lane.signatureConfig.threshold) * 3, lane.signatureConfig.signers.length * 2); // > 2/3
+  /// @dev The join the loader makes on a lane's behalf: the lane pins a tag, and the
+  ///      committee for it comes from the SOURCE chain's operator file. Nothing about the
+  ///      signer set is readable from the lane file, which is what stops two
+  ///      destinations of one source from disagreeing.
+  function test_committeeForExampleLane_comesFromTheSourceOperatorFile() public view {
+    Types.LaneConfig memory lane = ConfigLib.readLaneByPath(LANE_EXAMPLE);
+    assertEq(lane.source.aliasName, "sepolia", "the example operator file is this lane's source");
+
+    Types.SignatureConfig memory committee =
+    ConfigLib.verifierConfigByTag(ConfigLib.readOperatorByPath(ROLES_EXAMPLE), lane.versionTag).signatureConfig;
+
+    assertEq(committee.threshold, 7, "threshold read from the source's operator file");
+    assertEq(committee.signers.length, 10, "committee read from the source's operator file");
+  }
+
+  /// @dev One entry per verifier tag, carrying everything that verifier is declared
+  ///      with. The committee must respect "threshold < signers, threshold > 2/3".
+  function test_readOperatorByPath_parsesVerifierEntry() public view {
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath(ROLES_EXAMPLE);
+    assertEq(operator.verifiers.length, 1, "one entry per verifier tag");
+
+    Types.VerifierConfig memory v = ConfigLib.verifierConfigByTag(operator, bytes4(0x00010001));
+    assertEq(v.storageLocations.length, 1, "where this verifier's signers publish");
+    assertFalse(v.allowedFinality.allowSafeTag, "example allows full finality only");
+    assertEq(v.signatureConfig.threshold, 7);
+    assertEq(v.signatureConfig.signers.length, 10);
+    assertLt(v.signatureConfig.threshold, v.signatureConfig.signers.length); // not N-of-N
+    assertGt(uint256(v.signatureConfig.threshold) * 3, v.signatureConfig.signers.length * 2); // > 2/3
+    assertEq(v.roles.owner, address(0x2000000000000000000000000000000000000001), "role holders travel with it");
+  }
+
+  function test_verifierConfigByTag_revertsOnUndeclaredTag() public {
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath(ROLES_EXAMPLE);
+    try this.callVerifierConfigByTag(operator, 0x00010002) {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, "no verifiers entry for versionTag 0x00010002"), reason);
+    }
+  }
+
+  /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
+  function callVerifierConfigByTag(
+    Types.OperatorConfig memory operator,
+    bytes4 tag
+  ) external pure returns (Types.VerifierConfig memory) {
+    return ConfigLib.verifierConfigByTag(operator, tag);
   }
 
   /// @dev The versionTag is mandatory: a lane without one must fail with a message that
@@ -79,7 +121,7 @@ contract ConfigLibTest is Test {
     try this.callRequireKnownTag(0xdeadbeef) {
       fail();
     } catch Error(string memory reason) {
-      assertTrue(vm.contains(reason, "not catalogued in config/version-tags.json"), reason);
+      assertTrue(vm.contains(reason, "not catalogued in config/operator.json"), reason);
     }
   }
 
@@ -98,7 +140,7 @@ contract ConfigLibTest is Test {
       '"source":{"alias":"a","chainSelector":"1"},',
       '"dest":{"alias":"b","chainSelector":"2"},',
       versionTagLine,
-      '"signatureConfig":{"threshold":1,"signers":[]}}'
+      '"allowlist":{"allowlistEnabled":false,"allowedSenders":[]}}'
     );
   }
 
@@ -129,7 +171,7 @@ contract ConfigLibTest is Test {
 
   function test_listLanes_skipsTemplatesAndExamples() public view {
     // Every listed path must be a .json and must NOT be a template or example,
-    // regardless of how many real (gitignored) lane files exist locally.
+    // regardless of how many real lane files exist locally.
     string[] memory lanes = ConfigLib.listLanes();
     for (uint256 i = 0; i < lanes.length; ++i) {
       assertTrue(_endsWithJson(lanes[i]), "listed path must end in .json");
@@ -142,46 +184,52 @@ contract ConfigLibTest is Test {
   //  roles: factory.allowlist
   // ---------------------------------------------------------------------------
 
-  string internal constant ROLES_EXAMPLE = "config/roles/sepolia.example.json";
+  string internal constant ROLES_EXAMPLE = "config/operator/chains/sepolia.example.json";
 
-  function test_readRolesByPath_parsesFactoryAllowlist() public view {
-    Types.RolesConfig memory roles = ConfigLib.readRolesByPath(ROLES_EXAMPLE);
-    assertEq(roles.factoryAllowlist.length, 1, "one allowlisted account");
-    assertEq(roles.factoryAllowlist[0], address(0x2000000000000000000000000000000000000001), "the example account");
+  function test_readOperatorByPath_parsesFactoryAllowlist() public view {
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath(ROLES_EXAMPLE);
+    assertEq(operator.factory.roles.allowlist.length, 1, "one allowlisted account");
+    assertEq(
+      operator.factory.roles.allowlist[0], address(0x2000000000000000000000000000000000000001), "the example account"
+    );
   }
 
-  function test_readRolesByPath_revertsWhenFactoryAllowlistMissing() public {
-    _expectRolesRevert("no-allowlist", _rolesJson('"factory":{"owner":"0x2000000000000000000000000000000000000001"}'));
+  function test_readOperatorByPath_revertsWhenFactoryAllowlistMissing() public {
+    _expectRolesRevert(
+      "no-allowlist", _rolesJson('"factory":{"roles":{"owner":"0x2000000000000000000000000000000000000001"}}')
+    );
   }
 
-  function test_readRolesByPath_revertsOnZeroInFactoryAllowlist() public {
+  function test_readOperatorByPath_revertsOnZeroInFactoryAllowlist() public {
     _expectRolesRevert(
       "zero-in-allowlist",
       _rolesJson(
-        '"factory":{"owner":"0x2000000000000000000000000000000000000001",'
-        '"allowlist":["0x0000000000000000000000000000000000000000"]}'
+        '"factory":{"roles":{"owner":"0x2000000000000000000000000000000000000001",'
+        '"allowlist":["0x0000000000000000000000000000000000000000"]}}'
       ),
       "zero address in factory.allowlist"
     );
   }
 
-  function test_readRolesByPath_acceptsEmptyFactoryAllowlist() public {
+  function test_readOperatorByPath_acceptsEmptyFactoryAllowlist() public {
     string memory path = "out/governance/roles-empty-allowlist.local.json";
     vm.createDir("out/governance", true);
-    vm.writeFile(path, _rolesJson('"factory":{"owner":"0x2000000000000000000000000000000000000001","allowlist":[]}'));
-    Types.RolesConfig memory roles = ConfigLib.readRolesByPath(path);
-    assertEq(roles.factoryAllowlist.length, 0, "[] is the deliberate revoke-everyone set");
+    vm.writeFile(
+      path, _rolesJson('"factory":{"roles":{"owner":"0x2000000000000000000000000000000000000001","allowlist":[]}}')
+    );
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath(path);
+    assertEq(operator.factory.roles.allowlist.length, 0, "[] is the deliberate revoke-everyone set");
     vm.removeFile(path);
   }
 
-  /// @dev A roles file with no verifiers, so only the `factory` object varies per case.
+  /// @dev An operator file with no verifiers, so only the `factory` object varies per case.
   function _rolesJson(
     string memory factoryObject
   ) private pure returns (string memory) {
     return string.concat(
       '{"alias":"zz-roles-fixture","verifiers":[],',
-      '"resolver":{"owner":"0x2000000000000000000000000000000000000001",',
-      '"feeAggregator":"0x2000000000000000000000000000000000000005"},',
+      '"resolver":{"roles":{"owner":"0x2000000000000000000000000000000000000001",',
+      '"feeAggregator":"0x2000000000000000000000000000000000000005"}},',
       factoryObject,
       "}"
     );
@@ -214,88 +262,187 @@ contract ConfigLibTest is Test {
       }
     } catch {}
     vm.removeFile(path);
-    assertTrue(reverted, "readRolesByPath must reject this file");
+    assertTrue(reverted, "readOperatorByPath must reject this file");
   }
 
   /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
   function callReadRoles(
     string calldata path
-  ) external view returns (Types.RolesConfig memory) {
-    return ConfigLib.readRolesByPath(path);
+  ) external view returns (Types.OperatorConfig memory) {
+    return ConfigLib.readOperatorByPath(path);
   }
 
   // ---------------------------------------------------------------------------
-  //  allowedFinality: the typed block
+  //  allowedFinality: the typed block (config/operator/chains)
   // ---------------------------------------------------------------------------
-  function test_readChainByPath_parsesAllowedFinalityBlock() public {
-    Types.ChainConfig memory chainConfig =
-      _readChain("finality-both", '"allowedFinality":{"allowSafeTag":true,"minBlockDepth":5},');
-    assertTrue(chainConfig.allowedFinality.allowSafeTag, "safe tag read");
-    assertEq(chainConfig.allowedFinality.minBlockDepth, 5, "depth read");
+  function test_readOperatorByPath_parsesAllowedFinalityBlock() public {
+    Types.OperatorConfig memory operator =
+      _readOperator("finality-both", '"allowedFinality":{"allowSafeTag":true,"minBlockDepth":5},');
+    assertTrue(operator.verifiers[0].allowedFinality.allowSafeTag, "safe tag read");
+    assertEq(operator.verifiers[0].allowedFinality.minBlockDepth, 5, "depth read");
+    assertEq(operator.verifiers[0].storageLocations.length, 1, "storage locations read");
 
-    chainConfig = _readChain("finality-empty", '"allowedFinality":{},');
-    assertFalse(chainConfig.allowedFinality.allowSafeTag, "empty block: no safe tag");
-    assertEq(chainConfig.allowedFinality.minBlockDepth, 0, "empty block: no depth");
+    operator = _readOperator("finality-empty", '"allowedFinality":{},');
+    assertFalse(operator.verifiers[0].allowedFinality.allowSafeTag, "empty block: no safe tag");
+    assertEq(operator.verifiers[0].allowedFinality.minBlockDepth, 0, "empty block: no depth");
 
-    chainConfig = _readChain("finality-max", '"allowedFinality":{"minBlockDepth":65535},');
-    assertEq(chainConfig.allowedFinality.minBlockDepth, 65535, "max depth read");
+    operator = _readOperator("finality-max", '"allowedFinality":{"minBlockDepth":65535},');
+    assertEq(operator.verifiers[0].allowedFinality.minBlockDepth, 65535, "max depth read");
   }
 
-  function test_readChainByPath_revertsWhenAllowedFinalityMissing() public {
-    _expectChainRevert("finality-missing", "", "has no allowedFinality");
+  function test_readOperatorByPath_revertsWhenAllowedFinalityMissing() public {
+    _expectOperatorRevert("finality-missing", "", "has no .verifiers[0].allowedFinality");
   }
 
   /// @dev A misspelt key would otherwise load as full finality only, with no error.
-  function test_readChainByPath_revertsOnUnknownAllowedFinalityKey() public {
-    _expectChainRevert("finality-typo", '"allowedFinality":{"minBlockDepht":5},', "unknown key 'minBlockDepht'");
+  function test_readOperatorByPath_revertsOnUnknownAllowedFinalityKey() public {
+    _expectOperatorRevert("finality-typo", '"allowedFinality":{"minBlockDepht":5},', "unknown key 'minBlockDepht'");
   }
 
   /// @dev Zero depth is the codec's spelling of full finality, so a written zero is a
   ///      contradiction; above 65535 does not fit the 16-bit field.
-  function test_readChainByPath_revertsOnOutOfRangeMinBlockDepth() public {
-    _expectChainRevert("finality-zero", '"allowedFinality":{"minBlockDepth":0},', "must be 1..65535");
-    _expectChainRevert("finality-over", '"allowedFinality":{"minBlockDepth":65536},', "must be 1..65535");
+  function test_readOperatorByPath_revertsOnOutOfRangeMinBlockDepth() public {
+    _expectOperatorRevert("finality-zero", '"allowedFinality":{"minBlockDepth":0},', "must be 1..65535");
+    _expectOperatorRevert("finality-over", '"allowedFinality":{"minBlockDepth":65536},', "must be 1..65535");
+  }
+
+  function _operatorJson(
+    string memory allowedFinalityLine
+  ) private pure returns (string memory) {
+    return string.concat(
+      '{"alias":"tmp-operator","verifiers":[{"versionTag":"0x00010001",',
+      allowedFinalityLine,
+      '"storageLocations":["https://aggregator.example/ccv"],',
+      '"signatureConfig":{"threshold":0,"signers":[]},',
+      '"roles":{"owner":"0x2000000000000000000000000000000000000001",',
+      '"storageLocationsAdmin":"0x2000000000000000000000000000000000000002",',
+      '"allowlistAdmin":"0x2000000000000000000000000000000000000003",',
+      '"feeAggregator":"0x2000000000000000000000000000000000000004"}}],',
+      '"resolver":{"roles":{"owner":"0x2000000000000000000000000000000000000001",',
+      '"feeAggregator":"0x2000000000000000000000000000000000000005"}},',
+      '"factory":{"roles":{"owner":"0x2000000000000000000000000000000000000001","allowlist":[]}}}'
+    );
+  }
+
+  /// @dev Own fixture path per case: forge runs tests concurrently on a shared filesystem.
+  function _readOperator(
+    string memory caseName,
+    string memory allowedFinalityLine
+  ) private returns (Types.OperatorConfig memory operator) {
+    string memory path = string.concat("out/governance/operator-", caseName, ".local.json");
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, _operatorJson(allowedFinalityLine));
+    operator = ConfigLib.readOperatorByPath(path);
+    vm.removeFile(path);
+  }
+
+  function _expectOperatorRevert(
+    string memory caseName,
+    string memory allowedFinalityLine,
+    string memory reasonFragment
+  ) private {
+    string memory path = string.concat("out/governance/operator-", caseName, ".local.json");
+    vm.createDir("out/governance", true);
+    vm.writeFile(path, _operatorJson(allowedFinalityLine));
+    try this.callReadRoles(path) {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, reasonFragment), string.concat("reason names the problem: ", reason));
+    }
+    vm.removeFile(path);
+  }
+
+  // ---------------------------------------------------------------------------
+  //  chains: the synced reference has a closed key set
+  // ---------------------------------------------------------------------------
+  function test_readChainByPath_parsesEveryKey() public {
+    Types.ChainConfig memory chainConfig = _readChain("all-keys", "");
+    assertEq(chainConfig.aliasName, "tmp-chain", "alias");
+    assertEq(chainConfig.chainId, 31337, "chainId");
+    assertEq(chainConfig.chainSelector, 1, "chainSelector");
+    assertEq(chainConfig.router, address(1), "router");
+    assertEq(chainConfig.rmn, address(1), "rmn");
+    assertEq(chainConfig.feeTokens.length, 0, "feeTokens");
+  }
+
+  /// @dev A key the sync does not own is operator data in the wrong file.
+  function test_readChainByPath_rejectsUnknownKey() public {
+    _expectChainRevert("stray-key", '"stray":1,', "unknown key 'stray'");
   }
 
   function _chainJson(
-    string memory allowedFinalityLine
+    string memory extraLine
   ) private pure returns (string memory) {
     return string.concat(
       '{"alias":"tmp-chain","chainId":31337,"chainSelector":"1",',
       '"router":"0x0000000000000000000000000000000000000001",',
       '"rmn":"0x0000000000000000000000000000000000000001",',
-      allowedFinalityLine,
-      '"storageLocations":[],"feeTokens":[],',
-      '"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}'
+      extraLine,
+      '"feeTokens":[],"explorerAddressPath":""}'
     );
   }
 
   /// @dev Own fixture path per case: forge runs tests concurrently on a shared filesystem.
   function _readChain(
     string memory caseName,
-    string memory allowedFinalityLine
+    string memory extraLine
   ) private returns (Types.ChainConfig memory chainConfig) {
     string memory path = string.concat("out/governance/chain-", caseName, ".local.json");
     vm.createDir("out/governance", true);
-    vm.writeFile(path, _chainJson(allowedFinalityLine));
+    vm.writeFile(path, _chainJson(extraLine));
     chainConfig = ConfigLib.readChainByPath(path);
     vm.removeFile(path);
   }
 
   function _expectChainRevert(
     string memory caseName,
-    string memory allowedFinalityLine,
+    string memory extraLine,
     string memory reasonFragment
   ) private {
     string memory path = string.concat("out/governance/chain-", caseName, ".local.json");
     vm.createDir("out/governance", true);
-    vm.writeFile(path, _chainJson(allowedFinalityLine));
+    vm.writeFile(path, _chainJson(extraLine));
     try this.callReadChain(path) {
       fail();
     } catch Error(string memory reason) {
       assertTrue(vm.contains(reason, reasonFragment), string.concat("reason names the problem: ", reason));
     }
     vm.removeFile(path);
+  }
+
+  // ---------------------------------------------------------------------------
+  //  resolverSalt: the repo-wide operator file
+  // ---------------------------------------------------------------------------
+  function test_readResolverSaltByPath_readsTheSalt() public {
+    string memory path = "out/governance/operator-salt-ok.local.json";
+    vm.createDir("out/governance", true);
+    vm.writeFile(
+      path, '{"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001","versionTags":[]}'
+    );
+    assertEq(ConfigLib.readResolverSaltByPath(path), bytes32(uint256(1)), "salt read");
+    vm.removeFile(path);
+  }
+
+  /// @dev A zero salt is the unfilled state; every unfilled fork would share an address.
+  function test_readResolverSaltByPath_rejectsZero() public {
+    string memory path = "out/governance/operator-salt-zero.local.json";
+    vm.createDir("out/governance", true);
+    vm.writeFile(
+      path, '{"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000000","versionTags":[]}'
+    );
+    try this.callReadResolverSalt(path) {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, "resolverSalt in out/governance/operator-salt-zero.local.json is zero"), reason);
+    }
+    vm.removeFile(path);
+  }
+
+  /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
+  function callReadResolverSalt(
+    string calldata path
+  ) external view returns (bytes32) {
+    return ConfigLib.readResolverSaltByPath(path);
   }
 
   /// @dev External wrapper: library internals inline, and the revert must happen in a CALL.
@@ -315,12 +462,14 @@ contract ConfigLibTest is Test {
     h.assertChain("zz-no-such-chain");
   }
 
-  /// @dev The example files double as a real mismatch: sepolia.example.json exists at
-  ///      that alias but declares "sepolia" inside.
-  function test_assertChain_aliasMismatch_reverts() public {
+  /// @dev A file whose alias disagrees with its name is a config error, named as such.
+  function test_assertChainMatches_aliasMismatch_reverts() public {
     ChainAssertHarness h = new ChainAssertHarness();
-    vm.expectRevert(bytes("ConfigLib: config/chains/sepolia.example.json declares alias 'sepolia'"));
-    h.assertChain("sepolia.example");
+    try h.assertChainMatches(_chain("sepolia", 11155111), "base_sepolia") {
+      fail();
+    } catch Error(string memory reason) {
+      assertTrue(vm.contains(reason, "declares alias 'sepolia'"), reason);
+    }
   }
 
   function test_assertChainMatches_zeroChainId_reverts() public {

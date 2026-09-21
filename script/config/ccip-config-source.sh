@@ -6,10 +6,10 @@
 # GETs the per-chain detail (GET /chains/{selector}) and flattens chainConfig to the single ACTIVE
 # (isActive: true) address per contract type, emitting a compact normalized JSON object on stdout
 # whose keys mirror the repo's config/chains/<name>.json CCIP-core block. sync-ccip-config.sh then
-# merges only those core fields, preserving every CCV/roles field.
+# merges only those core fields, leaving the identity keys (alias, chainSelector) untouched.
 #
 # Trimmed to the fields this kit
-# carries (router, rmn, feeTokens) plus the CCT-onboarding contracts the API also serves, plus identity fields
+# carries (router, rmn, feeTokens, explorerAddressPath) plus the CCT-onboarding contracts the API also serves, plus identity fields
 # for the SELECTOR-MISMATCH guard (apiName, chainId, chainSelector, chainFamily, environment).
 #
 # JSON-parsing rule: chainSelector and chainId are served as STRINGS by the API, so jq only ever

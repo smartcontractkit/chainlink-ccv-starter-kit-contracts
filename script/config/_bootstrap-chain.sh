@@ -7,12 +7,9 @@
 #  _merge-core.sh.
 #
 #  NEVER overwrites. If the target does not exist it is created from the template with
-#  the core fields filled in from the source, and every field the source cannot know
-#  (resolverSalt, storageLocations, ...) left at its template placeholder.
-#  If the target already exists, nothing is written: the core fields are compared and any
-#  difference is reported as a WARN.
-#
-#  Never overwrites: an existing file may carry operator-chosen values, including an
+#  alias, chainSelector and the core fields filled in from the source: a complete file,
+#  nothing left to hand-fill. If the target already exists, nothing is written: the core fields are
+#  compared and any difference is reported as a WARN — an existing file may carry an
 #  `rmn` already immutable in a deployed verifier.
 #
 #  Exit: 0 created or identical | 1 differs (nothing written) | 2 guard fail.
@@ -78,14 +75,6 @@ jq -e . "$TMP" > /dev/null 2>&1 || {
 SEEDED="$(jqlib -r --slurpfile src "$FLAT_PATH" \
     'include "core-fields"; seeded(.; $src[0]) | join(", ")' "$TEMPLATE_PATH")"
 
-# Anything still at a template placeholder is an operator input the source cannot supply.
-PLACEHOLDERS="$(jq -r '
-    to_entries
-    | map(select(.value == "" or .value == 0 or .value == []
-                 or (.value | type == "string" and test("^0x0+$"))))
-    | map(.key) | join(", ")
-' "$TMP")"
-
 mv "$TMP" "$CONFIG_PATH" || {
     echo "  ERROR could not move $TMP to $CONFIG_PATH" >&2
     exit 2
@@ -93,5 +82,4 @@ mv "$TMP" "$CONFIG_PATH" || {
 trap - EXIT
 
 echo "  CREATED $CONFIG_PATH from $SOURCE_NAME: $SEEDED"
-[ -n "$PLACEHOLDERS" ] && echo "      still to fill in: $PLACEHOLDERS"
 exit 0

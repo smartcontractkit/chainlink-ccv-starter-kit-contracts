@@ -10,8 +10,8 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Shared base for every config / role-transfer script. Centralises the
 ///         dual-output concern so no script duplicates it:
 ///
-///           * Phase 1 (EOA): each staged call is broadcast immediately.
-///           * Phase 2 (SAFE): staged calls are buffered and flushed to a Safe
+///           * EOA: each staged call is broadcast immediately.
+///           * SAFE: staged calls are buffered and flushed to a Safe
 ///             Transaction Builder JSON batch under `out/safe/`, key-free
 ///             (addresses + calldata only), ready for signers to import.
 ///

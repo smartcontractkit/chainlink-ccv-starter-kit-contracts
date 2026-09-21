@@ -9,7 +9,7 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title UpdateStorageLocations
 /// @notice Sets/updates the verifier's storage locations (the
-///         operator's aggregator endpoint URL(s)). Standalone update script, per chain.
+///         operator's aggregator endpoint URL(s)). Standalone update script, per verifier.
 ///         CALLER MUST BE THE storageLocationsAdmin, NOT the owner (else reverts
 ///         OnlyCallableByStorageLocationsAdmin).
 ///
@@ -31,7 +31,8 @@ contract UpdateStorageLocations is BaseScript {
   ) external {
     _initOutput(chainAlias);
 
-    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    Types.VerifierConfig memory verifierConfig =
+      ConfigLib.verifierConfigByTag(ConfigLib.readOperator(chainAlias), versionTag);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     address verifier = ConfigLib.verifierByTag(deployment, versionTag);
     _assertReachable(verifier, "verifier");
@@ -39,13 +40,13 @@ contract UpdateStorageLocations is BaseScript {
     console2.log("[UpdateStorageLocations] chain:", chainAlias);
     console2.log("  versionTag:", ConfigLib.tagToString(versionTag));
     console2.log("  target verifier:", verifier);
-    console2.log("  storageLocations count:", chainConfig.storageLocations.length);
+    console2.log("  storageLocations count:", verifierConfig.storageLocations.length);
 
-    if (chainConfig.storageLocations.length == 0) {
+    if (verifierConfig.storageLocations.length == 0) {
       console2.log("  WARN storageLocations is empty (clears the on-chain record)");
     }
 
-    _stage(callFor(verifier, chainConfig.storageLocations));
+    _stage(callFor(verifier, verifierConfig.storageLocations));
     _flush(string.concat("update-storage-locations-", ConfigLib.tagToString(versionTag)));
   }
 }

@@ -1,5 +1,5 @@
 # =============================================================================
-#  CCV Starter Kit — Onchain (Foundry) workstream
+#  CCV Starter Kit — Onchain (Foundry) component
 # =============================================================================
 #  Compiler settings are pinned to EXACTLY match Chainlink's release profile for
 #  @chainlink/contracts-ccip@2.0.0 (see node_modules/@chainlink/contracts-ccip/
@@ -34,7 +34,8 @@ test = "test"
 out = "artifacts"
 libs = ["node_modules", "lib"]
 
-# Scripts read config/ at runtime and write generated Safe batches to out/safe/.
+# Scripts read config/ at runtime; generated output goes to out/safe/ and out/governance/,
+# and the deploy scripts record addresses under config/deployments/.
 fs_permissions = [
   { access = "read", path = "./config" },
   { access = "read-write", path = "./config/deployments" }, # deploy scripts record addresses + ctor args here

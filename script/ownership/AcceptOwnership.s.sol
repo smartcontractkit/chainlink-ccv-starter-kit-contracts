@@ -11,15 +11,15 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Called BY the pending owner to complete a two-step ownership transfer.
 ///         Each party prepares its own leg: this script is run by the INCOMING holder
 ///         themselves, never generated on their behalf by the proposer.
-/// @dev Generic over target ("verifier[:<versionTag>]" | "resolver" | "factory"). The factory leg
+/// @dev Generic over target ("verifier:<versionTag>" | "resolver" | "factory"). The factory leg
 ///      completes the transfer BootstrapFactory proposes; until it runs, the deployer
 ///      key keeps the factory (and with it the CREATE2 allowlist).
-/// @dev Needs no roles file: acceptance is authorised by msg.sender being the pending
+/// @dev Needs no operator file: acceptance is authorised by msg.sender being the pending
 ///      holder, not by an address in config.
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/ownership/AcceptOwnership.s.sol \
-///     --sig "run(string,string)" sepolia verifier
+///     --sig "run(string,string)" sepolia verifier:0x00010001
 contract AcceptOwnership is BaseScript {
   function callFor(
     address to

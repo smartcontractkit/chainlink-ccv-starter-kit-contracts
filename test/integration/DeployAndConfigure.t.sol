@@ -61,7 +61,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     Types.LaneConfig memory lane
   ) internal view returns (BaseScript.Call memory) {
     SignatureQuorumValidator.SignatureConfig[] memory configs = new SignatureQuorumValidator.SignatureConfig[](1);
-    configs[0] = applySig.toSignatureConfig(lane);
+    configs[0] = applySig.toSignatureConfig(_entryOf(lane));
     return applySig.callFor(verifier, new uint64[](0), configs);
   }
 
@@ -124,11 +124,11 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     _exec(applyOutbound.callFor(address(resolver), _outboundArgs(lane)));
     _exec(setFeeAggregator.callFor(address(resolver), RESOLVER_FEE_AGGREGATOR));
 
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
-    lanes[0] = lane;
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
+    lanes[0] = _entryOf(lane);
 
     assertEq(
-      driftCheck.checkAll(_deployment(), _chainConfig(), _roles(), lanes),
+      driftCheck.checkAll(_deployment(), _roles(), lanes),
       0,
       "a lane configured through the scripts must not read back as drift"
     );
@@ -143,7 +143,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   function test_afterConfiguring_everyScriptReportsTheLaneCurrent() public {
     Types.LaneConfig memory lane = _lane();
 
-    assertFalse(applySig.isCurrent(address(verifier), lane), "nothing applied yet");
+    assertFalse(applySig.isCurrent(address(verifier), _entryOf(lane)), "nothing applied yet");
     assertFalse(applyRemote.isCurrent(address(verifier), lane), "nothing applied yet");
     assertFalse(
       applyOutbound.isCurrent(address(resolver), lane.dest.chainSelector, address(verifier)), "nothing applied yet"
@@ -153,7 +153,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     _exec(_remoteCall(address(verifier), lane));
     _exec(applyOutbound.callFor(address(resolver), _outboundArgs(lane)));
 
-    assertTrue(applySig.isCurrent(address(verifier), lane), "signature config re-reads as current");
+    assertTrue(applySig.isCurrent(address(verifier), _entryOf(lane)), "signature config re-reads as current");
     assertTrue(applyRemote.isCurrent(address(verifier), lane), "remote chain config re-reads as current");
     assertTrue(
       applyOutbound.isCurrent(address(resolver), lane.dest.chainSelector, address(verifier)),
@@ -290,9 +290,9 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     deployment.verifiers[0].addr = address(verifier);
     deployment.verifiers[1].versionTag = VERSION_TAG_V2;
     deployment.verifiers[1].addr = address(verifierV2);
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
-    lanes[0] = lane;
-    assertEq(driftCheck.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), lanes), 0, "DriftCheck clean");
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
+    lanes[0] = _entryOf(lane);
+    assertEq(driftCheck.checkAll(deployment, _rolesBothVerifiers(), lanes), 0, "DriftCheck clean");
 
     LaneParityCheck parity = new LaneParityCheck();
     Types.ChainConfig memory destChain = _chainConfig();
@@ -301,7 +301,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
       parity.checkConfigParity(lane, _chainConfig(), destChain, deployment, deployment), 0, "config parity clean"
     );
     assertEq(parity.checkSourceSide(lane, deployment), 0, "source side clean");
-    assertEq(parity.checkDestSide(lane, lane.versionTag, deployment), 0, "dest side clean");
+    assertEq(parity.checkDestSide(_entryOf(lane), lane.versionTag, deployment), 0, "dest side clean");
   }
 
   // ===========================================================================
@@ -385,13 +385,21 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
   //  fixtures
   // ===========================================================================
 
+  /// @dev The committee is source-chain data, not a lane field, so the scripts that
+  ///      need it take the pair.
+  function _entryOf(
+    Types.LaneConfig memory lane
+  ) internal view returns (Types.LaneCommittee memory entry) {
+    entry.lane = lane;
+    entry.committee.threshold = THRESHOLD;
+    entry.committee.signers = signers;
+  }
+
   function _lane() internal view returns (Types.LaneConfig memory lane) {
     lane.name = "compose_lane";
     lane.source = Types.LaneEndpoint({aliasName: "local", chainSelector: SOURCE_SELECTOR});
     lane.dest = Types.LaneEndpoint({aliasName: "local", chainSelector: DEST_SELECTOR});
     lane.versionTag = VERSION_TAG;
-    lane.signatureConfig.threshold = THRESHOLD;
-    lane.signatureConfig.signers = signers;
     lane.remote = Types.RemoteChainConfig({
       router: address(router),
       feeUSDCents: FEE_USD_CENTS,
@@ -428,30 +436,26 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     chainConfig.aliasName = "local";
     chainConfig.chainSelector = SOURCE_SELECTOR;
     chainConfig.rmn = RMN;
-    // allowedFinality stays empty: full finality only
-    chainConfig.storageLocations = new string[](1);
-    chainConfig.storageLocations[0] = "https://aggregator.example/ccv";
-    chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
-  function _roles() internal view returns (Types.RolesConfig memory roles) {
-    roles.aliasName = "local";
-    roles.verifiers = _singleVerifierRoles(_fixtureVerifierRoles(VERSION_TAG));
-    roles.resolver.owner = address(this);
-    roles.resolver.feeAggregator = RESOLVER_FEE_AGGREGATOR;
-    roles.factoryOwner = address(this);
+  function _roles() internal view returns (Types.OperatorConfig memory operator) {
+    operator.aliasName = "local";
+    operator.verifiers = _singleVerifierConfig(_fixtureVerifierConfig(VERSION_TAG));
+    operator.resolver.roles.owner = address(this);
+    operator.resolver.roles.feeAggregator = RESOLVER_FEE_AGGREGATOR;
+    operator.factory.roles.owner = address(this);
     // setUp allowlists the deployer so it can drive CREATE2; the clean state says so.
-    roles.factoryAllowlist = new address[](1);
-    roles.factoryAllowlist[0] = address(this);
+    operator.factory.roles.allowlist = new address[](1);
+    operator.factory.roles.allowlist[0] = address(this);
   }
 
-  /// @dev Roles for both verifiers — the ceremony's two-verifier DriftCheck needs an
+  /// @dev Operator config with an entry per recorded verifier — the ceremony's two-verifier DriftCheck needs an
   ///      entry per recorded tag.
-  function _rolesBothVerifiers() internal view returns (Types.RolesConfig memory roles) {
-    roles = _roles();
-    roles.verifiers = new Types.VerifierRoles[](2);
-    roles.verifiers[0] = _fixtureVerifierRoles(VERSION_TAG);
-    roles.verifiers[1] = _fixtureVerifierRoles(VERSION_TAG_V2);
+  function _rolesBothVerifiers() internal view returns (Types.OperatorConfig memory operator) {
+    operator = _roles();
+    operator.verifiers = new Types.VerifierConfig[](2);
+    operator.verifiers[0] = _fixtureVerifierConfig(VERSION_TAG);
+    operator.verifiers[1] = _fixtureVerifierConfig(VERSION_TAG_V2);
   }
 
   function _exec(

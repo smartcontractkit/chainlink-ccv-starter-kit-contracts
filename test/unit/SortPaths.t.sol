@@ -10,18 +10,20 @@ import {Test} from "forge-std/Test.sol";
 ///         in a single call's argument array. Unsorted, two operators generate
 ///         byte-different batches for identical config.
 /// @dev The sort is unreachable through `listLanes` in CI: a clean checkout has only
-///      `_template.json` and `*.example.json` in `config/lanes/`, both filtered out.
+///      `_template.json` and `*.example.json` in `config/operator/lanes/`, both filtered out.
 contract SortPathsTest is Test {
   function test_alreadySorted_isUnchanged() public pure {
-    string[] memory p = _paths("config/lanes/a.json", "config/lanes/b.json", "config/lanes/c.json");
+    string[] memory p =
+      _paths("config/operator/lanes/a.json", "config/operator/lanes/b.json", "config/operator/lanes/c.json");
     ConfigLib.sortPaths(p);
-    _assertOrder(p, "config/lanes/a.json", "config/lanes/b.json", "config/lanes/c.json");
+    _assertOrder(p, "config/operator/lanes/a.json", "config/operator/lanes/b.json", "config/operator/lanes/c.json");
   }
 
   function test_reversed_isSorted() public pure {
-    string[] memory p = _paths("config/lanes/c.json", "config/lanes/b.json", "config/lanes/a.json");
+    string[] memory p =
+      _paths("config/operator/lanes/c.json", "config/operator/lanes/b.json", "config/operator/lanes/a.json");
     ConfigLib.sortPaths(p);
-    _assertOrder(p, "config/lanes/a.json", "config/lanes/b.json", "config/lanes/c.json");
+    _assertOrder(p, "config/operator/lanes/a.json", "config/operator/lanes/b.json", "config/operator/lanes/c.json");
   }
 
   /// @dev The property the sort exists for: any input permutation yields one output.
@@ -48,16 +50,16 @@ contract SortPathsTest is Test {
   /// @dev Realistic lane names, where both directions of one pair exist.
   function test_bidirectionalLanePair() public pure {
     string[] memory p = _paths(
-      "config/lanes/sepolia-to-base_sepolia.json",
-      "config/lanes/base_sepolia-to-sepolia.json",
-      "config/lanes/arbitrum_sepolia-to-sepolia.json"
+      "config/operator/lanes/sepolia-to-base_sepolia.json",
+      "config/operator/lanes/base_sepolia-to-sepolia.json",
+      "config/operator/lanes/arbitrum_sepolia-to-sepolia.json"
     );
     ConfigLib.sortPaths(p);
     _assertOrder(
       p,
-      "config/lanes/arbitrum_sepolia-to-sepolia.json",
-      "config/lanes/base_sepolia-to-sepolia.json",
-      "config/lanes/sepolia-to-base_sepolia.json"
+      "config/operator/lanes/arbitrum_sepolia-to-sepolia.json",
+      "config/operator/lanes/base_sepolia-to-sepolia.json",
+      "config/operator/lanes/sepolia-to-base_sepolia.json"
     );
   }
 

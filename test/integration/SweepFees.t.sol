@@ -102,11 +102,11 @@ contract SweepFeesTest is FeeScriptsSetup {
   function _rolesWithAggregators(
     address verifierAggregator,
     address resolverAggregator
-  ) private pure returns (Types.RolesConfig memory roles) {
-    roles.verifiers = new Types.VerifierRoles[](1);
-    roles.verifiers[0].versionTag = VERSION_TAG;
-    roles.verifiers[0].feeAggregator = verifierAggregator;
-    roles.resolver.feeAggregator = resolverAggregator;
+  ) private pure returns (Types.OperatorConfig memory operator) {
+    operator.verifiers = new Types.VerifierConfig[](1);
+    operator.verifiers[0].versionTag = VERSION_TAG;
+    operator.verifiers[0].roles.feeAggregator = verifierAggregator;
+    operator.resolver.roles.feeAggregator = resolverAggregator;
   }
 
   function test_batch_stagesBothWhenFullyConfigured() public view {
@@ -190,14 +190,14 @@ contract SweepFeesTest is FeeScriptsSetup {
     deployment.verifiers[0].addr = address(verifier);
     deployment.verifiers[1].versionTag = VERSION_TAG_V2;
     deployment.verifiers[1].addr = address(verifierV2);
-    Types.RolesConfig memory roles = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
-    roles.verifiers = new Types.VerifierRoles[](2);
-    roles.verifiers[0].versionTag = VERSION_TAG;
-    roles.verifiers[0].feeAggregator = VERIFIER_AGG;
-    roles.verifiers[1].versionTag = VERSION_TAG_V2;
-    roles.verifiers[1].feeAggregator = FEE_AGGREGATOR;
+    Types.OperatorConfig memory operator = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
+    operator.verifiers = new Types.VerifierConfig[](2);
+    operator.verifiers[0].versionTag = VERSION_TAG;
+    operator.verifiers[0].roles.feeAggregator = VERIFIER_AGG;
+    operator.verifiers[1].versionTag = VERSION_TAG_V2;
+    operator.verifiers[1].roles.feeAggregator = FEE_AGGREGATOR;
 
-    BaseScript.Call[] memory calls = script.buildSweepBatch(deployment, roles, _bothTokens(), true);
+    BaseScript.Call[] memory calls = script.buildSweepBatch(deployment, operator, _bothTokens(), true);
 
     assertEq(calls.length, 3, "verifier 1 + verifier 2 + resolver");
     assertEq(calls[0].to, address(verifier), "verifier 1 first");
@@ -224,30 +224,32 @@ contract SweepFeesTest is FeeScriptsSetup {
     deployment.verifiers[0].addr = address(verifier);
     deployment.verifiers[1].versionTag = VERSION_TAG_V2;
     deployment.verifiers[1].addr = address(verifierV2);
-    Types.RolesConfig memory roles = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
-    roles.aliasName = "test_fee_chain"; // only verifier 1 declared
+    Types.OperatorConfig memory operator = _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG);
+    operator.aliasName = "test_fee_chain"; // only verifier 1 declared
 
     vm.expectRevert(
       bytes(
-        "ConfigLib: no verifier roles for versionTag 0x00010002 in config/roles/test_fee_chain.json"
-        " - declare that verifier's roles first"
+        "ConfigLib: no verifiers entry for versionTag 0x00010002 in config/operator/chains/test_fee_chain.json"
+        " - declare that verifier first"
       )
     );
     // the expected revert is the assertion; the return never materialises
     // forge-lint: disable-next-line(unused-return)
-    script.buildSweepBatch(deployment, roles, _bothTokens(), true);
+    script.buildSweepBatch(deployment, operator, _bothTokens(), true);
   }
 
   function test_batch_revertsOnUndeclaredIntent() public {
     vm.expectRevert(
-      bytes("SweepFees: verifier 0x00010001 feeAggregator is not declared in config/roles - declare it before sweeping")
+      bytes(
+        "SweepFees: verifier 0x00010001 feeAggregator is not declared in config/operator/chains/<alias>.json - declare it before sweeping"
+      )
     );
     // the expected revert is the assertion; the return never materialises
     // forge-lint: disable-next-line(unused-return)
     script.buildSweepBatch(_deployment(), _rolesWithAggregators(address(0), RESOLVER_AGG), _bothTokens(), true);
   }
 
-  /// @dev An unset on-chain aggregator with one intended in config/roles is drift
+  /// @dev An unset on-chain aggregator with one intended in config/operator/chains/<alias>.json is drift
   ///      like any other mismatch, not a skippable state.
   function test_batch_revertsOnIntendedButUnsetAggregator() public {
     _setVerifierAggregator(address(0));
@@ -257,7 +259,7 @@ contract SweepFeesTest is FeeScriptsSetup {
         string.concat(
           "SweepFees: verifier 0x00010001 feeAggregator on-chain ",
           vm.toString(address(0)),
-          " does not match config/roles ",
+          " does not match config/operator/chains/<alias>.json ",
           vm.toString(VERIFIER_AGG)
         )
       )
@@ -273,7 +275,7 @@ contract SweepFeesTest is FeeScriptsSetup {
         string.concat(
           "SweepFees: resolver feeAggregator on-chain ",
           vm.toString(RESOLVER_AGG),
-          " does not match config/roles ",
+          " does not match config/operator/chains/<alias>.json ",
           vm.toString(address(0xD41F7))
         )
       )

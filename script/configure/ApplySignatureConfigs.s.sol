@@ -12,6 +12,8 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title ApplySignatureConfigs
 /// @notice Sets the signer set + threshold per source chain on the CommitteeVerifier.
+///         The committee is the `signatureConfig` of the SOURCE chain's verifier entry for
+///         the lane's tag, so every destination of that source applies the same set.
 ///         Runs every lane whose DESTINATION is the given chain AND whose versionTag matches
 ///         the given one (one verifier per run), batched into ONE call, and skips
 ///         the lanes already matching on-chain — so --rpc-url is required in BOTH output
@@ -57,14 +59,14 @@ contract ApplySignatureConfigs is BaseScript {
     });
   }
 
-  /// @notice Translate a lane's config-as-data into the Chainlink arg struct.
+  /// @notice Translate a lane and its source committee into the Chainlink arg struct.
   function toSignatureConfig(
-    Types.LaneConfig memory lane
+    Types.LaneCommittee memory entry
   ) public pure returns (SignatureQuorumValidator.SignatureConfig memory config) {
     config = SignatureQuorumValidator.SignatureConfig({
-      sourceChainSelector: lane.source.chainSelector,
-      threshold: lane.signatureConfig.threshold,
-      signers: lane.signatureConfig.signers
+      sourceChainSelector: entry.lane.source.chainSelector,
+      threshold: entry.committee.threshold,
+      signers: entry.committee.signers
     });
   }
 
@@ -76,7 +78,7 @@ contract ApplySignatureConfigs is BaseScript {
   /// @return configs The entries to send, in lane order. Its length IS the staged count.
   /// @return matched How many lanes the filters selected, staged or not.
   function configsFor(
-    Types.LaneConfig[] memory lanes,
+    Types.LaneCommittee[] memory lanes,
     string memory chainAlias,
     bytes4 versionTag,
     address verifier
@@ -86,24 +88,25 @@ contract ApplySignatureConfigs is BaseScript {
     uint256 staged = 0;
 
     for (uint256 i = 0; i < lanes.length; ++i) {
-      Types.LaneConfig memory lane = lanes[i];
+      Types.LaneCommittee memory entry = lanes[i];
+      Types.LaneConfig memory lane = entry.lane;
       if (!_stringsEqual(_targetAlias(lane), chainAlias)) continue;
       if (lane.versionTag != versionTag) continue;
       ++matched;
 
       // Before the isCurrent skip: an invalid config is a config error, not a no-op.
-      _assertValidConfig(lane);
+      _assertValidConfig(entry);
 
-      if (isCurrent(verifier, lane)) {
+      if (isCurrent(verifier, entry)) {
         console2.log("[ApplySignatureConfigs] lane UNCHANGED:", lane.name);
         continue;
       }
 
       console2.log("[ApplySignatureConfigs] lane STAGED:", lane.name);
       console2.log("  source selector:", lane.source.chainSelector);
-      console2.log("  threshold / signers:", lane.signatureConfig.threshold, lane.signatureConfig.signers.length);
+      console2.log("  threshold / signers:", entry.committee.threshold, entry.committee.signers.length);
 
-      configs[staged] = toSignatureConfig(lane);
+      configs[staged] = toSignatureConfig(entry);
       ++staged;
     }
 
@@ -134,7 +137,7 @@ contract ApplySignatureConfigs is BaseScript {
     console2.log("  target verifier:", verifier);
 
     (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
-      configsFor(ConfigLib.readLanes(), chainAlias, versionTag, verifier);
+      configsFor(ConfigLib.readLaneCommittees(), chainAlias, versionTag, verifier);
 
     require(
       matched > 0,
@@ -163,16 +166,16 @@ contract ApplySignatureConfigs is BaseScript {
   ///      and the contract does not preserve the order the signers were submitted in.
   function isCurrent(
     address verifier,
-    Types.LaneConfig memory lane
+    Types.LaneCommittee memory entry
   ) public view returns (bool) {
     (address[] memory signers, uint8 threshold) =
-      CommitteeVerifier(verifier).getSignatureConfig(lane.source.chainSelector);
-    if (threshold != lane.signatureConfig.threshold) return false;
-    if (signers.length != lane.signatureConfig.signers.length) return false;
-    for (uint256 i = 0; i < lane.signatureConfig.signers.length; ++i) {
+      CommitteeVerifier(verifier).getSignatureConfig(entry.lane.source.chainSelector);
+    if (threshold != entry.committee.threshold) return false;
+    if (signers.length != entry.committee.signers.length) return false;
+    for (uint256 i = 0; i < entry.committee.signers.length; ++i) {
       bool found = false;
       for (uint256 j = 0; j < signers.length; ++j) {
-        if (lane.signatureConfig.signers[i] == signers[j]) {
+        if (entry.committee.signers[i] == signers[j]) {
           found = true;
           break;
         }
@@ -186,10 +189,10 @@ contract ApplySignatureConfigs is BaseScript {
   //  validation (mirror the contract's hard rules; warn on committee policy)
   // ---------------------------------------------------------------------------
   function _assertValidConfig(
-    Types.LaneConfig memory lane
+    Types.LaneCommittee memory entry
   ) internal view {
-    address[] memory signers = lane.signatureConfig.signers;
-    uint8 threshold = lane.signatureConfig.threshold;
+    address[] memory signers = entry.committee.signers;
+    uint8 threshold = entry.committee.threshold;
     uint256 signerCount = signers.length;
 
     // Hard rules (would revert onchain anyway; fail fast with a clearer message).

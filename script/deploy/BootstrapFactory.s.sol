@@ -12,14 +12,14 @@ import {console2} from "forge-std/console2.sol";
 ///         fresh deployer EOA (nonce 0) so the factory lands on the SAME address on
 ///         every chain. The deployer is placed in the factory allowlist at
 ///         construction. Ownership is set to the CONFIGURED factory owner
-///         (config/roles/<alias>.json `factory.owner`). The factory address and its
+///         (config/operator/chains/<alias>.json `factory.roles.owner`). The factory address and its
 ///         `allowList` constructor argument are recorded into config/deployments/<alias>.json.
 ///
 /// @dev EOA-ONLY BY DESIGN. The bootstrap depends on a fresh nonce-0 deployer and MUST
-///      NOT be routed through a Safe. The "Safe output on every script" rule (step 14)
-///      applies to configuration and role-transfer scripts, not this bootstrap.
+///      NOT be routed through a Safe. The "Safe output on every script" rule applies to
+///      configuration and role-transfer scripts, not this bootstrap.
 ///
-/// @dev Determinism preconditions (the biggest subtle risk at ~8 chains):
+/// @dev Determinism preconditions:
 ///        1. The deployer has nonce 0 on every target chain.
 ///        2. Identical compiler settings everywhere (foundry.toml default profile).
 ///      Verify the resulting factory address matches across chains before proceeding.
@@ -54,18 +54,18 @@ contract BootstrapFactory is Script {
 
     // Hand ownership to the configured factory owner (roles-as-data). Unset (zero)
     // means "keep the deployer as owner".
-    address configuredOwner = ConfigLib.readRolesOrEmpty(chainAlias).factoryOwner;
+    address configuredOwner = ConfigLib.readOperatorOrEmpty(chainAlias).factory.roles.owner;
 
     console2.log("[BootstrapFactory] chain:", chainAlias);
     console2.log("  CREATE2Factory:", factory);
     console2.log("  deployer/allowlisted:", deployer);
-    console2.log("  configured factory.owner:", configuredOwner);
+    console2.log("  configured factory.roles.owner:", configuredOwner);
     if (configuredOwner == address(0) || configuredOwner == deployer) {
-      console2.log("  owner: deployer (configured factory.owner unset or == deployer)");
+      console2.log("  owner: deployer (configured factory.roles.owner unset or == deployer)");
     } else {
       vm.broadcast();
       f.transferOwnership(configuredOwner);
-      console2.log("  owner PROPOSED to configured factory.owner:", configuredOwner);
+      console2.log("  owner PROPOSED to configured factory.roles.owner:", configuredOwner);
       console2.log("  (that owner must call acceptOwnership() to complete the 2-step transfer)");
     }
 

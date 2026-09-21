@@ -11,7 +11,7 @@ script's raw `--sig` for reference.
 
 **Every script targets a single chain.** `run()` takes one chain alias and `forge script`
 takes one `--rpc-url`, so one invocation touches one chain. Scripts that iterate do so over
-*lanes* — [every file in `config/lanes/`](#the-lane-directory-is-the-input-set) whose
+*lanes* — [every file in `config/operator/lanes/`](#the-lane-directory-is-the-input-set) whose
 source or destination is the target chain. There is no chain enumerator, so nothing loops
 across chains. Configuring both sides of a lane means running the relevant scripts twice,
 once per chain, with that chain's RPC.
@@ -32,9 +32,9 @@ The one exception is `UpdateStorageLocations`: callable **only by the
 
 ## Re-running stages only what changed
 
-The four lane-iterating scripts read the current on-chain value for each lane before
+The lane-iterating scripts read the current on-chain value for each lane before
 staging it, and skip the lanes that already match — adding a lane and re-running touches
-just the new lane, not every lane in `config/lanes/`. Each lane is logged as
+just the new lane, not every lane in `config/operator/lanes/`. Each lane is logged as
 `lane STAGED:` or `lane UNCHANGED:`, and a run where everything already matches stages
 nothing and writes no batch file. Reading on-chain state is also why those four need
 `--rpc-url` even in `OUTPUT_MODE=SAFE` — see
@@ -52,7 +52,7 @@ What counts as "already matching" is per script, and matches what
 
 ## The lane directory is the input set
 
-`ConfigLib.listLanes()` reads `config/lanes/` at run time and returns every `.json` in it
+`ConfigLib.listLanes()` reads `config/operator/lanes/` at run time and returns every `.json` in it
 whose name does not contain `_template` or `.example.`. There is no manifest and no
 per-lane enable flag, so a file sitting in that directory is a lane that gets configured.
 The scripts filter that list by target chain, which means a leftover or experimental lane
@@ -62,7 +62,7 @@ real ones.
 Every lane a run takes is logged as `[<Script>] lane: <name>` — check that list against
 the lanes you meant to configure. The Safe batch under `out/safe/<alias>/` is not a
 per-lane view: each configure script collapses every matched lane into a single call, so
-one entry covers all of them. Keep retired and in-progress lanes outside `config/lanes/`.
+one entry covers all of them. Keep retired and in-progress lanes outside `config/operator/lanes/`.
 
 ## What each script configures
 
@@ -70,16 +70,16 @@ Ten scripts across three contracts. Every one is a single privileged call.
 
 | script | contract | run on | caller | `--sig` | reads |
 |---|---|---|---|---|---|
-| `ApplyRemoteChainConfigUpdates` | verifier | **source** of each lane | verifier owner | `run(string,bytes4)` | `lanes/*.json` → `remoteChainConfig` |
-| `ApplyAllowlistUpdates` | verifier | **source** of each lane | owner *or* `allowlistAdmin` | `run(string,bytes4)` | `lanes/*.json` → `allowlist` |
-| `ApplySignatureConfigs` | verifier | **dest** of each lane | verifier owner | `run(string,bytes4)` | `lanes/*.json` → `signatureConfig` |
-| `SetDynamicConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `roles/*.json` → `verifiers[]` for tag |
-| `SetAllowedFinalityConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `chains/*.json` → `allowedFinality` |
-| `UpdateStorageLocations` | verifier | the chain | **`storageLocationsAdmin`** | `run(string,bytes4)` | `chains/*.json` → `storageLocations` |
-| `ApplyOutboundImplementationUpdates` | resolver | **source** of each lane | resolver owner | `run(string)` | `lanes/*.json` → dest selector + lane `versionTag` |
-| `ApplyInboundImplementationUpdates` | resolver | the chain | resolver owner | `run(string)` | `lanes/*.json` → lane `versionTag` for inbound dest |
-| `SetFeeAggregator` | resolver | the chain | resolver owner | `run(string)` | `roles/*.json` → `resolver.feeAggregator` |
-| `ApplyFactoryAllowlistUpdates` | factory | the chain | factory owner | `run(string)` | `roles/*.json` → `factory.allowlist` |
+| `ApplyRemoteChainConfigUpdates` | verifier | **source** of each lane | verifier owner | `run(string,bytes4)` | `operator/lanes/*.json` → `remoteChainConfig` |
+| `ApplyAllowlistUpdates` | verifier | **source** of each lane | owner *or* `allowlistAdmin` | `run(string,bytes4)` | `operator/lanes/*.json` → `allowlist` |
+| `ApplySignatureConfigs` | verifier | **dest** of each lane | verifier owner | `run(string,bytes4)` | source's `operator/chains/*.json` → `verifiers[]` entry for the lane's tag → `signatureConfig` |
+| `SetDynamicConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `operator/chains/*.json` → `verifiers[]` entry for tag → `roles` |
+| `SetAllowedFinalityConfig` | verifier | the chain | verifier owner | `run(string,bytes4)` | `operator/chains/*.json` → `verifiers[]` entry for tag → `allowedFinality` |
+| `UpdateStorageLocations` | verifier | the chain | **`storageLocationsAdmin`** | `run(string,bytes4)` | `operator/chains/*.json` → `verifiers[]` entry for tag → `storageLocations` |
+| `ApplyOutboundImplementationUpdates` | resolver | **source** of each lane | resolver owner | `run(string)` | `operator/lanes/*.json` → dest selector + lane `versionTag` |
+| `ApplyInboundImplementationUpdates` | resolver | the chain | resolver owner | `run(string)` | `operator/lanes/*.json` → lane `versionTag` for inbound dest |
+| `SetFeeAggregator` | resolver | the chain | resolver owner | `run(string)` | `operator/chains/*.json` → `resolver.roles.feeAggregator` |
+| `ApplyFactoryAllowlistUpdates` | factory | the chain | factory owner | `run(string)` | `operator/chains/*.json` → `factory.roles.allowlist` |
 
 ## Configuring the verifier
 
@@ -114,7 +114,8 @@ make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_R
   contract only accepts adds while the allowlist is enabled, so the script refuses a
   non-empty `allowedSenders` with `allowlistEnabled: false`.
 - **`ApplySignatureConfigs`** — the committee that verifies messages arriving *from* each
-  source. This one **is** a full-set replacement: list the complete desired signer set
+  source, read from that source's operator file so every destination applies the same
+  set. This one **is** a full-set replacement: list the complete desired signer set
   every time, because the contract clears the existing set first. The script enforces two
   properties unless `ALLOW_WEAK_COMMITTEE=true`: liveness, so no N-of-N committee (one
   offline signer would halt the lane), and safety, so the threshold must exceed 2/3 of the
@@ -134,7 +135,7 @@ make update-storage-locations CHAIN=sepolia TAG=$TAG RPC_URL=$SEPOLIA_RPC_URL OU
 - **`SetDynamicConfig`** — sets `{ feeAggregator, allowlistAdmin }` as one struct for the
   selected verifier, so it always writes both. Changing one means passing the current value
   of the other; both come from the `verifiers[]` entry for `$TAG` in
-  `config/roles/<alias>.json`.
+  `config/operator/chains/<alias>.json`.
 - **`SetAllowedFinalityConfig`** — the finality requests the verifier will accept, from
   the `allowedFinality` block. `{}` is full finality only; `{ "minBlockDepth": 1 }` also
   permits the depth-1 fast path. One value per verifier, **not per lane** —
@@ -183,7 +184,7 @@ the ability to claim CREATE2 addresses until you prune it.
 make apply-factory-allowlist CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
 ```
 
-`factory.allowlist` in `roles/<alias>.json` is the **full** desired set, not a delta. The
+`factory.roles.allowlist` in `operator/chains/<alias>.json` is the **full** desired set, not a delta. The
 script reads `getAllowList()`, stages only the difference, and does nothing when the two
 already agree — so re-running is safe and a clean run is proof the on-chain set matches
 config. An empty list means nobody may `createAndCall` until the owner re-adds an
@@ -193,7 +194,7 @@ account.
 deterministic deploy on that chain is done — removing the deployer earlier blocks the
 resolver deploy. The script refuses to remove anything while no resolver is recorded for
 the chain, which catches the common case but not a chain you have yet to deploy on. To
-authorise a replacement deployment account later: add it to `factory.allowlist`, run this,
+authorise a replacement deployment account later: add it to `factory.roles.allowlist`, run this,
 deploy, remove it, run this again.
 
 ## What a fresh deploy already has
@@ -203,8 +204,8 @@ set before you configure anything:
 
 | already set at deploy | by |
 |---|---|
-| `feeAggregator`, `allowlistAdmin` (the dynamic config) | `roles/<alias>.json` → `verifiers[]` for tag |
-| `storageLocations` | `chains/<alias>.json` |
+| `feeAggregator`, `allowlistAdmin` (the dynamic config) | `operator/chains/<alias>.json` → `verifiers[]` entry for tag → `roles` |
+| `storageLocations` | `operator/chains/<alias>.json` → `verifiers[]` entry for tag |
 | `rmn`, `versionTag` (immutable) | chain config + deploy argument |
 
 So `SetDynamicConfig` and `UpdateStorageLocations` are **change** operations, not setup

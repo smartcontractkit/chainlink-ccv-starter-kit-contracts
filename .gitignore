@@ -15,22 +15,11 @@ node_modules/
 .DS_Store
 
 # -----------------------------------------------------------------------------
-# Config privacy policy
+# Config
 # -----------------------------------------------------------------------------
-# Real per-deployment config (deployed addresses) must not be committed
-# to this repo
-# Commit ONLY the schema templates (_template.json) and illustrative examples
-# (*.example.json); ignore every other config/*.json (the real, per-deployment
-# files named by chain alias / lane, e.g. sepolia.json, sepolia-to-fuji.json).
-config/**/*.json
-!config/**/_template.json
-!config/**/*.example.json
-# Test fixtures, not real deployments: run()-path tests need a chain file whose
-# chainId (31337) matches the test EVM. They hold no addresses or operator data.
-# zz-scratch-zero-salt carries the template's all-zero resolverSalt so the deploy
-# guard that rejects it can be tested through run().
-!config/chains/zz-scratch-ownership-factory.json
-!config/chains/zz-scratch-zero-salt.json
+# config/ is tracked. The one exception is test-written scratch: the suite drives the real
+# deployment writer, which lands under config/deployments/.
+config/deployments/zz-scratch-*.json
 
 # -----------------------------------------------------------------------------
 # Generated outputs
@@ -38,9 +27,9 @@ config/**/*.json
 # Test-only Safe batches. Directory rule, not a filename glob: everything else under
 # out/safe/ is a committed release artifact, so a renamed test file must not slip in.
 out/safe/test/
-# Governance output is always run-local (snapshots hold LIVE role addresses) and is never
-# committed — snapshots are promoted into config/roles/ instead. Ignore the whole tree so
-# protection cannot be defeated by a rename.
+# Governance output is run-local scratch: a snapshot is current reality, promoted into
+# config/operator/ after review, so the snapshot itself never enters the tree. Ignore the
+# whole directory so a rename cannot defeat the rule.
 out/governance/
 # NOTE: real generated Safe batches under out/safe/ are intentionally NOT ignored;
 # they are release artifacts reviewed and committed per deployment.

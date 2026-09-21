@@ -11,7 +11,7 @@ import {Test} from "forge-std/Test.sol";
 ///      test writes its OWN path. The trailing `vm.removeFile` is courtesy, not
 ///      correctness: a failed assertion reverts before it.
 contract DeploymentRecordTest is Test {
-  // Written under out/governance (gitignored *.local.json) to avoid polluting config/.
+  // Written under out/governance/ so the real config/deployments/ records are untouched.
   string internal constant DIR = "out/governance/";
 
   address internal constant FACTORY = address(0x1111111111111111111111111111111111111111);
@@ -180,8 +180,8 @@ contract DeploymentRecordTest is Test {
     vm.removeFile(path);
   }
 
-  /// @dev Records are never committed, so an operator whose contracts are live but whose
-  ///      record is not copies `_template.json` and pastes the addresses in. That file must
+  /// @dev An operator whose contracts are live but whose record is missing copies
+  ///      `_template.json` and pastes the addresses in. That file must
   ///      read: its `args` blocks hold empty arrays and `"0x"`, which the reader parses as
   ///      soon as an address is non-zero.
   function test_templateWithAddressesFilledIn_reads() public {

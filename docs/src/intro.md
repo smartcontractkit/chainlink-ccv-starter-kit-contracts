@@ -1,6 +1,6 @@
 # Introduction
 
-The onchain workstream for the Chainlink **CCV (Cross-Chain Verifier) Starter Kit**.
+The onchain component of the Chainlink **CCV (Cross-Chain Verifier) Starter Kit**.
 
 This repo deploys and configures already-audited Chainlink CCV contracts and provides the
 deploy, configuration and governance tooling around them. **No new contracts are built
@@ -16,7 +16,7 @@ message leaves chain A for chain B:
 1. On **A**, the OnRamp asks your resolver which verifier handles traffic bound for B, and
    calls it. The verifier stamps its version tag into the message's verifier results.
 2. **Off-chain**, a committee of signers observes the message and signs it. That committee
-   is a separate workstream — this repo only configures who the signers *are*.
+   is a separate component — this repo only configures who the signers *are*.
 3. On **B**, the OffRamp asks your resolver which verifier handles that version tag, and
    calls it to check the signatures.
 
@@ -46,10 +46,10 @@ chain and byte-identical initcode everywhere — see [Deploying](deploy.md).
 The directories you touch as an operator:
 
 ```
-config/          config-as-data: version-tag catalog, chains, lanes, roles, deployments
+config/          config-as-data: chains, operator config (salt + tag catalog, per-chain verifiers, lanes), deployments
 script/          deploy, configure, ownership, fees, governance, config-sync — one script per action
 out/safe/        generated Safe Transaction Builder batches, one directory per chain
-out/governance/  role snapshots (gitignored, run-local)
+out/governance/  operator snapshots: roles + verifier settings (run-local)
 artifacts/       forge build output (foundry.toml repurposes `out/` for the two trees above)
 ```
 
@@ -63,7 +63,7 @@ why:
 
 | chapter | depth on |
 |---|---|
-| [Configuration](configuration.md) | how chains, lanes, roles and version tags fit together |
+| [Configuration](configuration.md) | how chains, lanes, operator config and version tags fit together |
 | [Deploying](deploy.md) | factory → resolver → verifier, per chain |
 | [Configuring the contracts](configure.md) | wire verifiers and resolver to each lane |
 | [Governance checks](governance.md) | confirm config matches chain state before going live |

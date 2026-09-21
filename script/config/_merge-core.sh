@@ -10,9 +10,8 @@
 #
 #  Owns (overwrites) ONLY the fields core-fields.jq lists — and only when the target
 #  already carries the key, and only when the source supplies a non-null value.
-#  Preserves every other key byte-for-byte (allowedFinality,
-#  storageLocations, resolverSalt, ...).
-#  chainSelector is the immutable join GUARD and is never rewritten.
+#  Every other key is left as it is: alias is the file's identity, chainSelector the
+#  immutable join GUARD. ConfigLib rejects any key outside the schema at load.
 #
 #  Writes atomically: temp file in the SAME directory, validated, then mv.
 #
@@ -76,7 +75,7 @@ CHANGED="$(jqlib -r --slurpfile src "$FLAT_PATH" \
 TMP="$(mktemp "$(dirname "$CONFIG_PATH")/.merge-core.XXXXXX")" || exit 2
 trap 'rm -f "$TMP"' EXIT
 
-jqlib --slurpfile src "$FLAT_PATH" --indent 4 'include "core-fields";
+jqlib --slurpfile src "$FLAT_PATH" --indent 2 'include "core-fields";
     . as $cfg
     | reduce (diffs($cfg; $src[0])[]) as $d (.; .[$d.key] = $d.source)
 ' "$CONFIG_PATH" > "$TMP" || exit 2

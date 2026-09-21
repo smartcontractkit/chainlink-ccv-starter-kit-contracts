@@ -84,13 +84,18 @@ contract SetAllowedFinalityConfigTest is CommitteeVerifierSetup {
   }
 
   /// @dev Guards the robust bytes4 parser: a 4-byte hex value must round-trip exactly
-  ///      (independent of Foundry's fixed-bytes padding convention). The chain example
+  ///      (independent of Foundry's fixed-bytes padding convention). The operator example
   ///      covers the typed finality block, which must load as full finality only.
   function test_configReaders_parseExampleFilesExactly() public view {
-    Types.ChainConfig memory chainConfig = ConfigLib.readChainByPath("config/chains/sepolia.example.json");
-    assertEq(FinalityConfigLib.encode(chainConfig.allowedFinality), FULL_FINALITY, "empty block is full finality only");
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath("config/operator/chains/sepolia.example.json");
+    assertEq(
+      FinalityConfigLib.encode(operator.verifiers[0].allowedFinality),
+      FULL_FINALITY,
+      "empty block is full finality only"
+    );
 
-    Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
+    Types.LaneConfig memory lane =
+      ConfigLib.readLaneByPath("config/operator/lanes/sepolia-to-base_sepolia.example.json");
     assertEq(lane.versionTag, bytes4(0x00010001), "versionTag parsed exactly");
   }
 }

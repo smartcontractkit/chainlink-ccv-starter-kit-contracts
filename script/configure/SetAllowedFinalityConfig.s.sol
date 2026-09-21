@@ -11,9 +11,10 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title SetAllowedFinalityConfig
 /// @notice Sets the allowed finality config on the CommitteeVerifier.
-///         This is PER CHAIN / per verifier (not per lane).
+///         Per verifier, not per lane.
 ///
-/// @dev From the `allowedFinality` block of config/chains/<alias>.json, encoded by
+/// @dev From the `allowedFinality` block of this tag's verifier entry in
+///      config/operator/chains/<alias>.json, encoded by
 ///      FinalityConfigLib. It bounds what a SENDER may request: full finality always, a
 ///      safe-tag request when `allowSafeTag` is set, a depth request of at least
 ///      `minBlockDepth` when that is set. An empty block allows full finality only.
@@ -38,8 +39,8 @@ contract SetAllowedFinalityConfig is BaseScript {
   }
 
   /// @notice Reverts unless the value is permitted by policy.
-  /// @dev Anything below full finality weakens the guarantee for every sender on this
-  ///      chain, so it is fatal unless explicitly waived. The encoding itself needs no
+  /// @dev Anything below full finality weakens the guarantee for every sender using this
+  ///      verifier, so it is fatal unless explicitly waived. The encoding itself needs no
   ///      check: FinalityConfigLib cannot produce a value the codec assigns no meaning to.
   function validateFinalityPolicy(
     bytes4 allowedFinality
@@ -67,11 +68,12 @@ contract SetAllowedFinalityConfig is BaseScript {
     _initOutput(chainAlias);
     allowWeakFinality = vm.envOr("ALLOW_WEAK_FINALITY", false);
 
-    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
+    Types.VerifierConfig memory verifierConfig =
+      ConfigLib.verifierConfigByTag(ConfigLib.readOperator(chainAlias), versionTag);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     address verifier = ConfigLib.verifierByTag(deployment, versionTag);
     _assertReachable(verifier, "verifier");
-    bytes4 allowedFinality = FinalityConfigLib.encode(chainConfig.allowedFinality);
+    bytes4 allowedFinality = FinalityConfigLib.encode(verifierConfig.allowedFinality);
 
     console2.log("[SetAllowedFinalityConfig] chain:", chainAlias);
     console2.log("  versionTag:", ConfigLib.tagToString(versionTag));

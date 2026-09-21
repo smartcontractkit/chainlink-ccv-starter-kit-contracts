@@ -12,7 +12,7 @@ import {Test} from "forge-std/Test.sol";
 ///         `BootstrapFactory` proposes; without it the deployer EOA stays factory owner
 ///         and keeps control of the CREATE2 allowlist.
 /// @dev Address and owner resolution are separate functions so the accept leg needs no
-///      roles file: acceptance is authorised by msg.sender, not by config.
+///      operator file: acceptance is authorised by msg.sender, not by config.
 contract TargetResolutionTest is Test {
   address internal constant VERIFIER = address(0xD1);
   address internal constant VERIFIER_V2 = address(0xD4);
@@ -50,10 +50,10 @@ contract TargetResolutionTest is Test {
   }
 
   function test_targetOwner_resolvesEachTarget() public pure {
-    Types.RolesConfig memory roles = _roles();
-    assertEq(ConfigLib.targetOwner(roles, "verifier:0x00010001"), address(0xA1), "verifier owner by tag");
-    assertEq(ConfigLib.targetOwner(roles, "resolver"), address(0xA2), "resolver owner");
-    assertEq(ConfigLib.targetOwner(roles, "factory"), address(0xA3), "factory owner");
+    Types.OperatorConfig memory operator = _roles();
+    assertEq(ConfigLib.targetOwner(operator, "verifier:0x00010001"), address(0xA1), "verifier owner by tag");
+    assertEq(ConfigLib.targetOwner(operator, "resolver"), address(0xA2), "resolver owner");
+    assertEq(ConfigLib.targetOwner(operator, "factory"), address(0xA3), "factory owner");
   }
 
   /// @dev Roles are per verifier: the tag form selects THAT verifier's owner.
@@ -72,7 +72,7 @@ contract TargetResolutionTest is Test {
     try this.callTargetOwnerOn(_roles(), "verifier:0xdeadbeef") {
       fail();
     } catch Error(string memory reason) {
-      assertTrue(vm.contains(reason, "declare that verifier's roles first"), reason);
+      assertTrue(vm.contains(reason, "declare that verifier first"), reason);
     }
   }
 
@@ -118,10 +118,10 @@ contract TargetResolutionTest is Test {
   }
 
   function callTargetOwnerOn(
-    Types.RolesConfig calldata roles,
+    Types.OperatorConfig calldata operator,
     string calldata target
   ) external pure returns (address) {
-    return ConfigLib.targetOwner(roles, target);
+    return ConfigLib.targetOwner(operator, target);
   }
 
   function _dep() internal pure returns (Types.Deployment memory deployment) {
@@ -142,21 +142,21 @@ contract TargetResolutionTest is Test {
     deployment.verifiers[1].addr = VERIFIER_V2;
   }
 
-  function _roles() internal pure returns (Types.RolesConfig memory roles) {
-    roles.aliasName = "local";
-    roles.verifiers = new Types.VerifierRoles[](1);
-    roles.verifiers[0].versionTag = TAG;
-    roles.verifiers[0].owner = address(0xA1);
-    roles.resolver.owner = address(0xA2);
-    roles.factoryOwner = address(0xA3);
+  function _roles() internal pure returns (Types.OperatorConfig memory operator) {
+    operator.aliasName = "local";
+    operator.verifiers = new Types.VerifierConfig[](1);
+    operator.verifiers[0].versionTag = TAG;
+    operator.verifiers[0].roles.owner = address(0xA1);
+    operator.resolver.roles.owner = address(0xA2);
+    operator.factory.roles.owner = address(0xA3);
   }
 
-  function _rolesTwoVerifiers() internal pure returns (Types.RolesConfig memory roles) {
-    roles = _roles();
-    roles.verifiers = new Types.VerifierRoles[](2);
-    roles.verifiers[0].versionTag = TAG;
-    roles.verifiers[0].owner = address(0xA1);
-    roles.verifiers[1].versionTag = TAG_V2;
-    roles.verifiers[1].owner = address(0xA4);
+  function _rolesTwoVerifiers() internal pure returns (Types.OperatorConfig memory operator) {
+    operator = _roles();
+    operator.verifiers = new Types.VerifierConfig[](2);
+    operator.verifiers[0].versionTag = TAG;
+    operator.verifiers[0].roles.owner = address(0xA1);
+    operator.verifiers[1].versionTag = TAG_V2;
+    operator.verifiers[1].roles.owner = address(0xA4);
   }
 }

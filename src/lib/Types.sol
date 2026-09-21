@@ -15,16 +15,15 @@ pragma solidity 0.8.26;
 ///      normal rather than drift.
 library Types {
   // ----------------------------- config/chains ------------------------------
+  /// @dev Chainlink's per-chain reference, synced from the CCIP API and committed. The
+  ///      operator's own values live in `config/operator/chains/<alias>.json`.
   struct ChainConfig {
-    string aliasName; // stable key; matches rpc alias + roles/deployment files
+    string aliasName; // stable key; matches rpc alias + operator/deployment files
     uint256 chainId;
     uint64 chainSelector; // parsed from a JSON string (selectors exceed 2^53)
     address rmn; // Chainlink-provided; MUST be non-zero
-    address router; // Chainlink's local CCIP router, synced from the API; default for lanes
-    AllowedFinality allowedFinality; // what a sender may request; empty block = full finality only
-    string[] storageLocations; // operator's own aggregator endpoint(s)
+    address router; // Chainlink's local CCIP router; default for lanes
     address[] feeTokens; // fee tokens to report on / sweep. Empty = no-op for fee scripts.
-    bytes32 resolverSalt; // identical on every chain
   }
 
   /// @dev Alternatives a sender may request, not a conjunction. Full finality is always
@@ -34,7 +33,7 @@ library Types {
     uint16 minBlockDepth; // accept a depth request of at least this many blocks; 0 = none
   }
 
-  // ------------------------------ config/lanes ------------------------------
+  // -------------------------- config/operator/lanes --------------------------
   struct LaneEndpoint {
     string aliasName;
     uint64 chainSelector;
@@ -63,16 +62,35 @@ library Types {
     LaneEndpoint source;
     LaneEndpoint dest;
     bytes4 versionTag;
-    SignatureConfig signatureConfig;
     RemoteChainConfig remote;
     AllowlistConfig allowlist;
   }
 
-  // ------------------------------ config/roles ------------------------------
-  /// @dev Role holders for ONE verifier, keyed by its versionTag like the
-  ///      deployment record. Declared BEFORE deploying that verifier.
-  struct VerifierRoles {
+  /// @dev A lane plus the committee that signs its messages. The committee is not a lane
+  ///      field: it is declared on the SOURCE chain and resolved by `ConfigLib`, so every
+  ///      lane leaving one chain under one tag carries the same set.
+  struct LaneCommittee {
+    LaneConfig lane;
+    SignatureConfig committee;
+  }
+
+  // ------------------------- config/operator/chains --------------------------
+  /// @dev Everything the operator declares for ONE verifier, keyed by its versionTag like
+  ///      the deployment record. All of it is that verifier's own: its committee signs the
+  ///      messages leaving this chain and publishes them to its `storageLocations`, and
+  ///      `allowedFinality` is what a sender may ask of it. Declared BEFORE deploying it.
+  struct VerifierConfig {
     bytes4 versionTag;
+    AllowedFinality allowedFinality; // what a sender may request; empty block = full finality only
+    string[] storageLocations; // where this verifier's signers publish
+    // The committee, applied on every destination keyed by THIS chain's selector. An empty
+    // set (threshold 0) means the chain is never a source under this tag.
+    SignatureConfig signatureConfig;
+    VerifierRoles roles;
+  }
+
+  /// @dev The intended holder of each role on one verifier.
+  struct VerifierRoles {
     address owner;
     address storageLocationsAdmin;
     address allowlistAdmin;
@@ -84,14 +102,30 @@ library Types {
     address feeAggregator;
   }
 
-  struct RolesConfig {
-    string aliasName;
-    VerifierRoles[] verifiers; // one entry per verifier; tags unique per chain
-    ResolverRoles resolver;
-    address factoryOwner;
+  struct FactoryRoles {
+    address owner;
     // The createAndCall allowlist the factory SHOULD hold: the desired full set, not a
     // delta. [] means nobody may createAndCall.
-    address[] factoryAllowlist;
+    address[] allowlist;
+  }
+
+  /// @dev The single resolver and factory per chain. Both carry role holders only, under
+  ///      the same `roles` key a verifier entry uses, so one rule covers the whole file.
+  struct ResolverConfig {
+    ResolverRoles roles;
+  }
+
+  struct FactoryConfig {
+    FactoryRoles roles;
+  }
+
+  /// @dev One chain's operator config: every verifier it runs, then the single resolver
+  ///      and factory.
+  struct OperatorConfig {
+    string aliasName;
+    VerifierConfig[] verifiers; // one entry per verifier; tags unique per chain
+    ResolverConfig resolver;
+    FactoryConfig factory;
   }
 
   // --------------------------- config/deployments ---------------------------
@@ -132,7 +166,7 @@ library Types {
     address resolver;
     ResolverDeployParams resolverParams;
     // Which catalogued versionTags are DEPLOYED on this chain, and at what address.
-    // config/version-tags.json enumerates the tag identities repo-wide; this record maps
+    // config/operator.json enumerates the tag identities repo-wide; this record maps
     // the deployed ones to addresses.
     VerifierDeployment[] verifiers;
   }

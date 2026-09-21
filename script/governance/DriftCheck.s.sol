@@ -13,7 +13,7 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title DriftCheck
 /// @notice READ-ONLY comparison of the FULL declared config
-///         (`config/chains`, `config/lanes`, `config/roles`, `config/deployments`)
+///         (`config/operator/chains`, `config/operator/lanes`, `config/deployments`)
 ///         against live on-chain getters. Designed to be CI-schedulable with DISTINCT
 ///         exit codes for clean / drift / RPC-unavailable — see drift-check.sh,
 ///         which maps this script's outcome to codes 0 / 1 / 2.
@@ -56,14 +56,13 @@ contract DriftCheck is Script {
   ) external view {
     ConfigLib.assertChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
-    Types.LaneConfig[] memory lanes = ConfigLib.readLanes();
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
+    Types.LaneCommittee[] memory lanes = ConfigLib.readLaneCommittees();
 
     console2.log("[DriftCheck] chain:", chainAlias);
     console2.log("  lanes considered:", lanes.length);
 
-    uint256 drift = checkAll(deployment, chainConfig, roles, lanes);
+    uint256 drift = checkAll(deployment, operator, lanes);
 
     if (drift > 0) {
       console2.log("DRIFT_DETECTED total mismatches:", drift);
@@ -74,46 +73,46 @@ contract DriftCheck is Script {
 
   function checkAll(
     Types.Deployment memory deployment,
-    Types.ChainConfig memory chainConfig,
-    Types.RolesConfig memory roles,
-    Types.LaneConfig[] memory lanes
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
     _assertReachable(deployment);
 
-    drift += checkRoles(deployment, roles);
-    drift += checkVerifierConfig(deployment, chainConfig);
-    drift += checkResolverImplementations(deployment, chainConfig, lanes);
-    drift += checkLanes(deployment, chainConfig, lanes);
+    drift += checkRoles(deployment, operator);
+    drift += checkVerifierConfig(deployment, operator);
+    drift += checkResolverImplementations(deployment, operator, lanes);
+    drift += checkLanes(deployment, operator, lanes);
   }
 
-  /// @notice Owners and admin/fee roles vs `config/roles/<alias>.json`.
+  /// @notice Owners and admin/fee roles vs `config/operator/chains/<alias>.json`.
   /// @dev There is no `pendingOwner()` getter on these contracts, so a half-finished
   ///      two-step handover is invisible here; the accept leg must be confirmed by the
   ///      ceremony itself. `getPendingStorageLocationsAdmin()` DOES exist and is
   ///      reported, because a stuck pending admin is a real operational state.
   function checkRoles(
     Types.Deployment memory deployment,
-    Types.RolesConfig memory roles
+    Types.OperatorConfig memory operator
   ) public view returns (uint256 drift) {
     // Role holders are per verifier: each recorded verifier is compared against ITS
-    // roles entry. A recorded verifier with no entry is drift — the roles file is the
+    // roles entry. A recorded verifier with no entry is drift — the operator file is the
     // machine-checkable intent, and a verifier without intent cannot be checked.
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
       string memory prefix = string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag), " ");
-      if (!ConfigLib.hasVerifierRolesTag(roles, deployment.verifiers[i].versionTag)) {
+      if (!ConfigLib.hasVerifierConfigTag(operator, deployment.verifiers[i].versionTag)) {
         console2.log(
           string.concat(
             "DRIFT_DETECTED ",
             prefix,
-            "has no roles entry - add a verifiers[] entry to config/roles/",
-            roles.aliasName,
+            "has no roles entry - add a verifiers[] entry to config/operator/chains/",
+            operator.aliasName,
             ".json"
           )
         );
         ++drift;
         continue;
       }
-      Types.VerifierRoles memory expected = ConfigLib.verifierRolesByTag(roles, deployment.verifiers[i].versionTag);
+      Types.VerifierRoles memory expected =
+      ConfigLib.verifierConfigByTag(operator, deployment.verifiers[i].versionTag).roles;
 
       CommitteeVerifier verifier = CommitteeVerifier(deployment.verifiers[i].addr);
       drift += _diffAddress(string.concat(prefix, "owner"), expected.owner, verifier.owner());
@@ -137,29 +136,31 @@ contract DriftCheck is Script {
 
     if (deployment.resolver != address(0)) {
       VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
-      drift += _diffAddress("resolver owner", roles.resolver.owner, resolver.owner());
-      drift += _diffAddress("resolver feeAggregator", roles.resolver.feeAggregator, resolver.getFeeAggregator());
+      drift += _diffAddress("resolver owner", operator.resolver.roles.owner, resolver.owner());
+      drift += _diffAddress(
+        "resolver feeAggregator", operator.resolver.roles.feeAggregator, resolver.getFeeAggregator()
+      );
     }
 
-    if (deployment.factory != address(0) && roles.factoryOwner != address(0)) {
-      drift += _diffAddress("factory owner", roles.factoryOwner, CREATE2Factory(deployment.factory).owner());
+    if (deployment.factory != address(0) && operator.factory.roles.owner != address(0)) {
+      drift += _diffAddress("factory owner", operator.factory.roles.owner, CREATE2Factory(deployment.factory).owner());
     }
 
     if (deployment.factory != address(0)) {
       drift += _diffAddressSet(
-        "factory allowlist", roles.factoryAllowlist, CREATE2Factory(deployment.factory).getAllowList()
+        "factory allowlist", operator.factory.roles.allowlist, CREATE2Factory(deployment.factory).getAllowList()
       );
     }
   }
 
-  /// @notice Chain-scoped verifier state vs the deployment record + `config/chains/<alias>.json`,
+  /// @notice Chain-scoped verifier state vs the deployment record + `config/operator/chains/<alias>.json`,
   ///         checked per recorded verifier.
   /// @dev `versionTag` is immutable on-chain (`BaseVerifier.i_versionTag`), so a mismatch
   ///      here is unfixable by configuration — it means the recorded address is the wrong
   ///      verifier, or the record was edited after deploy. Flagged loudly for that reason.
   function checkVerifierConfig(
     Types.Deployment memory deployment,
-    Types.ChainConfig memory chainConfig
+    Types.OperatorConfig memory operator
   ) public view returns (uint256 drift) {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
       CommitteeVerifier verifier = CommitteeVerifier(deployment.verifiers[i].addr);
@@ -177,13 +178,16 @@ contract DriftCheck is Script {
         ++drift;
       }
 
+      // Per tag, like the roles: two live verifiers may legitimately differ.
+      if (!ConfigLib.hasVerifierConfigTag(operator, deployment.verifiers[i].versionTag)) continue;
+      Types.VerifierConfig memory declared = ConfigLib.verifierConfigByTag(operator, deployment.verifiers[i].versionTag);
       drift += _diffFinality(
         string.concat(prefix, "allowedFinality"),
-        FinalityConfigLib.encode(chainConfig.allowedFinality),
+        FinalityConfigLib.encode(declared.allowedFinality),
         verifier.getAllowedFinalityConfig()
       );
       drift += _diffStrings(
-        string.concat(prefix, "storageLocations"), chainConfig.storageLocations, verifier.getStorageLocations()
+        string.concat(prefix, "storageLocations"), declared.storageLocations, verifier.getStorageLocations()
       );
     }
   }
@@ -198,8 +202,8 @@ contract DriftCheck is Script {
   ///      outbound entry no lane declares is drift for the same reason.
   function checkResolverImplementations(
     Types.Deployment memory deployment,
-    Types.ChainConfig memory chainConfig,
-    Types.LaneConfig[] memory lanes
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
     if (deployment.resolver == address(0)) return 0;
     VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
@@ -238,19 +242,20 @@ contract DriftCheck is Script {
     // ---- outbound: lanes -> on-chain ----
     VersionedVerifierResolver.OutboundImplementationArgs[] memory outbound = resolver.getAllOutboundImplementations();
     for (uint256 i = 0; i < lanes.length; ++i) {
-      if (!_stringsEqual(lanes[i].source.aliasName, chainConfig.aliasName)) continue;
+      Types.LaneConfig memory lane = lanes[i].lane;
+      if (!_stringsEqual(lane.source.aliasName, operator.aliasName)) continue;
 
-      if (!ConfigLib.hasVerifierTag(deployment, lanes[i].versionTag)) {
+      if (!ConfigLib.hasVerifierTag(deployment, lane.versionTag)) {
         console2.log(
           string.concat(
             "DRIFT_DETECTED lane ",
-            lanes[i].name,
+            lane.name,
             " versionTag ",
-            ConfigLib.tagToString(lanes[i].versionTag),
+            ConfigLib.tagToString(lane.versionTag),
             " has no recorded verifier - run: make deploy-verifier CHAIN=",
-            chainConfig.aliasName,
+            operator.aliasName,
             " TAG=",
-            ConfigLib.tagToString(lanes[i].versionTag)
+            ConfigLib.tagToString(lane.versionTag)
           )
         );
         ++drift;
@@ -259,13 +264,13 @@ contract DriftCheck is Script {
 
       address outboundImplementation = address(0);
       for (uint256 j = 0; j < outbound.length; ++j) {
-        if (outbound[j].destChainSelector == lanes[i].dest.chainSelector) {
+        if (outbound[j].destChainSelector == lane.dest.chainSelector) {
           outboundImplementation = outbound[j].verifier;
         }
       }
       drift += _diffAddress(
-        string.concat("resolver outbound impl for lane ", lanes[i].name),
-        ConfigLib.verifierByTag(deployment, lanes[i].versionTag),
+        string.concat("resolver outbound impl for lane ", lane.name),
+        ConfigLib.verifierByTag(deployment, lane.versionTag),
         outboundImplementation
       );
     }
@@ -275,8 +280,8 @@ contract DriftCheck is Script {
       bool declared = false;
       for (uint256 j = 0; j < lanes.length; ++j) {
         if (
-          _stringsEqual(lanes[j].source.aliasName, chainConfig.aliasName)
-            && lanes[j].dest.chainSelector == outbound[i].destChainSelector
+          _stringsEqual(lanes[j].lane.source.aliasName, operator.aliasName)
+            && lanes[j].lane.dest.chainSelector == outbound[i].destChainSelector
         ) declared = true;
       }
       if (!declared) {
@@ -288,20 +293,20 @@ contract DriftCheck is Script {
     }
   }
 
-  /// @notice Per-lane verifier state vs `config/lanes/*.json`, direction-aware. Each
+  /// @notice Per-lane verifier state vs `config/operator/lanes/*.json`, direction-aware. Each
   ///         lane is checked on the verifier serving ITS versionTag; a tag with no
   ///         recorded verifier is reported once per leg and the leg skipped.
   function checkLanes(
     Types.Deployment memory deployment,
-    Types.ChainConfig memory chainConfig,
-    Types.LaneConfig[] memory lanes
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
     for (uint256 i = 0; i < lanes.length; ++i) {
-      Types.LaneConfig memory lane = lanes[i];
+      Types.LaneConfig memory lane = lanes[i].lane;
       string memory lanePrefix = string.concat("lane ", lane.name, " ");
 
-      bool touchesThisChain = _stringsEqual(lane.dest.aliasName, chainConfig.aliasName)
-        || _stringsEqual(lane.source.aliasName, chainConfig.aliasName);
+      bool touchesThisChain = _stringsEqual(lane.dest.aliasName, operator.aliasName)
+        || _stringsEqual(lane.source.aliasName, operator.aliasName);
       if (!touchesThisChain) continue;
 
       if (!ConfigLib.hasVerifierTag(deployment, lane.versionTag)) {
@@ -312,7 +317,7 @@ contract DriftCheck is Script {
             "versionTag ",
             ConfigLib.tagToString(lane.versionTag),
             " has no recorded verifier on this chain - run: make deploy-verifier CHAIN=",
-            chainConfig.aliasName,
+            operator.aliasName,
             " TAG=",
             ConfigLib.tagToString(lane.versionTag)
           )
@@ -324,15 +329,15 @@ contract DriftCheck is Script {
 
       // Inbound leg: the signer set that verifies messages ARRIVING from lane.source
       // lives on this chain only when this chain is the destination.
-      if (_stringsEqual(lane.dest.aliasName, chainConfig.aliasName)) {
+      if (_stringsEqual(lane.dest.aliasName, operator.aliasName)) {
         (address[] memory signers, uint8 threshold) = verifier.getSignatureConfig(lane.source.chainSelector);
-        drift += _diffUint(string.concat(lanePrefix, "threshold"), lane.signatureConfig.threshold, threshold);
-        drift += _diffAddressSet(string.concat(lanePrefix, "signers"), lane.signatureConfig.signers, signers);
+        drift += _diffUint(string.concat(lanePrefix, "threshold"), lanes[i].committee.threshold, threshold);
+        drift += _diffAddressSet(string.concat(lanePrefix, "signers"), lanes[i].committee.signers, signers);
       }
 
       // Outbound leg: routing/fee/gas for messages LEAVING to lane.dest lives on this
       // chain only when this chain is the source.
-      if (_stringsEqual(lane.source.aliasName, chainConfig.aliasName)) {
+      if (_stringsEqual(lane.source.aliasName, operator.aliasName)) {
         (BaseVerifier.RemoteChainConfigArgs memory remote, address[] memory senders) =
           verifier.getRemoteChainConfig(lane.dest.chainSelector);
         drift += _diffAddress(string.concat(lanePrefix, "router"), lane.remote.router, address(remote.router));

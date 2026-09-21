@@ -1,0 +1,32 @@
+{
+  "alias": "",
+  "verifiers": [
+    {
+      "versionTag": "0x00000000",
+      "allowedFinality": {},
+      "storageLocations": [],
+      "signatureConfig": {
+        "threshold": 0,
+        "signers": []
+      },
+      "roles": {
+        "owner": "0x0000000000000000000000000000000000000000",
+        "storageLocationsAdmin": "0x0000000000000000000000000000000000000000",
+        "allowlistAdmin": "0x0000000000000000000000000000000000000000",
+        "feeAggregator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  ],
+  "resolver": {
+    "roles": {
+      "owner": "0x0000000000000000000000000000000000000000",
+      "feeAggregator": "0x0000000000000000000000000000000000000000"
+    }
+  },
+  "factory": {
+    "roles": {
+      "owner": "0x0000000000000000000000000000000000000000",
+      "allowlist": []
+    }
+  }
+}

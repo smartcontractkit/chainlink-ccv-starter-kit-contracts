@@ -93,8 +93,8 @@ jobs:
         run: forge build
 
       # Same target `make test` runs, so CI and a fresh clone seed identically.
-      - name: Seed version-tag catalog
-        run: make seed-version-tags
+      - name: Seed operator config
+        run: make seed-operator-config
 
       # No `always()` here: if the build failed, the test failure says nothing new.
       - name: Test

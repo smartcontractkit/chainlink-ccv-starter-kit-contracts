@@ -4,7 +4,7 @@ Each check answers a different question. None replaces another.
 
 | check | question | scope |
 |---|---|---|
-| `make validate-config` | does every config file parse, and do lanes agree with chains, roles and the tag catalog? | all files, no RPC |
+| `make validate-config` | does every config file parse, and do lanes agree with chains, the operator files and the tag catalog? | all files, no RPC |
 | `DriftCheck` | does chain X match X's own config? | one chain, one RPC |
 | `LaneParityCheck` | do the two halves of a lane agree with each other? | one lane, two RPCs |
 | `make sync-check` | does my config still match Chainlink's API? | all chains, no RPC — see [Configuration](configuration.md#where-the-chainlink-fields-come-from) |
@@ -26,12 +26,12 @@ make validate-config
 Parses **every** real file under `config/` through the same strict loaders the action
 scripts use — one `[PASS]`/`[FAIL]` line per file — and cross-checks each lane: endpoint
 chain configs exist and agree on the selector, filenames equal the declared names, and
-each endpoint's roles file carries a `verifiers[]` entry for the lane's tag. Where both
+each endpoint's operator file carries a `verifiers[]` entry for the lane's tag and the
+source's entry declares a committee for it. Where both
 directions of a lane exist — two files pair when each one's `source.alias` is the other's
 `dest.alias` — the pair must pin the same `versionTag` and mirror each other's selectors;
-a one-way lane is left alone. Chain files must also agree on `resolverSalt` — the resolver
-only lands on one address everywhere if the salt is identical; any value serves, so long
-as every chain shares it. The action
+a one-way lane is left alone. `config/operator.json` must parse with a non-zero
+`resolverSalt`, and every recorded resolver must have been deployed with it. The action
 scripts parse lazily, so without this a broken file surfaces only when the first script
 touches it, possibly mid-ceremony. Run it first, on every config edit.
 
@@ -42,8 +42,8 @@ touches it, possibly mid-ceremony. Run it first, on every config edit.
 make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 ```
 
-Reconciles live on-chain state against `config/chains`, `config/roles` and
-`config/lanes` — role holders, fee aggregators, storage locations, finality config,
+Reconciles live on-chain state against `config/operator/chains` and
+`config/operator/lanes` — role holders, fee aggregators, storage locations, finality config,
 resolver implementations, and per-lane remote config.
 
 Exit codes: **0** clean, **1** drift, **2** RPC unreachable or another failure.
@@ -73,7 +73,7 @@ make parity LANE=sepolia-to-base_sepolia SOURCE_RPC=$SEPOLIA_RPC_URL DEST_RPC=$B
 Runs three legs and aggregates the worst result:
 
 1. **`runConfig`** — config against config, no RPC. Selector agreement, lane `versionTag`
-   recorded on both chains, `resolverSalt` identical, recorded resolver addresses identical,
+   recorded on both chains, recorded resolver salts and addresses identical,
    nothing left unrecorded, `gasForVerification` non-zero.
 2. **`runSource`** — on the source chain: the outbound implementation for the destination
    selector, and the remote chain config.
@@ -108,7 +108,7 @@ make parity-config LANE=sepolia-to-base_sepolia
 ```
 
 That makes it the cheapest gate you have — it catches a stale selector, a diverged
-`versionTag` or `resolverSalt`, or a missing deployment record before anyone spends gas,
+`versionTag` or recorded salt, or a missing deployment record before anyone spends gas,
 and it can run on every PR. It even runs **before anything is deployed**: a missing
 deployment record is reported as a pre-deploy NOTE and the record comparisons are
 skipped, while the config-vs-config checks still gate the lane. The other two legs need
@@ -118,12 +118,13 @@ the live chains.
 
 | | |
 |---|---|
-| `config/lanes/<lane>.json` | one file — the direction being checked |
-| `config/chains/<source>.json`, `config/chains/<dest>.json` | both, for the selector, tag and salt comparisons |
+| `config/operator/lanes/<lane>.json` | one file — the direction being checked |
+| `config/chains/<source>.json`, `config/chains/<dest>.json` | both, for the selector comparisons |
+| `config/operator/chains/<source>.json` | `runDest` only: the committee for the lane's tag |
 | `config/deployments/<source>.json`, `config/deployments/<dest>.json` | both, for the recorded-address comparisons — `runConfig` alone tolerates a missing one (pre-deploy NOTE) |
 
-`runDest` also reads the **source's** chain config, for its `versionTag` — the inbound map
-is keyed by the tag the source stamps, not by whatever the destination declares.
+The expected tag is the one the lane file pins; `runDest` also reads the **source's**
+operator entry for that tag, for the committee keyed by the source selector.
 
 A missing file exits `2` — "couldn't complete the check", not "the lane is wrong". The
 lane name is matched
@@ -144,21 +145,21 @@ address is identical on every chain** and exits `1` if not, so the generator dou
 check.
 
 It shows what the records *claim*, not what the chains hold — on-chain truth stays with
-drift and parity above. Regenerating the page is a reviewed commit, not a CI side effect:
+drift and parity above. Regenerating the page is a deliberate step, not a CI side effect:
 `--check` only tells you it went stale.
 
-## Role snapshot
+## Operator snapshot
 
 ```bash
 # requires: CHAIN, RPC_URL — read-only, no signer
 make snapshot CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 ```
 
-Writes every live role holder to `out/governance/` for review, and can be promoted into
-`config/roles/<alias>.json` once confirmed. Useful when adopting a deployment whose
+Writes every live role holder and verifier setting to `out/governance/` for review, and
+can be promoted into `config/operator/chains/<alias>.json` once confirmed. Useful when adopting a deployment whose
 intended roles were never written down.
 
-## Both checks are advisory about intent
+## These checks are advisory about intent
 
 They compare declared configuration against on-chain state. They cannot tell you the
 *declared* values are the right ones. A lane whose config still holds placeholder values

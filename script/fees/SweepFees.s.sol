@@ -14,7 +14,7 @@ import {console2} from "forge-std/console2.sol";
 ///         the resolver to their (distinct) fee aggregators via the permissionless
 ///         withdrawFeeTokens.
 /// @dev Each contract is gated independently - skipped while neither chain nor
-///      config/roles names its aggregator, reverted when the two disagree in any way.
+///      config/operator/chains/<alias>.json names its aggregator, reverted when the two disagree in any way.
 ///      Reads chain state at build time, so --rpc-url is required even in SAFE mode.
 /// @dev Zero-balance tokens are omitted by default; SKIP_ZERO_BALANCES=false stages
 ///      every configured token, for batches executed long after they are built.
@@ -27,7 +27,7 @@ contract SweepFees is BaseScript {
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
 
     console2.log("[SweepFees] chain:", chainAlias);
     if (chainConfig.feeTokens.length == 0) {
@@ -47,7 +47,7 @@ contract SweepFees is BaseScript {
     }
     _assertReachable(deployment.resolver, "resolver");
 
-    Call[] memory calls = buildSweepBatch(deployment, roles, chainConfig.feeTokens, skipZeroBalances);
+    Call[] memory calls = buildSweepBatch(deployment, operator, chainConfig.feeTokens, skipZeroBalances);
 
     if (calls.length == 0) {
       console2.log("  nothing sweepable; no batch written");
@@ -64,7 +64,7 @@ contract SweepFees is BaseScript {
   ///         on only one side of chain/config or named differently on each.
   function buildSweepBatch(
     Types.Deployment memory deployment,
-    Types.RolesConfig memory roles,
+    Types.OperatorConfig memory operator,
     address[] memory feeTokens,
     bool skipZeroBalances
   ) public view returns (Call[] memory calls) {
@@ -76,11 +76,17 @@ contract SweepFees is BaseScript {
       string memory label = string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag));
       (address aggregator,) = readAggregators(deployment.verifiers[i].addr, address(0));
       _requireAggregatorMatchesConfig(
-        label, aggregator, ConfigLib.verifierRolesByTag(roles, deployment.verifiers[i].versionTag).feeAggregator
+        label,
+        aggregator,
+        ConfigLib.verifierConfigByTag(operator, deployment.verifiers[i].versionTag).roles.feeAggregator
       );
 
       if (aggregator == address(0)) {
-        console2.log(string.concat("  SKIP ", label, ": not in use (no feeAggregator on-chain or in config/roles)"));
+        console2.log(
+          string.concat(
+            "  SKIP ", label, ": not in use (no feeAggregator on-chain or in config/operator/chains/<alias>.json)"
+          )
+        );
         continue;
       }
       address[] memory tokens = sweepableTokens(deployment.verifiers[i].addr, feeTokens, skipZeroBalances);
@@ -93,9 +99,9 @@ contract SweepFees is BaseScript {
 
     // ---- resolver ----
     (, address resolverAggregator) = readAggregators(address(0), deployment.resolver);
-    _requireAggregatorMatchesConfig("resolver", resolverAggregator, roles.resolver.feeAggregator);
+    _requireAggregatorMatchesConfig("resolver", resolverAggregator, operator.resolver.roles.feeAggregator);
     if (resolverAggregator == address(0)) {
-      console2.log("  SKIP resolver: not in use (no feeAggregator on-chain or in config/roles)");
+      console2.log("  SKIP resolver: not in use (no feeAggregator on-chain or in config/operator/chains/<alias>.json)");
     } else {
       address[] memory resolverTokens = sweepableTokens(deployment.resolver, feeTokens, skipZeroBalances);
       if (resolverTokens.length == 0) {
@@ -111,7 +117,7 @@ contract SweepFees is BaseScript {
     }
   }
 
-  /// @dev Chain and config/roles must agree on the aggregator. Matching zeros mean the
+  /// @dev Chain and config/operator/chains/<alias>.json must agree on the aggregator. Matching zeros mean the
   ///      contract is not in use yet (a legitimate skip); any other disagreement is drift.
   function _requireAggregatorMatchesConfig(
     string memory label,
@@ -121,7 +127,11 @@ contract SweepFees is BaseScript {
     if (onchainAggregator == intendedAggregator) return;
     require(
       intendedAggregator != address(0),
-      string.concat("SweepFees: ", label, " feeAggregator is not declared in config/roles - declare it before sweeping")
+      string.concat(
+        "SweepFees: ",
+        label,
+        " feeAggregator is not declared in config/operator/chains/<alias>.json - declare it before sweeping"
+      )
     );
     revert(
       string.concat(
@@ -129,7 +139,7 @@ contract SweepFees is BaseScript {
         label,
         " feeAggregator on-chain ",
         vm.toString(onchainAggregator),
-        " does not match config/roles ",
+        " does not match config/operator/chains/<alias>.json ",
         vm.toString(intendedAggregator)
       )
     );

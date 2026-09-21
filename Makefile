@@ -4,7 +4,7 @@
 # default, and RPC URLs usually carry an API key. Keep the `@` when editing them.
 
 .PHONY: help install build build-dev clean \
-        check-forge seed-version-tags \
+        check-forge seed-operator-config \
         test sync-selftest fmt fmt-check lint lint-sh lint-typos \
         bootstrap-factory deploy-resolver deploy-verifier verify \
         apply-remote-config apply-allowlists apply-signature-configs \
@@ -58,7 +58,7 @@ define need-tag
 	@test -n "$(TAG)" || { echo "TAG is required (bytes4 versionTag, e.g. TAG=0x00010001)"; exit 2; }
 endef
 
-# Bare `make` must list targets, never run one — `install` used to be the accidental default.
+# Bare `make` must list targets, never run one: the first target would otherwise run.
 .DEFAULT_GOAL := help
 help:             ## list every target
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*##' $(MAKEFILE_LIST) | awk -F':.*?## *' '{printf "  %-25s %s\n", $$1, $$2}'
@@ -75,11 +75,11 @@ check-forge:      ## warn when forge is not the pinned version
 		echo "         install the pinned version: foundryup --install $(FOUNDRY_VERSION)"; \
 	}
 
-# The catalog is gitignored (config privacy) but lane reads validate every versionTag
-# against it, so seed it from the committed example, like `cp .env.example .env`.
-# Copy-if-absent: never overwrite an existing catalog. CI calls this target too.
-seed-version-tags: ## seed config/version-tags.json from the example if absent
-	@[ -f config/version-tags.json ] || cp config/version-tags.example.json config/version-tags.json
+# The kit ships only the example operator file, but lane reads validate every versionTag
+# against its catalog, so seed the real one from it, like `cp .env.example .env`.
+# Copy-if-absent: never overwrite. CI calls this target too.
+seed-operator-config: ## seed config/operator.json from the example if absent
+	@[ -f config/operator.json ] || cp config/operator.example.json config/operator.json
 
 build: check-forge ## production (deterministic) profile
 	forge build
@@ -87,7 +87,7 @@ build: check-forge ## production (deterministic) profile
 build-dev:        ## fast iteration profile (NOT address-compatible)
 	FOUNDRY_PROFILE=dev forge build
 
-test: check-forge seed-version-tags ## hermetic; no RPC needed
+test: check-forge seed-operator-config ## hermetic; no RPC needed
 	forge test -vvv
 
 fmt:              ## forge fmt (writes)
@@ -120,7 +120,7 @@ add-chain:        ## seed config/chains/<alias>.json from the API; never overwri
 	@test -n "$(SELECTOR)" || { echo "SELECTOR is required (the chain's CCIP selector; make discover lists them)"; exit 2; }
 	./script/config/sync-ccip-config.sh bootstrap $(CHAIN) $(SELECTOR)
 
-sync-check:       ## config vs the CCIP API, all chains; read-only, CI-schedulable
+sync-check:       ## config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run
 	./script/config/sync-ccip-config.sh check --all
 
 sync-chain:       ## accept upstream CCIP values for ONE chain
@@ -170,11 +170,11 @@ apply-signature-configs: ## committee signer sets on the DEST chain's verifier
 	$(need-tag)
 	$(call run-script,script/configure/ApplySignatureConfigs.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-set-dynamic-config: ## verifier { feeAggregator, allowlistAdmin } from roles
+set-dynamic-config: ## verifier { feeAggregator, allowlistAdmin } from operator config
 	$(need-tag)
 	$(call run-script,script/configure/SetDynamicConfig.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-set-finality-config: ## verifier allowed-finality cap from chain config
+set-finality-config: ## verifier allowed-finality cap from operator config
 	$(need-tag)
 	$(call run-script,script/configure/SetAllowedFinalityConfig.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
@@ -189,10 +189,10 @@ apply-inbound:    ## resolver inbound map (versionTag -> verifier) for lanes INT
 apply-outbound:   ## resolver outbound map (dest selector -> verifier) for lanes FROM this chain
 	$(call run-script,script/configure/ApplyOutboundImplementationUpdates.s.sol,"run(string)",$(CHAIN))
 
-set-fee-aggregator: ## resolver feeAggregator from roles
+set-fee-aggregator: ## resolver feeAggregator from operator config
 	$(call run-script,script/configure/SetFeeAggregator.s.sol,"run(string)",$(CHAIN))
 
-apply-factory-allowlist: ## factory createAndCall allowlist from roles; prunes the bootstrap deployer
+apply-factory-allowlist: ## factory createAndCall allowlist from operator config; prunes the bootstrap deployer
 	$(call run-script,script/configure/ApplyFactoryAllowlistUpdates.s.sol,"run(string)",$(CHAIN))
 
 # ---- ownership: owner roles (CHAIN + TARGET=verifier:<tag>|resolver|factory) ----
@@ -231,10 +231,10 @@ balance-report:   ## read-only fee balances (no OUTPUT_MODE, no broadcast)
 	@forge script script/fees/BalanceReport.s.sol --sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL)
 
 # ---- governance ----
-snapshot:         ## write live role holders to out/governance/ (read-only)
+snapshot:         ## write live roles + verifier settings to out/governance/ (read-only)
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make snapshot CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";          exit 2; }
-	@forge script script/governance/SnapshotRoles.s.sol \
+	@forge script script/governance/SnapshotOperator.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL)
 
 drift:            ## CI-schedulable; exit 0 clean / 1 drift / 2 rpc-unavailable
@@ -248,7 +248,7 @@ deployments-doc:  ## regenerate docs/src/deployments.md from config/
 deployments-check: ## CI: fail if the doc is stale, or if the resolver address diverges
 	@./script/governance/deployments-report.sh --check > /dev/null
 
-validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, roles, catalog); no RPC
+validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC
 	forge script script/governance/ValidateConfig.s.sol --tc ValidateConfig --sig "run()"
 
 parity-config:    ## LANE=<name>; config-vs-config only — no RPC

@@ -10,7 +10,7 @@ import {console2} from "forge-std/console2.sol";
 /// @title DeployVerifier
 /// @notice Deploys the CommitteeVerifier (plain CREATE, with constructor
 ///         args) and hands the owner + storageLocationsAdmin roles to their CONFIGURED
-///         holders (config/roles/<alias>.json). It is NOT deterministic and its address
+///         holders (config/operator/chains/<alias>.json). It is NOT deterministic and its address
 ///         may differ per chain: fine, it rotates behind the stable resolver.
 ///
 /// @dev Role handover rule (each role independently):
@@ -45,11 +45,12 @@ contract DeployVerifier is Script {
 
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     ConfigLib.assertChainMatches(chainConfig, chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
-    // Roles are per verifier and precede the deploy: reverts unless
-    // config/roles/<alias>.json declares a verifiers entry for this tag.
-    Types.VerifierRoles memory verifierRoles = ConfigLib.verifierRolesByTag(roles, versionTag);
+    // Everything this verifier is declared with is per tag and precedes the deploy:
+    // reverts unless config/operator/chains/<alias>.json declares an entry for it.
+    Types.VerifierConfig memory verifierConfig = ConfigLib.verifierConfigByTag(operator, versionTag);
+    Types.VerifierRoles memory verifierRoles = verifierConfig.roles;
 
     require(chainConfig.rmn != address(0), "DeployVerifier: rmn must be non-zero");
     require(verifierRoles.owner != address(0), "DeployVerifier: verifier.owner role unset");
@@ -70,7 +71,7 @@ contract DeployVerifier is Script {
 
     vm.broadcast();
     CommitteeVerifier v =
-      new CommitteeVerifier(dynamicConfig, chainConfig.storageLocations, chainConfig.rmn, versionTag);
+      new CommitteeVerifier(dynamicConfig, verifierConfig.storageLocations, chainConfig.rmn, versionTag);
     verifier = address(v);
 
     console2.log("[DeployVerifier] chain:", chainAlias);
@@ -108,9 +109,9 @@ contract DeployVerifier is Script {
       addr: verifier,
       feeAggregator: dynamicConfig.feeAggregator,
       allowlistAdmin: dynamicConfig.allowlistAdmin,
-      storageLocations: chainConfig.storageLocations,
+      storageLocations: verifierConfig.storageLocations,
       rmn: chainConfig.rmn,
-      encodedArgs: abi.encode(dynamicConfig, chainConfig.storageLocations, chainConfig.rmn, versionTag)
+      encodedArgs: abi.encode(dynamicConfig, verifierConfig.storageLocations, chainConfig.rmn, versionTag)
     });
     _recordVerifier(deployment, record, vm.envOr("ALLOW_TAG_REPLACE", false));
     if (ConfigLib.isDryRun()) {

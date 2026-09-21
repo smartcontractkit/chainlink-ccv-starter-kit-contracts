@@ -42,10 +42,10 @@ Two constructor arguments cannot be changed after deployment:
 Because callers reach the verifier through the resolver, a new verifier can be introduced
 without moving the resolver. The ordering is load-bearing:
 
-1. Add the new tag to `config/version-tags.json` and a `verifiers[]` roles entry on every chain.
+1. Add the new tag to `config/operator.json` and a `verifiers[]` entry in every chain's operator file.
 2. `make deploy-verifier CHAIN=… TAG=<new> RPC_URL=…` on every chain.
 3. Register its **inbound** implementation on the destination (`ApplyInboundImplementationUpdates`).
-4. Flip the lane's `versionTag` in `config/lanes/*.json` and re-run configure on both chains.
+4. Flip the lane's `versionTag` in `config/operator/lanes/*.json` and re-run configure on both chains.
 5. Switch the **outbound** implementation on the source (`ApplyOutboundImplementationUpdates`) — cutover last.
 6. Retire the old inbound mapping **only after in-flight messages drain** (stage `{tag, address(0)}`, delete the deployment record entry).
 
@@ -64,7 +64,7 @@ the committee alongside the verifier if that overlap matters.
 `SweepFees` (`make sweep-fees CHAIN=… RPC_URL=… OUTPUT_MODE=…`) withdraws accumulated fee
 tokens to the configured aggregators; `BalanceReport` (`make balance-report`, read-only)
 shows what is there first. Both cover **every recorded verifier** and the resolver, each
-gated independently: a contract whose aggregator is zero on-chain *and* in `config/roles`
+gated independently: a contract whose aggregator is zero on-chain *and* in `config/operator`
 is skipped as not in use, while an aggregator named on only one side — or named
 differently — reverts the build as drift.
 
@@ -85,6 +85,6 @@ reachability check (`BaseScript: no code at verifier …`).
 
 ## Storage locations
 
-`storageLocations` is the operator's own aggregator endpoint URL — a per-deployment input from the
-off-chain workstream. It is updatable after deployment by the `storageLocationsAdmin`, via
+`storageLocations` is where a verifier's own signers publish — a per-deployment input from the
+off-chain component. It is updatable after deployment by the `storageLocationsAdmin`, via
 `UpdateStorageLocations`.

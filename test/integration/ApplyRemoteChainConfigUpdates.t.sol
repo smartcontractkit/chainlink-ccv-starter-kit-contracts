@@ -130,7 +130,8 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_toRemoteChainConfigArgs_translatesExampleLane() public view {
-    Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
+    Types.LaneConfig memory lane =
+      ConfigLib.readLaneByPath("config/operator/lanes/sepolia-to-base_sepolia.example.json");
     BaseVerifier.RemoteChainConfigArgs memory args = script.toRemoteChainConfigArgs(lane);
 
     assertEq(args.remoteChainSelector, lane.dest.chainSelector, "remote selector = lane dest");
