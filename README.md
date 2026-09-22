@@ -1,7 +1,6 @@
 # CCV Starter Kit — On-Chain (Foundry)
 
-Deploy and configure the on-chain contracts for a Chainlink Cross-Chain Verifier (CCV), with the
-deploy, configuration and governance tooling around them.
+Starter Kit for Chainlink Cross-Chain Verifiers (CCVs) on-chain deployment and configuration.
 
 > [!IMPORTANT]
 > The CCV Starter Kit spans two repositories. This one deploys and configures the on-chain contracts.
