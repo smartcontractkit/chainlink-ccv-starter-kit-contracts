@@ -1,11 +1,17 @@
 # CCV Starter Kit — On-Chain (Foundry)
 
-Starter Kit for Chainlink Cross-Chain Verifiers (CCVs) on-chain deployment and configuration.
+Deploy and configure the on-chain contracts for a Chainlink Cross-Chain Verifier (CCV), with the
+deploy, configuration and governance tooling around them.
 
-The onchain workstream for the Chainlink **CCV (Crosschain Verifier) Starter Kit**.
-It deploys and configures existing, already-audited Chainlink CCV contracts and
-provides the deploy / config / governance tooling around them. **No new Solidity is
-written here** — the contracts come from `@chainlink/contracts-ccip`, pinned exactly.
+> [!IMPORTANT]
+> The CCV Starter Kit spans two repositories. This one deploys and configures the on-chain contracts.
+> [chainlink-ccv-starter-kit](https://github.com/smartcontractkit/chainlink-ccv-starter-kit) runs the
+> verifier and aggregator services. Operating a CCV requires both.
+
+> [!NOTE]
+> **Building a Cross-Chain Verifier?** If you have questions about this kit, about operating a CCV, or about
+> getting your verifier onboarded into the CCIP indexer, contact us at
+> [clusersupport@smartcontract.com](mailto:clusersupport@smartcontract.com).
 
 ## Documentation
 
