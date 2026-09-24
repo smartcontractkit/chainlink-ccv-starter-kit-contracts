@@ -109,11 +109,12 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
 
 ### Pausing a lane
 
-Set `"router": "0x0000000000000000000000000000000000000000"` in the lane file, keep
-`gasForVerification` non-zero, and run `make apply-remote-config CHAIN=<source> TAG=<versionTag>`.
-Outbound traffic to that destination stops. To resume, remove the `router` key, so the lane
-inherits the source chain's router from `chains/<source>.json` again, and run the same
-target.
+Run `make pause-lane LANE=<name>` against the source chain. It zeroes the router for that
+destination on the source verifier, skipping the call if it is already zero, and writes
+`"router": "0x0000000000000000000000000000000000000000"` into the lane file. Commit that
+change. Outbound traffic to that destination stops. To resume, remove the `router` key, so
+the lane inherits the source chain's router from `chains/<source>.json` again, and run
+`make apply-remote-config CHAIN=<source> TAG=<versionTag>`.
 
 ## `operator/chains/<alias>.json`
 

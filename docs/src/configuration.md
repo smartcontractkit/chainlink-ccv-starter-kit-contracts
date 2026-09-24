@@ -178,7 +178,10 @@ Setting `remoteChainConfig.router` to the zero address **in the lane file** is t
 **only** emergency lever, and it pauses **outbound** traffic for that one destination.
 (It overrides the router normally inherited from the chain config.)
 
-There is no pause function and no inbound halt. See
+`make pause-lane LANE=<name>` sets it on-chain and writes it into the lane file in one
+step. It pauses **outbound messages only**: new sends to that destination fail at the fee
+quote, while messages already in flight still deliver, and traffic arriving from that
+chain is untouched. There is no pause function and no inbound halt. See
 [Operational notes](operations.md#there-is-no-pause-function).
 
 Note that `gasForVerification` must stay non-zero even when pausing — `BaseVerifier`

@@ -39,6 +39,7 @@ libs = ["node_modules", "lib"]
 fs_permissions = [
   { access = "read", path = "./config" },
   { access = "read-write", path = "./config/deployments" }, # deploy scripts record addresses + ctor args here
+  { access = "read-write", path = "./config/operator/lanes" }, # PauseLane records router = 0 in the lane file
   { access = "read", path = "./artifacts" },
   { access = "read-write", path = "./out/safe" },
   { access = "read-write", path = "./out/governance" },

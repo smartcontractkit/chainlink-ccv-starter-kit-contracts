@@ -7,7 +7,7 @@
         check-forge seed-operator-config \
         test sync-selftest fmt fmt-check lint lint-sh lint-typos \
         bootstrap-factory deploy-resolver deploy-verifier verify \
-        apply-remote-config apply-allowlists apply-signature-configs \
+        apply-remote-config pause-lane apply-allowlists apply-signature-configs \
         set-dynamic-config set-finality-config update-storage-locations \
         apply-inbound apply-outbound set-fee-aggregator apply-factory-allowlist \
         transfer-owner accept-owner cancel-owner \
@@ -41,6 +41,16 @@ SAFE_ADDRESS ?=
 # transactions, so selecting it must be explicit.
 define run-script
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make $@ CHAIN=sepolia"; exit 2; }
+	$(call run-script-core,$(1),$(2),$(3))
+endef
+
+# Lane-scoped variant: the script derives the chain from the lane file.
+define run-lane-script
+	@test -n "$(LANE)"    || { echo "LANE is required, e.g. make $@ LANE=sepolia-to-base_sepolia"; exit 2; }
+	$(call run-script-core,$(1),$(2),$(3))
+endef
+
+define run-script-core
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";   exit 2; }
 	@case "$(strip $(OUTPUT_MODE))" in \
 	EOA) \
@@ -161,6 +171,9 @@ verify:           ## source-verify recorded contracts; ONLY=factory|resolver|ver
 apply-remote-config: ## lane remoteChainConfig on the SOURCE chain's verifier
 	$(need-tag)
 	$(call run-script,script/configure/ApplyRemoteChainConfigUpdates.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
+
+pause-lane:       ## stop new sends on a lane (router = 0 on the SOURCE verifier); writes the lane file, commit it
+	$(call run-lane-script,script/configure/PauseLane.s.sol,"run(string)",$(LANE))
 
 apply-allowlists: ## lane sender allowlists on the SOURCE chain's verifier
 	$(need-tag)
