@@ -29,7 +29,7 @@ curl -L https://foundry.paradigm.xyz | bash && foundryup   # Foundry — see the
 npm ci                                # clean install, exactly what package-lock.json pins
 git submodule update --init --recursive   # forge-std, pinned by foundry.lock
 cp .env.example .env                  # then fill in RPC URLs and signing config
-cp config/version-tags.example.json config/version-tags.json   # tag catalog for your deployment
+make seed-operator-config             # config/operator.json (resolver salt + tag catalog) from the example
 ```
 
 Use `npm ci`, not `npm install` — it installs exactly what the lockfile pins and fails
@@ -46,7 +46,7 @@ breaks CREATE2 address parity across machines — see [Deploying](deploy.md#addr
 
 ## A fresh clone has no config
 
-`config/` ships only templates and examples — nothing runs until you write your own:
+A fresh clone has templates and examples only; nothing runs until you write your own config:
 
 ```bash
 # list chains + selectors from the CCIP API — requires: nothing
@@ -55,8 +55,8 @@ make discover
 # create config/chains/<alias>.json with the Chainlink fields — requires: CHAIN, SELECTOR
 make add-chain CHAIN=sepolia SELECTOR=16015286601757825753
 
-# then hand-fill the operator fields it lists, write lanes + roles from the templates,
-# and add your versionTag to config/version-tags.json (deploy refuses an uncataloged tag)
+# then write config/operator/chains/<alias>.json + lanes from the templates,
+# and add your versionTag to config/operator.json (deploy refuses an uncataloged tag)
 ```
 
 [Step 1 of the full flow](full-flow.md#1-write-the-config) walks through all of it;
@@ -82,7 +82,7 @@ What the variables mean:
 |---|---|---|
 | `CHAIN` | every on-chain target | chain alias — `config/chains/<alias>.json` must exist |
 | `RPC_URL` | every on-chain target | that chain's endpoint, usually from `.env` (e.g. `$SEPOLIA_RPC_URL`) |
-| `TAG` | per-verifier targets | `bytes4` versionTag from `config/version-tags.json` — selects which recorded verifier when a chain runs several |
+| `TAG` | per-verifier targets | `bytes4` versionTag from `config/operator.json` — selects which recorded verifier when a chain runs several |
 | `OUTPUT_MODE` | configure / ownership / fee | exactly `EOA` or `SAFE` (case-sensitive) — **no default**, anything else exits |
 | `SAFE_ADDRESS` | `OUTPUT_MODE=SAFE` only | the Safe that will import and execute the batch |
 | `TARGET` | owner transfer targets | `verifier:<tag>` \| `resolver` \| `factory` |

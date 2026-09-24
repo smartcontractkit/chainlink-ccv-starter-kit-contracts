@@ -2,11 +2,12 @@
 
 `sync-ccip-config.sh` pulls per-chain CCIP-core values — `router`, `rmn`,
 `chainId`, `feeTokens`, `explorerAddressPath` — from the public CCIP REST API into `config/chains/<alias>.json`,
-and keeps them verifiable afterwards. It never touches the operator-owned fields
-(`allowedFinality`, `resolverSalt`, `storageLocations`, roles), and `chainSelector` is an
-immutable join guard: a source whose selector disagrees with the file is refused.
-There is no per-file source setting: the API is the single upstream, and a chain it
-does not serve is simply skipped by sweeps.
+and keeps them verifiable afterwards. That file is Chainlink's reference, and the sync
+rewrites those fields alone, so every sync is a diff you can review; the operator's own
+values live in `config/operator/`.
+`alias` names the file and `chainSelector` is an immutable join guard: a source whose
+selector disagrees with the file is refused. There is no per-file source setting: the API
+is the single upstream, and a chain it does not serve is simply skipped by sweeps.
 
 Four subcommands; run with no arguments to print the built-in help.
 
@@ -27,18 +28,17 @@ you already have as `configured(<alias>)`. This is where you find the selector f
 ./script/config/sync-ccip-config.sh bootstrap sepolia 16015286601757825753
 ```
 
-Creates `config/chains/sepolia.json` from `_template.json` with the core fields
-filled in from the API, and lists what is left for you to fill by hand:
+Creates `config/chains/sepolia.json` from `_template.json` with the core fields filled in
+from the API. The file is complete as written, with nothing left to hand-fill.
 
 ```
 CREATED config/chains/sepolia.json from api: router, rmn, chainId, feeTokens, explorerAddressPath
-    still to fill in: storageLocations, resolverSalt
 ```
 
 **Bootstrap never overwrites.** Re-running against an existing file prints `OK` when it
 agrees with the source, or `WARN` with a field-by-field diff — and writes nothing — when
-it does not. That asymmetry is deliberate: an existing file may carry values chosen on
-purpose, including an `rmn` already baked immutably into a deployed verifier.
+it does not. That asymmetry is deliberate: an existing file may carry an `rmn` already
+baked immutably into a deployed verifier.
 
 ## `check` — drift detection, read-only
 
@@ -48,8 +48,12 @@ purpose, including an `rmn` already baked immutably into a deployed verifier.
 ```
 
 Compares the core fields against the source and never writes. Exit `0` clean, `1` drift,
-`2` tooling failure — the same shape as `drift-check.sh`, so it is CI-schedulable.
-`--all` covers every real chain config, skipping `_template.json` and `*.example.json`.
+`2` could not run — no verdict either way, because a tool is missing or the source was
+unreachable. The same shape as
+`drift-check.sh`, so one wrapper covers both.
+`--all` covers every real chain config, skipping `_template.json`, `*.example.json` and
+`zz-scratch-*` test fixtures. With no chain configs at all it prints a `NOTE` saying nothing
+was checked and exits `0`.
 A chain the API does not know (a local anvil fixture, say) is reported as
 `SKIP <alias>: not in upstream` and does not fail the sweep — the upstream is
 authoritative about what it serves. Naming such a chain explicitly (`check <alias>`)
@@ -66,8 +70,9 @@ until the operator sweeps and retires the token by hand.
 ./script/config/sync-ccip-config.sh sync sepolia
 ```
 
-The only writer. Overwrites the core fields and preserves every other key
-byte-for-byte, atomically (temp file, validate, rename).
+The only writer. Overwrites the core fields and nothing else, atomically (temp file,
+validate, rename). A no-drift sync leaves the file byte-identical, so it changes only
+when upstream did.
 
 `feeTokens` is the one **append-only** core field: upstream additions merge in, but a
 token the upstream drops is kept — removing it from the config would make the fee
@@ -86,9 +91,10 @@ of what was deployed. Syncing over it makes the record lie.
 
 ## The intended rhythm
 
-1. **Onboarding**: `discover` → `bootstrap` → hand-fill the operator fields → deploy.
-2. **Ongoing**: `check --all` on a schedule. On drift, decide: upstream really moved an
-   address → `sync`; deliberate local divergence → leave it.
+1. **Onboarding**: `discover` → `bootstrap` → declare
+   `config/operator/chains/<alias>.json` → deploy.
+2. **Ongoing**: `check --all` periodically. On drift, decide: upstream really moved an
+   address → `sync` and review the diff; deliberate local divergence → leave it.
 
 ## How it is put together
 

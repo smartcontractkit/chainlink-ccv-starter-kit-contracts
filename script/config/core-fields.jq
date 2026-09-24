@@ -8,8 +8,8 @@
 #  Load with:  jq -L "$(dirname "$0")" 'include "core-fields"; <filter>'
 # =============================================================================
 
-# The fields a config source owns. Everything else in a chain config is operator
-# input the source cannot know (resolverSalt, storageLocations, ...).
+# The fields a config source owns. Everything else in a chain config is identity:
+# `alias` names the file and `chainSelector` is the join guard.
 def core: ["router", "rmn", "chainId", "feeTokens", "explorerAddressPath"];
 
 # Per-field equality. Addresses are case-insensitive; feeTokens is an unordered set;

@@ -70,20 +70,25 @@ abstract contract CommitteeVerifierSetup is Test {
     list[0].addr = verifierAddr;
   }
 
-  /// @notice Single-entry verifier-roles array for roles fixtures.
-  function _singleVerifierRoles(
-    Types.VerifierRoles memory entry
-  ) internal pure returns (Types.VerifierRoles[] memory list) {
-    list = new Types.VerifierRoles[](1);
+  /// @notice Single-entry `verifiers` array for operator-config fixtures.
+  function _singleVerifierConfig(
+    Types.VerifierConfig memory entry
+  ) internal pure returns (Types.VerifierConfig[] memory list) {
+    list = new Types.VerifierConfig[](1);
     list[0] = entry;
   }
 
-  /// @notice The roles this fixture's constructor arguments produce, for tag `tag`.
-  function _fixtureVerifierRoles(
+  /// @notice The verifier config this fixture's constructor arguments produce, for tag `tag`.
+  /// @dev Matches what setUp() deployed: the constructor's finality default, the same
+  ///      storage locations, and the deployer in every role. `signatureConfig` stays empty
+  ///      because a committee is applied on the destination, not here.
+  function _fixtureVerifierConfig(
     bytes4 tag
-  ) internal view returns (Types.VerifierRoles memory) {
-    return Types.VerifierRoles({
-      versionTag: tag,
+  ) internal view returns (Types.VerifierConfig memory entry) {
+    entry.versionTag = tag;
+    entry.storageLocations = new string[](1);
+    entry.storageLocations[0] = "https://aggregator.example/ccv";
+    entry.roles = Types.VerifierRoles({
       owner: address(this),
       storageLocationsAdmin: address(this),
       allowlistAdmin: address(this),

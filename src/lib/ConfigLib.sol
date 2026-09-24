@@ -18,37 +18,57 @@ library ConfigLib {
   Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
   string private constant CHAINS_DIR = "config/chains/";
-  string private constant LANES_DIR = "config/lanes/";
-  string private constant ROLES_DIR = "config/roles/";
+  string private constant LANES_DIR = "config/operator/lanes/";
+  string private constant OPERATOR_DIR = "config/operator/chains/";
   string private constant DEPLOYMENTS_DIR = "config/deployments/";
-  string private constant VERSION_TAGS_PATH = "config/version-tags.json";
+  string private constant OPERATOR_PATH = "config/operator.json";
 
   string internal constant BARE_VERIFIER_TARGET_ERROR =
     "ConfigLib: target 'verifier' needs a versionTag - use verifier:<versionTag> (e.g. verifier:0x00010001)";
 
   // --------------------------------------------------------------------------
-  //  version tags (the repo-wide catalog)
+  //  config/operator.json (the repo-wide operator file)
   // --------------------------------------------------------------------------
-  /// @notice Every versionTag this repo uses, from config/version-tags.json. Tags are
+  /// @notice Every versionTag this repo uses, from config/operator.json. Tags are
   ///         CROSS-CHAIN identities (a lane's tag must match on both endpoints), so the
   ///         catalog is repo-wide, not per chain: one spelling everywhere.
   function readVersionTags() internal view returns (bytes4[] memory tags) {
-    require(vm.exists(VERSION_TAGS_PATH), string.concat("ConfigLib: missing ", VERSION_TAGS_PATH));
-    string memory json = vm.readFile(VERSION_TAGS_PATH);
+    require(vm.exists(OPERATOR_PATH), string.concat("ConfigLib: missing ", OPERATOR_PATH));
+    string memory json = vm.readFile(OPERATOR_PATH);
     uint256 count = 0;
     while (vm.keyExistsJson(json, string.concat(".versionTags[", vm.toString(count), "]"))) {
       ++count;
     }
     tags = new bytes4[](count);
     for (uint256 i = 0; i < count; ++i) {
-      bytes4 tag = _parseVersionTag(json, string.concat(".versionTags[", vm.toString(i), "].tag"), VERSION_TAGS_PATH);
+      bytes4 tag = _parseVersionTag(json, string.concat(".versionTags[", vm.toString(i), "].tag"), OPERATOR_PATH);
       for (uint256 j = 0; j < i; ++j) {
         require(
-          tags[j] != tag, string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", VERSION_TAGS_PATH)
+          tags[j] != tag, string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", OPERATOR_PATH)
         );
       }
       tags[i] = tag;
     }
+  }
+
+  /// @notice The CREATE2 salt the resolver uses on every chain, from config/operator.json.
+  ///         One repo-wide value: the resolver lands on the same address everywhere only
+  ///         if the salt is identical.
+  function readResolverSalt() internal view returns (bytes32) {
+    return readResolverSaltByPath(OPERATOR_PATH);
+  }
+
+  /// @dev A zero salt is the example file's unfilled state; every unfilled fork would
+  ///      deploy to the same address, so it is rejected at load.
+  function readResolverSaltByPath(
+    string memory path
+  ) internal view returns (bytes32 salt) {
+    require(vm.exists(path), string.concat("ConfigLib: missing ", path));
+    salt = vm.parseJsonBytes32(vm.readFile(path), ".resolverSalt");
+    require(
+      salt != bytes32(0),
+      string.concat("ConfigLib: resolverSalt in ", path, " is zero - set the repo-wide CREATE2 salt")
+    );
   }
 
   /// @dev Parses a versionTag field and enforces the documented scheme: 2 bytes operator
@@ -92,7 +112,7 @@ library ConfigLib {
         " (",
         context,
         ") is not catalogued in ",
-        VERSION_TAGS_PATH,
+        OPERATOR_PATH,
         " - add it there first"
       )
     );
@@ -122,34 +142,54 @@ library ConfigLib {
     if (vm.exists(path)) return readChainByPath(path);
   }
 
+  /// @dev The file is Chainlink's synced reference, so its key set is closed: a key the
+  ///      sync does not own would be operator data in the wrong file.
   function readChainByPath(
     string memory path
   ) internal view returns (Types.ChainConfig memory chainConfig) {
     string memory json = vm.readFile(path);
+    _requireChainKeys(json, path);
     chainConfig.aliasName = vm.parseJsonString(json, ".alias");
     chainConfig.chainId = vm.parseJsonUint(json, ".chainId");
     chainConfig.chainSelector = _toUint64(vm.parseUint(vm.parseJsonString(json, ".chainSelector")), ".chainSelector");
     chainConfig.rmn = vm.parseJsonAddress(json, ".rmn");
-    // Optional while older configs predate the field; the sync tooling maintains it.
-    chainConfig.router = vm.keyExistsJson(json, ".router") ? vm.parseJsonAddress(json, ".router") : address(0);
-    chainConfig.allowedFinality = _parseAllowedFinality(json, path);
-    chainConfig.storageLocations = vm.parseJsonStringArray(json, ".storageLocations");
-    // Optional by design: fee sweeping is opt-in per chain, and the token list mirrors a
-    // Chainlink-governed set (see config/README.md). A chain whose list is not decided yet
-    // must still load for every other script, so absent => empty => fee scripts no-op.
-    chainConfig.feeTokens =
-      vm.keyExistsJson(json, ".feeTokens") ? vm.parseJsonAddressArray(json, ".feeTokens") : new address[](0);
-    chainConfig.resolverSalt = vm.parseJsonBytes32(json, ".resolverSalt");
+    chainConfig.router = vm.parseJsonAddress(json, ".router");
+    // [] is legal: fee scripts are a logged no-op on a chain with no fee tokens.
+    chainConfig.feeTokens = vm.parseJsonAddressArray(json, ".feeTokens");
+  }
+
+  function _requireChainKeys(
+    string memory json,
+    string memory path
+  ) private pure {
+    string[] memory keys = vm.parseJsonKeys(json, ".");
+    for (uint256 i = 0; i < keys.length; ++i) {
+      string memory k = keys[i];
+      bool known = _stringsEqual(k, "alias") || _stringsEqual(k, "chainId") || _stringsEqual(k, "chainSelector")
+        || _stringsEqual(k, "router") || _stringsEqual(k, "rmn") || _stringsEqual(k, "feeTokens")
+        || _stringsEqual(k, "explorerAddressPath");
+      require(
+        known,
+        string.concat(
+          "ConfigLib: ",
+          path,
+          " has unknown key '",
+          k,
+          "' - keys are alias, chainId, chainSelector, router, rmn, feeTokens, explorerAddressPath"
+        )
+      );
+    }
   }
 
   /// @dev Typed block, so the FinalityCodec encoding is generated rather than typed by hand.
   ///      A misspelt key is rejected because it would otherwise read as full finality only.
   function _parseAllowedFinality(
     string memory json,
+    string memory key,
     string memory path
   ) private view returns (Types.AllowedFinality memory finality) {
-    require(vm.keyExistsJson(json, ".allowedFinality"), string.concat("ConfigLib: ", path, " has no allowedFinality"));
-    string[] memory keys = vm.parseJsonKeys(json, ".allowedFinality");
+    require(vm.keyExistsJson(json, key), string.concat("ConfigLib: ", path, " has no ", key));
+    string[] memory keys = vm.parseJsonKeys(json, key);
     for (uint256 i = 0; i < keys.length; ++i) {
       require(
         _stringsEqual(keys[i], "allowSafeTag") || _stringsEqual(keys[i], "minBlockDepth"),
@@ -162,11 +202,11 @@ library ConfigLib {
         )
       );
     }
-    if (vm.keyExistsJson(json, ".allowedFinality.allowSafeTag")) {
-      finality.allowSafeTag = vm.parseJsonBool(json, ".allowedFinality.allowSafeTag");
+    if (vm.keyExistsJson(json, string.concat(key, ".allowSafeTag"))) {
+      finality.allowSafeTag = vm.parseJsonBool(json, string.concat(key, ".allowSafeTag"));
     }
-    if (vm.keyExistsJson(json, ".allowedFinality.minBlockDepth")) {
-      uint256 depth = vm.parseJsonUint(json, ".allowedFinality.minBlockDepth");
+    if (vm.keyExistsJson(json, string.concat(key, ".minBlockDepth"))) {
+      uint256 depth = vm.parseJsonUint(json, string.concat(key, ".minBlockDepth"));
       require(
         depth >= 1 && depth <= FinalityCodec.MAX_BLOCK_DEPTH,
         string.concat(
@@ -295,12 +335,31 @@ library ConfigLib {
     }
   }
 
-  /// @notice Every lane in `config/lanes/`, parsed.
+  /// @notice Every lane in `config/operator/lanes/`, parsed.
   function readLanes() internal view returns (Types.LaneConfig[] memory lanes) {
     string[] memory paths = listLanes();
     lanes = new Types.LaneConfig[](paths.length);
     for (uint256 i = 0; i < paths.length; ++i) {
       lanes[i] = readLaneByPath(paths[i]);
+    }
+  }
+
+  /// @notice The committee that signs messages leaving `lane`'s source chain under the
+  ///         tag the lane pins, from that chain's operator file.
+  /// @dev The one accessor for it. Declared once on the source, so two destinations of
+  ///      the same source and tag cannot disagree about the set.
+  function committeeFor(
+    Types.LaneConfig memory lane
+  ) internal view returns (Types.SignatureConfig memory) {
+    return verifierConfigByTag(readOperator(lane.source.aliasName), lane.versionTag).signatureConfig;
+  }
+
+  /// @notice Every lane paired with its source's committee, for the scripts that need both.
+  function readLaneCommittees() internal view returns (Types.LaneCommittee[] memory paired) {
+    Types.LaneConfig[] memory lanes = readLanes();
+    paired = new Types.LaneCommittee[](lanes.length);
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      paired[i] = Types.LaneCommittee({lane: lanes[i], committee: committeeFor(lanes[i])});
     }
   }
 
@@ -336,10 +395,6 @@ library ConfigLib {
     lane.versionTag = _parseVersionTag(json, ".versionTag", path);
     requireKnownTag(lane.versionTag, string.concat("lane ", lane.name));
 
-    lane.signatureConfig.threshold =
-      _toUint8(vm.parseJsonUint(json, ".signatureConfig.threshold"), ".signatureConfig.threshold");
-    lane.signatureConfig.signers = vm.parseJsonAddressArray(json, ".signatureConfig.signers");
-
     // Optional override: absent inherits the SOURCE chain's synced router; an explicit
     // 0x0 pauses the lane. An inherited zero means the chain was never synced - error.
     if (vm.keyExistsJson(json, ".remoteChainConfig.router")) {
@@ -371,97 +426,117 @@ library ConfigLib {
   }
 
   // --------------------------------------------------------------------------
-  //  roles
+  //  operator (per chain)
   // --------------------------------------------------------------------------
-  function readRoles(
+  function operatorPath(
     string memory aliasName
-  ) internal view returns (Types.RolesConfig memory) {
-    return readRolesByPath(string.concat(ROLES_DIR, aliasName, ".json"));
+  ) internal pure returns (string memory) {
+    return string.concat(OPERATOR_DIR, aliasName, ".json");
   }
 
-  /// @notice Read roles, or a zeroed struct if the file does not exist. Lets optional
-  ///         steps (e.g. factory ownership handover) proceed without a roles file.
-  function readRolesOrEmpty(
+  function readOperator(
     string memory aliasName
-  ) internal view returns (Types.RolesConfig memory roles) {
-    string memory path = string.concat(ROLES_DIR, aliasName, ".json");
-    if (vm.exists(path)) return readRolesByPath(path);
-    roles.aliasName = aliasName;
+  ) internal view returns (Types.OperatorConfig memory) {
+    return readOperatorByPath(operatorPath(aliasName));
   }
 
-  function readRolesByPath(
+  /// @notice Operator config, or a zeroed struct if the file does not exist. Lets optional
+  ///         steps (e.g. factory ownership handover) proceed without one.
+  function readOperatorOrEmpty(
+    string memory aliasName
+  ) internal view returns (Types.OperatorConfig memory operator) {
+    string memory path = operatorPath(aliasName);
+    if (vm.exists(path)) return readOperatorByPath(path);
+    operator.aliasName = aliasName;
+  }
+
+  function readOperatorByPath(
     string memory path
-  ) internal view returns (Types.RolesConfig memory roles) {
+  ) internal view returns (Types.OperatorConfig memory operator) {
     string memory json = vm.readFile(path);
-    roles.aliasName = vm.parseJsonString(json, ".alias");
+    operator.aliasName = vm.parseJsonString(json, ".alias");
 
     // Absent array == no verifiers declared yet (factory-only chains).
     uint256 count = 0;
-    while (vm.keyExistsJson(json, _rolesEntryKey(count, ""))) {
+    while (vm.keyExistsJson(json, _verifierConfigKey(count, ""))) {
       ++count;
     }
-    roles.verifiers = new Types.VerifierRoles[](count);
+    operator.verifiers = new Types.VerifierConfig[](count);
     for (uint256 i = 0; i < count; ++i) {
-      bytes4 tag = _parseVersionTag(json, _rolesEntryKey(i, ".versionTag"), path);
+      bytes4 tag = _parseVersionTag(json, _verifierConfigKey(i, ".versionTag"), path);
       for (uint256 j = 0; j < i; ++j) {
         require(
-          roles.verifiers[j].versionTag != tag,
+          operator.verifiers[j].versionTag != tag,
           string.concat("ConfigLib: duplicate versionTag ", tagToString(tag), " in ", path)
         );
       }
-      roles.verifiers[i] = Types.VerifierRoles({
-        versionTag: tag,
-        owner: vm.parseJsonAddress(json, _rolesEntryKey(i, ".owner")),
-        storageLocationsAdmin: vm.parseJsonAddress(json, _rolesEntryKey(i, ".storageLocationsAdmin")),
-        allowlistAdmin: vm.parseJsonAddress(json, _rolesEntryKey(i, ".allowlistAdmin")),
-        feeAggregator: vm.parseJsonAddress(json, _rolesEntryKey(i, ".feeAggregator"))
+      operator.verifiers[i].versionTag = tag;
+      operator.verifiers[i].allowedFinality =
+        _parseAllowedFinality(json, _verifierConfigKey(i, ".allowedFinality"), path);
+      operator.verifiers[i].storageLocations = vm.parseJsonStringArray(json, _verifierConfigKey(i, ".storageLocations"));
+      operator.verifiers[i].signatureConfig = _parseSignatureConfig(json, _verifierConfigKey(i, ".signatureConfig"));
+      operator.verifiers[i].roles = Types.VerifierRoles({
+        owner: vm.parseJsonAddress(json, _verifierConfigKey(i, ".roles.owner")),
+        storageLocationsAdmin: vm.parseJsonAddress(json, _verifierConfigKey(i, ".roles.storageLocationsAdmin")),
+        allowlistAdmin: vm.parseJsonAddress(json, _verifierConfigKey(i, ".roles.allowlistAdmin")),
+        feeAggregator: vm.parseJsonAddress(json, _verifierConfigKey(i, ".roles.feeAggregator"))
       });
     }
 
-    roles.resolver.owner = vm.parseJsonAddress(json, ".resolver.owner");
-    roles.resolver.feeAggregator = vm.parseJsonAddress(json, ".resolver.feeAggregator");
-    roles.factoryOwner = vm.parseJsonAddress(json, ".factory.owner");
-    roles.factoryAllowlist = vm.parseJsonAddressArray(json, ".factory.allowlist");
-    for (uint256 i = 0; i < roles.factoryAllowlist.length; ++i) {
+    operator.resolver.roles.owner = vm.parseJsonAddress(json, ".resolver.roles.owner");
+    operator.resolver.roles.feeAggregator = vm.parseJsonAddress(json, ".resolver.roles.feeAggregator");
+    operator.factory.roles.owner = vm.parseJsonAddress(json, ".factory.roles.owner");
+    operator.factory.roles.allowlist = vm.parseJsonAddressArray(json, ".factory.roles.allowlist");
+    for (uint256 i = 0; i < operator.factory.roles.allowlist.length; ++i) {
       require(
-        roles.factoryAllowlist[i] != address(0), string.concat("ConfigLib: zero address in factory.allowlist in ", path)
+        operator.factory.roles.allowlist[i] != address(0),
+        string.concat("ConfigLib: zero address in factory.allowlist in ", path)
       );
     }
   }
 
-  function _rolesEntryKey(
+  function _parseSignatureConfig(
+    string memory json,
+    string memory key
+  ) private pure returns (Types.SignatureConfig memory config) {
+    config.threshold = _toUint8(vm.parseJsonUint(json, string.concat(key, ".threshold")), key);
+    config.signers = vm.parseJsonAddressArray(json, string.concat(key, ".signers"));
+  }
+
+  function _verifierConfigKey(
     uint256 index,
     string memory field
   ) private pure returns (string memory) {
     return string.concat(".verifiers[", vm.toString(index), "]", field);
   }
 
-  /// @notice The role holders declared for `tag`. Reverts when that tag has no
-  ///         entry — roles are intent and precede the deploy, so declare them first.
-  function verifierRolesByTag(
-    Types.RolesConfig memory roles,
+  /// @notice Everything declared for the verifier carrying `tag`: its finality, storage
+  ///         locations, committee and role holders. Reverts when that tag has no entry —
+  ///         the declaration is intent and precedes the deploy, so write it first.
+  function verifierConfigByTag(
+    Types.OperatorConfig memory operator,
     bytes4 tag
-  ) internal pure returns (Types.VerifierRoles memory) {
-    for (uint256 i = 0; i < roles.verifiers.length; ++i) {
-      if (roles.verifiers[i].versionTag == tag) return roles.verifiers[i];
+  ) internal pure returns (Types.VerifierConfig memory) {
+    for (uint256 i = 0; i < operator.verifiers.length; ++i) {
+      if (operator.verifiers[i].versionTag == tag) return operator.verifiers[i];
     }
     revert(
       string.concat(
-        "ConfigLib: no verifier roles for versionTag ",
+        "ConfigLib: no verifiers entry for versionTag ",
         tagToString(tag),
-        " in config/roles/",
-        roles.aliasName,
-        ".json - declare that verifier's roles first"
+        " in config/operator/chains/",
+        operator.aliasName,
+        ".json - declare that verifier first"
       )
     );
   }
 
-  function hasVerifierRolesTag(
-    Types.RolesConfig memory roles,
+  function hasVerifierConfigTag(
+    Types.OperatorConfig memory operator,
     bytes4 tag
   ) internal pure returns (bool) {
-    for (uint256 i = 0; i < roles.verifiers.length; ++i) {
-      if (roles.verifiers[i].versionTag == tag) return true;
+    for (uint256 i = 0; i < operator.verifiers.length; ++i) {
+      if (operator.verifiers[i].versionTag == tag) return true;
     }
     return false;
   }
@@ -484,17 +559,17 @@ library ConfigLib {
     revert(_unknownTarget(target));
   }
 
-  /// @notice Maps a target name to the owner declared for it in `config/roles`.
+  /// @notice Maps a target name to the owner declared for it in `config/operator/chains/<alias>.json`.
   /// @dev Role holders are per verifier; `verifier:<tag>` selects that verifier's
   ///      owner (same grammar as `targetAddress`).
   function targetOwner(
-    Types.RolesConfig memory roles,
+    Types.OperatorConfig memory operator,
     string memory target
   ) internal pure returns (address) {
     if (_stringsEqual(target, "verifier")) revert(BARE_VERIFIER_TARGET_ERROR);
-    if (_hasPrefix(target, "verifier:")) return verifierRolesByTag(roles, _tagSuffix(target)).owner;
-    if (_stringsEqual(target, "resolver")) return roles.resolver.owner;
-    if (_stringsEqual(target, "factory")) return roles.factoryOwner;
+    if (_hasPrefix(target, "verifier:")) return verifierConfigByTag(operator, _tagSuffix(target)).roles.owner;
+    if (_stringsEqual(target, "resolver")) return operator.resolver.roles.owner;
+    if (_stringsEqual(target, "factory")) return operator.factory.roles.owner;
     revert(_unknownTarget(target));
   }
 

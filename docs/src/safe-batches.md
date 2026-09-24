@@ -69,9 +69,8 @@ an earlier run — otherwise a stale batch could be imported as if it were curre
 
 Batch files are grouped by chain alias under `out/safe/<alias>/`.
 
-That directory is gitignored: batches are run-local artifacts, regenerated from `config/`
-whenever they are needed, and delivered to signers out of band rather than through the
-repo.
+Batches are regenerated from `config/` whenever they are needed and delivered to
+signers out of band.
 
 ## Execution order does not matter
 

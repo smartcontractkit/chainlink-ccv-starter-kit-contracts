@@ -46,14 +46,14 @@ can run several at once, each identified by an immutable `bytes4` **versionTag**
 ## Layout
 
 ```
-config/          config-as-data (version-tags catalog, chains, lanes, roles, deployments)
+config/          config-as-data (synced chain reference, operator intent, lanes, deployments)
 script/
   deploy/        BootstrapFactory, DeployResolver, DeployVerifier
   configure/     one script per privileged call, for one chain at a time
   config/        sync-ccip-config.sh — sync Chainlink's chain values from the CCIP API
   ownership/     per-target 2-step transfers (owners + storageLocationsAdmin)
   fees/          SweepFees + BalanceReport
-  governance/    SnapshotRoles, DriftCheck, LaneParityCheck, deployments-report (+ wrappers)
+  governance/    ValidateConfig, SnapshotOperator, DriftCheck, LaneParityCheck, deployments-report (+ wrappers)
 src/lib/         ConfigLib, BaseScript (EOA/Safe switch), Types
 artifacts/       forge build output (foundry.toml: out = "artifacts")
 out/safe/        generated Safe Transaction Builder JSON, one subdir per chain alias
@@ -67,7 +67,7 @@ foundryup
 npm ci
 git submodule update --init --recursive
 cp .env.example .env
-cp config/version-tags.example.json config/version-tags.json
+make seed-operator-config   # config/operator.json from the example, if absent
 make build
 ```
 
@@ -84,10 +84,10 @@ make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 
 ## Deployed addresses
 
-Regenerate from local deployment records (gitignored):
+Regenerate from your local deployment records:
 
 ```bash
 make deployments-doc
 ```
 
-The committed page is a placeholder until you deploy — see [`docs/src/deployments.md`](docs/src/deployments.md).
+The page is a placeholder until you deploy and run `make deployments-doc` — see [`docs/src/deployments.md`](docs/src/deployments.md).

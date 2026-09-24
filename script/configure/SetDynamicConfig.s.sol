@@ -9,7 +9,7 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title SetDynamicConfig
 /// @notice Sets the CommitteeVerifier DynamicConfig
-///         { feeAggregator, allowlistAdmin }. Per chain / per verifier: the versionTag
+///         { feeAggregator, allowlistAdmin }. Per verifier: the versionTag
 ///         argument selects which recorded verifier (and which roles entry).
 ///
 /// Usage:
@@ -40,11 +40,12 @@ contract SetDynamicConfig is BaseScript {
     _initOutput(chainAlias);
 
     // Both lookups revert with a legible reason when the tag is unknown: the
-    // record defines which tags exist, the roles file carries that verifier's intent.
+    // record defines which tags exist, the operator file carries that verifier's intent.
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     address verifier = ConfigLib.verifierByTag(deployment, versionTag);
     _assertReachable(verifier, "verifier");
-    Types.VerifierRoles memory verifierRoles = ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag);
+    Types.VerifierRoles memory verifierRoles =
+    ConfigLib.verifierConfigByTag(ConfigLib.readOperator(chainAlias), versionTag).roles;
 
     console2.log("[SetDynamicConfig] chain:", chainAlias);
     console2.log("  versionTag:", ConfigLib.tagToString(versionTag));

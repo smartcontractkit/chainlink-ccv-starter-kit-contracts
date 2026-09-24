@@ -40,11 +40,13 @@ contract SetFeeAggregatorTest is CommitteeVerifierSetup {
   }
 
   function test_readsResolverFeeAggregator_fromExampleRoles() public view {
-    Types.RolesConfig memory roles = ConfigLib.readRolesByPath("config/roles/sepolia.example.json");
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath("config/operator/chains/sepolia.example.json");
     // The resolver fee aggregator is DISTINCT from the verifier's (see roles example).
-    assertEq(roles.resolver.feeAggregator, address(0x2000000000000000000000000000000000000005), "resolver fee agg");
+    assertEq(
+      operator.resolver.roles.feeAggregator, address(0x2000000000000000000000000000000000000005), "resolver fee agg"
+    );
     assertTrue(
-      roles.resolver.feeAggregator != ConfigLib.verifierRolesByTag(roles, VERSION_TAG).feeAggregator,
+      operator.resolver.roles.feeAggregator != ConfigLib.verifierConfigByTag(operator, VERSION_TAG).roles.feeAggregator,
       "two distinct fee destinations"
     );
   }

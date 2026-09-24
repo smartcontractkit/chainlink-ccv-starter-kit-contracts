@@ -38,7 +38,7 @@ contract TransferStorageLocationsAdmin is BaseScript {
     // reverts on a non-admin sender. Only a deferred batch can hide the mismatch.
     if (outputMode == OutputMode.SAFE) requireExecutorIsCurrentAdmin(verifier, outputSafeAddress);
     address proposedAdmin =
-      ConfigLib.verifierRolesByTag(ConfigLib.readRoles(chainAlias), versionTag).storageLocationsAdmin;
+      ConfigLib.verifierConfigByTag(ConfigLib.readOperator(chainAlias), versionTag).roles.storageLocationsAdmin;
     require(proposedAdmin != address(0), "storageLocationsAdmin role unset");
 
     console2.log("[TransferStorageLocationsAdmin] versionTag:", ConfigLib.tagToString(versionTag));

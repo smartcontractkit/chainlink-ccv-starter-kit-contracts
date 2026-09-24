@@ -11,12 +11,12 @@ import {console2} from "forge-std/console2.sol";
 /// @title DeployResolver
 /// @notice Deploys the VersionedVerifierResolver via CREATE2 with a
 ///         FIXED salt so it gets the SAME address on every chain, and hands ownership
-///         to the CONFIGURED resolver owner (config/roles/<alias>.json `resolver.owner`).
+///         to the CONFIGURED resolver owner (config/operator/chains/<alias>.json `resolver.roles.owner`).
 ///
 /// @dev The resolver has NO constructor arguments, so its CREATE2 initcode is just the
 ///      creation bytecode: nothing per-chain can perturb the address (only the salt +
-///      compiler settings). Keep `resolverSalt` identical across chains and deploy with
-///      the default (release) profile so the bytecode matches everywhere.
+///      compiler settings). The salt is the repo-wide `resolverSalt` in config/operator.json;
+///      deploy with the default (release) profile so the bytecode matches everywhere.
 ///
 /// @dev Ownership. The factory (the deployer) is the resolver's initial owner. We use
 ///      createAndTransferOwnership to PROPOSE ownership to the configured owner:
@@ -36,33 +36,28 @@ contract DeployResolver is Script {
     // CREATE2 makes a wrong-chain deploy succeed at the expected address, so verify first.
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     ConfigLib.assertChainMatches(chainConfig, chainAlias);
-    // config/chains/_template.json ships resolverSalt as 32 zero bytes, so an unfilled
-    // template deploys to a deterministic address every other unfilled template also
-    // picks. Checked before the roles and deployment reads: it is a chain-config fault.
-    require(
-      chainConfig.resolverSalt != bytes32(0),
-      "DeployResolver: resolverSalt is zero (the _template.json placeholder); set a real salt in config/chains"
-    );
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    // The loader rejects a zero salt. Read before the roles and deployment: a config
+    // fault should fail on itself.
+    bytes32 salt = ConfigLib.readResolverSalt();
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeploymentOrEmpty(chainAlias);
 
     require(deployment.factory != address(0), "DeployResolver: factory not recorded; run BootstrapFactory first");
-    address configuredOwner = roles.resolver.owner;
-    require(configuredOwner != address(0), "DeployResolver: resolver.owner role unset");
+    address configuredOwner = operator.resolver.roles.owner;
+    require(configuredOwner != address(0), "DeployResolver: resolver.roles.owner unset");
 
     address deployer = msg.sender;
     bytes memory creationCode = type(VersionedVerifierResolver).creationCode;
 
     // Precompute the address so parity can be asserted after deployment.
-    address predicted = CREATE2Factory(deployment.factory).computeAddress(creationCode, chainConfig.resolverSalt);
+    address predicted = CREATE2Factory(deployment.factory).computeAddress(creationCode, salt);
     console2.log("[DeployResolver] chain:", chainAlias);
     console2.log("  factory:", deployment.factory);
     console2.log("  predicted resolver:", predicted);
 
     // Deploy via CREATE2 and propose ownership to the configured owner.
     vm.broadcast();
-    resolver = CREATE2Factory(deployment.factory)
-      .createAndTransferOwnership(creationCode, chainConfig.resolverSalt, configuredOwner);
+    resolver = CREATE2Factory(deployment.factory).createAndTransferOwnership(creationCode, salt, configuredOwner);
     require(resolver == predicted, "DeployResolver: deployed address != predicted (determinism broken)");
     console2.log("  resolver deployed:", resolver);
 
@@ -72,13 +67,13 @@ contract DeployResolver is Script {
       VersionedVerifierResolver(resolver).acceptOwnership();
       console2.log("  owner: deployer (accepted in-place)");
     } else {
-      console2.log("  owner PROPOSED to configured resolver.owner:", configuredOwner);
+      console2.log("  owner PROPOSED to configured resolver.roles.owner:", configuredOwner);
       console2.log("  (that owner must acceptOwnership() before running resolver config scripts)");
     }
 
     deployment.resolver = resolver;
     // No constructor args; the salt is the deploy-time input that fixed this address.
-    deployment.resolverParams = Types.ResolverDeployParams({salt: chainConfig.resolverSalt, encodedArgs: ""});
+    deployment.resolverParams = Types.ResolverDeployParams({salt: salt, encodedArgs: ""});
     if (ConfigLib.isDryRun()) {
       console2.log("  DRY RUN: nothing deployed, record NOT written - re-run with --broadcast");
       return resolver;

@@ -17,11 +17,11 @@ RPC, missing deployment record) reports `2`, never a false `1`.
 
 ```bash
 ./script/governance/drift-check.sh <chainAlias> <rpcUrl>
-make drift CHAIN=sepolia
+make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 ```
 
 Wraps `DriftCheck.s.sol`: reconciles live on-chain state against `config/chains`,
-`config/roles` and `config/lanes` for one chain — role holders, fee aggregators, storage
+`config/chains/`, `config/operator/chains/` and `config/operator/lanes/` for one chain — role holders, fee aggregators, storage
 locations, finality config, resolver implementations, per-lane remote config. Needs an
 RPC. Direction-aware: a chain that is only ever a lane *source* will not have its signer
 sets checked (those live on the destination).
@@ -34,8 +34,8 @@ sets checked (those live on the destination).
 
 Wraps `LaneParityCheck.s.sol` and runs its three legs, aggregating worst-of:
 
-1. `runConfig` — config vs config, no RPC: selector agreement, `versionTag` and
-   `resolverSalt` identical on both chains, recorded resolver addresses identical.
+1. `runConfig` — config vs config, no RPC: selector agreement, `versionTag` recorded on
+   both chains, recorded resolver salts and addresses identical.
 2. `runSource` — on the source chain: outbound implementation and remote chain config,
    keyed by the destination selector.
 3. `runDest` — on the destination chain: inbound implementation for the *source's*
@@ -71,9 +71,9 @@ afterwards. Emits:
   a divergence prints the distinct addresses and exits `1`, so the generator doubles as
   a CI check
 
-`--check` renders to stdout without writing and additionally exits `1` when the
-committed page no longer matches `config/`, or is missing entirely — regeneration should
-be a reviewed commit, not a CI side effect. Writing is the no-argument default, so any
+`--check` renders to stdout without writing and additionally exits `1` when the page on
+disk no longer matches `config/`, or is missing entirely — regeneration is a deliberate
+step, not a CI side effect. Writing is the no-argument default, so any
 other argument is rejected with exit `2` rather than treated as a write.
 
 Incomplete config is reported rather than papered over, because a record grows in stages:
@@ -83,11 +83,11 @@ Incomplete config is reported rather than papered over, because a record grows i
   on stderr, not dropped silently.
 - An address a record does not carry yet renders as `not recorded`, never as a link.
 - Parity is judged only over chains that actually have a resolver address, and the count
-  of chains without one is stated beneath the verdict. Absent addresses used to collapse
-  into a single distinct value and report ✅.
-- With no records at all, writing over a populated page is refused (exit `2`): a clone has
-  no `config/deployments/`, so that path would otherwise replace the page with the empty
-  placeholder and exit `0`. Delete the page first to reset it deliberately.
+  of chains without one is stated beneath the verdict; an absent address is excluded from
+  the comparison rather than counted as a value.
+- With no records at all, writing over a populated page is refused (exit `2`): otherwise
+  a checkout with no records would replace the page with the empty placeholder and exit
+  `0`. Delete the page first to reset it deliberately.
 
 `explorerAddressPath` in `config/chains/<alias>.json` is **optional** and synced from the
 CCIP API (`chainMetadata.explorer.addressPath`). It is a full URL prefix, not a path
@@ -103,12 +103,14 @@ The report shows what the records **claim**, not what the chains hold: a stale o
 hand-edited record is rendered faithfully. On-chain truth is `drift-check.sh` and
 `lane-parity-check.sh`'s job.
 
-## `SnapshotRoles.s.sol`
+## `SnapshotOperator.s.sol`
 
 ```bash
-forge script script/governance/SnapshotRoles.s.sol --sig "run(string)" <chainAlias> --rpc-url <url>
+forge script script/governance/SnapshotOperator.s.sol --sig "run(string)" <chainAlias> --rpc-url <url>
 ```
 
-Reads every live role holder into `out/governance/` for review; promote confirmed values
-into `config/roles/<alias>.json` by hand. Output is run-local and gitignored (snapshots
+Writes `out/governance/<alias>-<block>.operator.local.json`: one entry per recorded verifier
+with its live finality, storage locations and role holders, the committee carried over from
+an existing operator file. Promote confirmed values
+into `config/operator/chains/<alias>.json` by hand. Output is run-local (snapshots
 hold live role addresses).

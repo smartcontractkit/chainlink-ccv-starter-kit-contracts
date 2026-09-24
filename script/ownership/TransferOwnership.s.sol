@@ -10,9 +10,9 @@ import {console2} from "forge-std/console2.sol";
 /// @title TransferOwnership
 /// @notice Proposes an ownership transfer. Two-step ownable: the CURRENT owner proposes
 ///         here; the new owner accepts separately (AcceptOwnership).
-/// @dev Generic over target ("verifier[:<versionTag>]" | "resolver" | "factory"); the tag
+/// @dev Generic over target ("verifier:<versionTag>" | "resolver" | "factory"); the tag
 ///      form selects a verifier when several are recorded. New owner is read
-///      from config/roles/<alias>.json.
+///      from config/operator/chains/<alias>.json.
 /// @dev HANDOVER ORDER: grant-new-before-revoke-old; only revoke the old holder
 ///      AFTER on-chain acceptance is confirmed (DriftCheck goes clean on the new owner).
 ///      The accept leg is prepared and executed by the incoming holder, not here.
@@ -22,7 +22,7 @@ import {console2} from "forge-std/console2.sol";
 ///
 /// Usage:
 ///   OUTPUT_MODE=SAFE forge script script/ownership/TransferOwnership.s.sol \
-///     --sig "run(string,string)" sepolia verifier
+///     --sig "run(string,string)" sepolia verifier:0x00010001
 contract TransferOwnership is BaseScript {
   function callFor(
     address to,
@@ -38,10 +38,10 @@ contract TransferOwnership is BaseScript {
     _initOutput(chainAlias);
 
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
 
     address to = ConfigLib.targetAddress(deployment, target);
-    address proposedOwner = ConfigLib.targetOwner(roles, target);
+    address proposedOwner = ConfigLib.targetOwner(operator, target);
     require(proposedOwner != address(0), string.concat("TransferOwnership: ", target, " owner role unset"));
     _assertReachable(to, target);
     // SAFE-only: EOA runs execute now, so forge's pre-broadcast simulation already

@@ -2,7 +2,7 @@
   "name": "ccv-starter-kit-onchain",
   "version": "0.1.0",
   "private": true,
-  "description": "Onchain (Foundry) workstream for the Chainlink CCV Starter Kit: deploy, configure and govern existing, audited Chainlink CCV contracts.",
+  "description": "Onchain (Foundry) component of the Chainlink CCV Starter Kit: deploy, configure and govern existing, audited Chainlink CCV contracts.",
   "license": "MIT",
   "dependencies": {
     "@chainlink/contracts-ccip": "2.0.0"

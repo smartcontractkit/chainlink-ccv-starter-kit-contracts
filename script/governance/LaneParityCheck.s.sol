@@ -16,8 +16,9 @@ import {console2} from "forge-std/console2.sol";
 ///         halves disagree passes drift on both sides while every message fails on first
 ///         use.
 ///
-/// @dev `remoteChainConfig` is keyed by DEST selector and lives on the SOURCE chain;
-///      `signatureConfig` is keyed by SOURCE selector and lives on the DEST chain.
+/// @dev `remoteChainConfig` is keyed by DEST selector and lives on the SOURCE chain. The
+///      signer set is declared in the SOURCE chain's operator config and applied on the
+///      DEST chain, keyed by the source selector.
 /// @dev Emits the same `DRIFT_DETECTED` marker as `DriftCheck`, so one wrapper shape
 ///      covers both. Unreachable contracts revert without the marker (exit 2, not 1).
 ///
@@ -34,7 +35,7 @@ contract LaneParityCheck is Script {
     string calldata laneName
   ) external view {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
-    _header(lane, "config", "files only: selectors, tag recorded on both chains, salt + resolver identical");
+    _header(lane, "config", "files only: selectors, tag recorded on both chains, recorded salt + resolver identical");
     uint256 mismatches =
       checkLaneConfig(lane, ConfigLib.readChain(lane.source.aliasName), ConfigLib.readChain(lane.dest.aliasName));
     // A missing deployment record is the legitimate pre-deploy state, not lane drift:
@@ -73,7 +74,8 @@ contract LaneParityCheck is Script {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
     ConfigLib.assertChain(lane.dest.aliasName);
     _header(lane, "dest", "on the dest chain: inbound implementation for the lane tag, verifier tag, signer set");
-    _finish(lane, "dest", checkDestSide(lane, lane.versionTag, ConfigLib.readDeployment(lane.dest.aliasName)));
+    Types.LaneCommittee memory entry = Types.LaneCommittee({lane: lane, committee: ConfigLib.committeeFor(lane)});
+    _finish(lane, "dest", checkDestSide(entry, lane.versionTag, ConfigLib.readDeployment(lane.dest.aliasName)));
   }
 
   function _header(
@@ -129,10 +131,6 @@ contract LaneParityCheck is Script {
     );
     mismatches += _diffUint("dest selector: lane vs chain config", destChain.chainSelector, lane.dest.chainSelector);
 
-    mismatches += _diffBytes32(
-      "resolverSalt must be identical on both chains", sourceChain.resolverSalt, destChain.resolverSalt
-    );
-
     // BaseVerifier reverts DestGasCannotBeZero regardless of the router value.
     if (lane.remote.gasForVerification == 0) mismatches += _report("lane gasForVerification is zero");
 
@@ -153,6 +151,13 @@ contract LaneParityCheck is Script {
     mismatches += _diffAddress(
       "recorded resolver address must be identical", sourceDeployment.resolver, destDeployment.resolver
     );
+    if (sourceDeployment.resolver != address(0) && destDeployment.resolver != address(0)) {
+      mismatches += _diffBytes32(
+        "recorded resolver salt must be identical",
+        sourceDeployment.resolverParams.salt,
+        destDeployment.resolverParams.salt
+      );
+    }
 
     // The lane's verifier must be deployed on BOTH endpoints: the tag in
     // `verifierResults` originates on the source, and the dest verifier rejects any tag
@@ -206,10 +211,11 @@ contract LaneParityCheck is Script {
   ///         the inbound implementation by the lane's `versionTag`; both live on the
   ///         dest verifier recorded for that tag.
   function checkDestSide(
-    Types.LaneConfig memory lane,
+    Types.LaneCommittee memory entry,
     bytes4 versionTag,
     Types.Deployment memory destDeployment
   ) public view returns (uint256 mismatches) {
+    Types.LaneConfig memory lane = entry.lane;
     address verifier = ConfigLib.verifierByTag(destDeployment, versionTag);
     _assertReachable(verifier, destDeployment.resolver, "dest");
 
@@ -229,8 +235,8 @@ contract LaneParityCheck is Script {
     if (threshold == 0) {
       mismatches += _report("dest signatureConfig for source selector is UNSET (threshold 0)");
     } else {
-      mismatches += _diffUint("dest signatureConfig threshold", lane.signatureConfig.threshold, threshold);
-      mismatches += _diffSigners("dest signatureConfig signers", lane.signatureConfig.signers, signers);
+      mismatches += _diffUint("dest signatureConfig threshold", entry.committee.threshold, threshold);
+      mismatches += _diffSigners("dest signatureConfig signers", entry.committee.signers, signers);
     }
   }
 

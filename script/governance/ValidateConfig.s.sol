@@ -10,9 +10,10 @@ import {console2} from "forge-std/console2.sol";
 /// @title ValidateConfig
 /// @notice Eager, repo-wide config validation: parses EVERY real file under `config/`
 ///         through the same strict ConfigLib loaders the action scripts use, plus the
-///         cross-file agreements (lane endpoints exist, selectors match, roles carry an
-///         entry for every lane-pinned tag, a bidirectional pair agrees on the tag and
-///         mirrors its selectors, one resolverSalt shared by every chain). One
+///         cross-file agreements (lane endpoints exist, selectors match, the operator
+///         file carries a roles entry for every lane-pinned tag and the source's a
+///         committee for it, a bidirectional pair agrees on the tag and mirrors its
+///         selectors, every recorded resolver used the repo-wide resolverSalt). One
 ///         [PASS]/[FAIL] line per file, no RPC.
 /// @dev The action scripts parse lazily — a broken file surfaces only when the first
 ///      script touches it, possibly mid-ceremony. This runs the same parses up front.
@@ -24,8 +25,9 @@ import {console2} from "forge-std/console2.sol";
 ///      scripts, so the parses run through this deployed seam — try/catch on an external
 ///      call keeps the run going and reports every file.
 contract ConfigLoader {
-  function loadTags() external view returns (uint256) {
-    return ConfigLib.readVersionTags().length;
+  function loadOperatorFile() external view returns (uint256 tagCount, bytes32 salt) {
+    tagCount = ConfigLib.readVersionTags().length;
+    salt = ConfigLib.readResolverSalt();
   }
 
   function loadChain(
@@ -34,10 +36,13 @@ contract ConfigLoader {
     return ConfigLib.readChainByPath(path);
   }
 
-  function loadRoles(
+  /// @dev Returns only the alias: the parse itself is the test, and the alias is all the
+  ///      caller compares. Handing the whole struct back across the seam costs nothing
+  ///      useful and is heavy to decode.
+  function loadOperator(
     string calldata path
-  ) external view returns (Types.RolesConfig memory) {
-    return ConfigLib.readRolesByPath(path);
+  ) external view returns (string memory aliasName) {
+    return ConfigLib.readOperatorByPath(path).aliasName;
   }
 
   function loadLane(
@@ -60,12 +65,15 @@ contract ValidateConfig is Script {
 
   // Mirrors ConfigLib's private dir layout.
   string private constant CHAINS_DIR = "config/chains/";
-  string private constant LANES_DIR = "config/lanes/";
-  string private constant ROLES_DIR = "config/roles/";
+  string private constant LANES_DIR = "config/operator/lanes/";
+  string private constant OPERATOR_DIR = "config/operator/chains/";
   string private constant DEPLOYMENTS_DIR = "config/deployments/";
 
   uint256 private s_checked;
   uint256 private s_failures;
+  // Set once config/operator.json parses; the deployments check compares recorded salts to it.
+  bool private s_haveSalt;
+  bytes32 private s_resolverSalt;
 
   function run() external {
     console2.log(
@@ -74,9 +82,9 @@ contract ValidateConfig is Script {
     s_loader = new ConfigLoader();
     vm.allowCheatcodes(address(s_loader));
 
-    _checkTags();
+    _checkOperatorFile();
     _checkChains();
-    _checkRoles();
+    _checkOperator();
     _checkLanes();
     _checkDeployments();
 
@@ -92,34 +100,30 @@ contract ValidateConfig is Script {
   //  layers
   // ---------------------------------------------------------------------------
 
-  function _checkTags() private {
-    if (!vm.exists("config/version-tags.json")) {
-      _fail("config/version-tags.json", "missing - run: cp config/version-tags.example.json config/version-tags.json");
+  function _checkOperatorFile() private {
+    string memory rel = "config/operator.json";
+    if (!vm.exists(rel)) {
+      _fail(rel, "missing - run: make seed-operator-config");
       return;
     }
-    try s_loader.loadTags() returns (uint256 n) {
+    try s_loader.loadOperatorFile() returns (uint256 n, bytes32 salt) {
+      s_haveSalt = true;
+      s_resolverSalt = salt;
       // An empty catalog cannot serve any lane: requireKnownTag rejects every tag.
       if (n == 0) {
-        _fail("config/version-tags.json", "no versionTags catalogued - add the tag each lane pins, e.g. 0x00010001");
+        _fail(rel, "no versionTags catalogued - add the tag each lane pins, e.g. 0x00010001");
       } else {
-        _pass("config/version-tags.json", string.concat(vm.toString(n), " tags"));
+        _pass(rel, string.concat(vm.toString(n), " tags"));
       }
     } catch Error(string memory reason) {
-      _fail("config/version-tags.json", reason);
+      _fail(rel, reason);
     } catch {
-      _fail("config/version-tags.json", "malformed");
+      _fail(rel, "malformed");
     }
   }
 
-  /// @dev The resolverSalt comparison rides along here: the resolver lands on the same
-  ///      address everywhere only if the salt is identical (the factory address and
-  ///      creation code already are). Any value serves, so equality is the requirement.
-  ///      Only files that parsed take part, so a broken one cannot skew the comparison.
   function _checkChains() private {
     string[] memory paths = _realJsonFiles(CHAINS_DIR);
-    bool haveSalt = false;
-    bytes32 expectedSalt = bytes32(0);
-    string memory expectedFrom = "";
 
     for (uint256 i = 0; i < paths.length; ++i) {
       string memory aliasName = _basename(paths[i]);
@@ -134,21 +138,6 @@ contract ValidateConfig is Script {
           continue;
         }
         _pass(rel, "");
-
-        if (!haveSalt) {
-          haveSalt = true;
-          expectedSalt = chainConfig.resolverSalt;
-          expectedFrom = aliasName;
-        } else if (chainConfig.resolverSalt != expectedSalt) {
-          _fail(
-            rel,
-            string.concat(
-              "resolverSalt differs from chains/",
-              expectedFrom,
-              ".json - it must be identical on every chain or the resolver address diverges"
-            )
-          );
-        }
       } catch Error(string memory reason) {
         _fail(rel, reason);
       } catch {
@@ -157,14 +146,14 @@ contract ValidateConfig is Script {
     }
   }
 
-  function _checkRoles() private {
-    string[] memory paths = _realJsonFiles(ROLES_DIR);
+  function _checkOperator() private {
+    string[] memory paths = _realJsonFiles(OPERATOR_DIR);
     for (uint256 i = 0; i < paths.length; ++i) {
       string memory aliasName = _basename(paths[i]);
-      string memory rel = string.concat(ROLES_DIR, aliasName, ".json");
-      try s_loader.loadRoles(paths[i]) returns (Types.RolesConfig memory roles) {
-        if (!_eq(roles.aliasName, aliasName)) {
-          _fail(rel, string.concat("declares alias '", roles.aliasName, "' (must equal the filename)"));
+      string memory rel = string.concat(OPERATOR_DIR, aliasName, ".json");
+      try s_loader.loadOperator(paths[i]) returns (string memory declared) {
+        if (!_eq(declared, aliasName)) {
+          _fail(rel, string.concat("declares alias '", declared, "' (must equal the filename)"));
         } else {
           _pass(rel, "");
         }
@@ -248,8 +237,9 @@ contract ValidateConfig is Script {
   }
 
   /// @dev Per endpoint: the chain file must exist and agree on the selector, and the
-  ///      roles file must carry a verifiers[] entry for the lane's tag — DeployVerifier
-  ///      refuses without one, so a gap here fails the ceremony later anyway.
+  ///      operator file must carry a verifiers[] entry for the lane's tag — DeployVerifier
+  ///      refuses without one, so a gap here fails the ceremony later anyway. The source
+  ///      must also declare the committee every destination applies for this lane.
   function _checkLaneEndpoint(
     string memory lanePath,
     Types.LaneConfig memory lane,
@@ -274,15 +264,31 @@ contract ValidateConfig is Script {
         string.concat(side, " selector does not match ", chainPath, " - the chain file is API-synced; fix the lane")
       );
     }
-    if (!ConfigLib.hasVerifierRolesTag(ConfigLib.readRolesOrEmpty(aliasName), lane.versionTag)) {
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorOrEmpty(aliasName);
+    if (!ConfigLib.hasVerifierConfigTag(operator, lane.versionTag)) {
       _fail(
         lanePath,
         string.concat(
-          "roles/",
+          "operator/chains/",
           aliasName,
           ".json has no verifiers[] entry for tag ",
           ConfigLib.tagToString(lane.versionTag),
           " - add one; deploy-verifier refuses without it"
+        )
+      );
+    }
+    if (
+      _eq(side, "source") && ConfigLib.hasVerifierConfigTag(operator, lane.versionTag)
+        && ConfigLib.verifierConfigByTag(operator, lane.versionTag).signatureConfig.threshold == 0
+    ) {
+      _fail(
+        lanePath,
+        string.concat(
+          "operator/chains/",
+          aliasName,
+          ".json declares no committee for tag ",
+          ConfigLib.tagToString(lane.versionTag),
+          " - signatureConfig signs messages leaving this chain; every destination applies it"
         )
       );
     }
@@ -296,6 +302,9 @@ contract ValidateConfig is Script {
       try s_loader.loadDeployment(paths[i]) returns (Types.Deployment memory deployment) {
         if (!_eq(deployment.aliasName, aliasName)) {
           _fail(rel, string.concat("declares alias '", deployment.aliasName, "' (must equal the filename)"));
+        } else if (s_haveSalt && deployment.resolver != address(0) && deployment.resolverParams.salt != s_resolverSalt)
+        {
+          _fail(rel, "recorded resolver salt differs from config/operator.json resolverSalt");
         } else {
           _pass(rel, "");
         }

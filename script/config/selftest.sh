@@ -50,7 +50,11 @@ cp "$REPO"/script/config/sync-ccip-config.sh \
 cp "$REPO"/script/config/testdata/_stub-source.sh "$TMP/script/config/ccip-config-source.sh"
 cp "$REPO"/config/chains/_template.json "$TMP/config/chains/"
 
-export FIXTURE_DIR="$REPO/script/config/testdata"
+# Fixtures are copied too, so a test may add markers (e.g. an unreachable selector) without
+# shipping them in the repo.
+cp -R "$REPO"/script/config/testdata "$TMP/testdata"
+export FIXTURE_DIR="$TMP/testdata"
+: > "$FIXTURE_DIR/5555.unreachable" # the stub exits 5 (API_UNREACHABLE) for this selector
 SYNC="$TMP/script/config/sync-ccip-config.sh"
 CFG="$TMP/config/chains/fixture.json"
 SOURCE_RMN="0xNNNN000000000000000000000000000000000001"
@@ -74,7 +78,8 @@ check "seeds feeTokens" "$(jq -r '.feeTokens[0]' "$CFG")" "0xTTTT000000000000000
 check "seeds explorerAddressPath" "$(jq -r .explorerAddressPath "$CFG")" "https://fixture.example/address"
 check "chainId normalised to a number" "$(jq -r '.chainId|type' "$CFG")" "number"
 check "chainSelector kept a string" "$(jq -r '.chainSelector|type' "$CFG")" "string"
-check "operator fields left at placeholders" "$(jq -r .resolverSalt "$CFG")" "0x0000000000000000000000000000000000000000000000000000000000000000"
+check "no key outside the schema" "$(jq -r 'keys_unsorted|join(",")' "$CFG")" "alias,chainId,chainSelector,router,rmn,feeTokens,explorerAddressPath"
+BOOT_HASH="$(hash_of "$CFG")"
 
 echo "bootstrap: target present, agrees"
 before="$(hash_of "$CFG")"
@@ -128,6 +133,7 @@ check "core field taken from source" "$(jq -r .rmn "$CFG")" "$SOURCE_RMN"
 check "every non-core field byte-identical" \
     "$(diff <(jq -S 'del(.rmn)' "$TMP/before-sync.json") <(jq -S 'del(.rmn)' "$CFG") > /dev/null && echo same || echo differs)" \
     "same"
+check "sync output byte-identical to a fresh bootstrap (committed files round-trip)" "$(hash_of "$CFG")" "$BOOT_HASH"
 
 echo "sync: already agrees"
 before="$(hash_of "$CFG")"
@@ -218,7 +224,7 @@ rm -f "$CFG2"
 
 echo "check --all: a chain the upstream does not know is SKIPPED, not a failure"
 cat > "$TMP/config/chains/localchain.json" <<'JSON'
-{"alias":"localchain","chainId":31337,"chainSelector":"424242","router":"0x0000000000000000000000000000000000000001","rmn":"0x0000000000000000000000000000000000000001","allowedFinality":{"minBlockDepth":1},"storageLocations":[],"feeTokens":[],"resolverSalt":"0x0000000000000000000000000000000000000000000000000000000000000001"}
+{"alias":"localchain","chainId":31337,"chainSelector":"424242","router":"0x0000000000000000000000000000000000000001","rmn":"0x0000000000000000000000000000000000000001","feeTokens":[],"explorerAddressPath":""}
 JSON
 before="$(hash_of "$TMP/config/chains/localchain.json")"
 out="$(run check --all)"
@@ -232,6 +238,44 @@ echo "check <name>: naming the unknown chain explicitly IS a failure"
 out="$(run check localchain)"
 rc=$?
 check "named 404 exits non-zero" "$([ "$rc" -ne 0 ] && echo yes || echo no)" "yes"
+
+echo "unknown key: the sync neither reads nor removes it (ConfigLib rejects it at load)"
+edit '.stray = "operator data in the wrong file"'
+before="$(hash_of "$CFG")"
+out="$(run check fixture)"
+rc=$?
+check "check still reports a match" "$rc" "0"
+run sync fixture > /dev/null
+check "sync leaves the key in place" "$(jq -r .stray "$CFG")" "operator data in the wrong file"
+check "file unchanged" "$(hash_of "$CFG")" "$before"
+edit 'del(.stray)'
+
+echo "source unreachable: no verdict, exit 2, nothing written"
+CFG3="$TMP/config/chains/unreachable.json"
+jq '.alias = "unreachable" | .chainSelector = "5555"' "$CFG" > "$CFG3"
+before="$(hash_of "$CFG3")"
+out="$(run check unreachable)"
+rc=$?
+check "named check exits 2" "$rc" "2"
+check "reports UNREACHABLE" "$(echo "$out" | grep -c 'UNREACHABLE unreachable')" "1"
+out="$(run check --all)"
+rc=$?
+check "sweep with a clean chain exits 2" "$rc" "2"
+check "sweep still reports the clean chain" "$(echo "$out" | grep -c ' MATCH fixture')" "1"
+edit ".rmn = \"$LOCAL_RMN\""
+out="$(run check --all)"
+rc=$?
+check "drift outranks a missing verdict in a sweep" "$rc" "1"
+edit ".rmn = \"$SOURCE_RMN\""
+out="$(run sync unreachable)"
+rc=$?
+check "sync exits 2" "$rc" "2"
+check "sync writes nothing" "$(hash_of "$CFG3")" "$before"
+run bootstrap fresh 5555 > /dev/null 2>&1
+rc=$?
+check "bootstrap exits non-zero" "$([ "$rc" -ne 0 ] && echo yes || echo no)" "yes"
+check "bootstrap creates no file" "$([ -f "$TMP/config/chains/fresh.json" ] && echo yes || echo no)" "no"
+rm -f "$CFG3"
 
 echo "sync --all: refused"
 out="$(run sync --all)"

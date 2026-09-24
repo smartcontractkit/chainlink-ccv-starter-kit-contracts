@@ -4,7 +4,7 @@ Roles move in two steps: the current holder proposes, the incoming holder accept
 role has its own pair of scripts, and **each party prepares its own leg**.
 
 **After a fresh deploy, the propose leg is already done.** The deploy scripts propose every
-role in `config/roles/<alias>.json` to its configured holder, so only the accept legs below
+two-step role in `config/operator/chains/<alias>.json` to its configured holder, so only the accept legs below
 are outstanding — running `TransferOwnership` again would just re-propose what is already
 pending. The transfer scripts are for rotations later, or for a role whose configured
 holder was the deployer.
@@ -72,5 +72,5 @@ owner has accepted and every deterministic deploy on that chain is done, prune i
 
 ## Check the result
 
-`SnapshotRoles` reads every live role holder for review, and `DriftCheck` compares them
-against `config/roles/<alias>.json`. See [Governance checks](governance.md).
+`SnapshotOperator` reads every live role holder for review, and `DriftCheck` compares them
+against `config/operator/chains/<alias>.json`. See [Governance checks](governance.md).

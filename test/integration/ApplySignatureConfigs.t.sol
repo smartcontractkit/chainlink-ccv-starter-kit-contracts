@@ -28,7 +28,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   ApplySignatureConfigs internal script;
   DeploymentLookupHarness internal lookup;
 
-  string internal constant EXAMPLE_LANE = "config/lanes/sepolia-to-base_sepolia.example.json";
+  string internal constant EXAMPLE_LANE = "config/operator/lanes/sepolia-to-base_sepolia.example.json";
   // zz-scratch-* is the repo-wide fixture marker: `ConfigLib.writeDeployment` targets the
   // real config/deployments/, so records written here must be ignorable by the governance
   // tooling.
@@ -163,9 +163,16 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   }
 
   function test_toSignatureConfig_translatesExampleLane() public view {
-    // The shipped example lane is 7-of-10; verify the config->struct translation.
+    // The shipped example committee is 7-of-10, declared on the source's operator file.
     Types.LaneConfig memory lane = ConfigLib.readLaneByPath(EXAMPLE_LANE);
-    SignatureQuorumValidator.SignatureConfig memory cfg = script.toSignatureConfig(lane);
+    Types.LaneCommittee memory entry = Types.LaneCommittee({
+      lane: lane,
+      committee: ConfigLib.verifierConfigByTag(
+        ConfigLib.readOperatorByPath("config/operator/chains/sepolia.example.json"), lane.versionTag
+      )
+      .signatureConfig
+    });
+    SignatureQuorumValidator.SignatureConfig memory cfg = script.toSignatureConfig(entry);
 
     assertEq(cfg.sourceChainSelector, lane.source.chainSelector);
     assertEq(cfg.threshold, 7);
@@ -181,25 +188,25 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   /// @dev Minimal lane carrying only the fields this script reads.
   function _oneLane(
-    Types.LaneConfig memory lane
-  ) internal pure returns (Types.LaneConfig[] memory lanes) {
-    lanes = new Types.LaneConfig[](1);
-    lanes[0] = lane;
+    Types.LaneCommittee memory entry
+  ) internal pure returns (Types.LaneCommittee[] memory lanes) {
+    lanes = new Types.LaneCommittee[](1);
+    lanes[0] = entry;
   }
 
   function _lane(
     string memory destAlias,
     uint8 threshold,
     address[] memory signers
-  ) internal pure returns (Types.LaneConfig memory lane) {
-    lane.name = "test-lane";
-    lane.source.aliasName = SOURCE_ALIAS;
-    lane.source.chainSelector = SOURCE_SELECTOR;
-    lane.dest.aliasName = destAlias;
-    lane.dest.chainSelector = 10344971235874465080;
-    lane.versionTag = VERSION_TAG;
-    lane.signatureConfig.threshold = threshold;
-    lane.signatureConfig.signers = signers;
+  ) internal pure returns (Types.LaneCommittee memory entry) {
+    entry.lane.name = "test-lane";
+    entry.lane.source.aliasName = SOURCE_ALIAS;
+    entry.lane.source.chainSelector = SOURCE_SELECTOR;
+    entry.lane.dest.aliasName = destAlias;
+    entry.lane.dest.chainSelector = 10344971235874465080;
+    entry.lane.versionTag = VERSION_TAG;
+    entry.committee.threshold = threshold;
+    entry.committee.signers = signers;
   }
 
   function test_reverts_whenTargetVerifierNotYetDeployed() public {
@@ -341,14 +348,14 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     string memory destAlias,
     uint64 sourceSelector,
     bytes4 tag
-  ) internal pure returns (Types.LaneConfig memory lane) {
-    lane = _lane(destAlias, 3, _generateSigners(4));
-    lane.source.chainSelector = sourceSelector;
-    lane.versionTag = tag;
+  ) internal pure returns (Types.LaneCommittee memory entry) {
+    entry = _lane(destAlias, 3, _generateSigners(4));
+    entry.lane.source.chainSelector = sourceSelector;
+    entry.lane.versionTag = tag;
   }
 
   function test_configsFor_skipsLanesForAnotherChain() public view {
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](2);
     lanes[0] = _laneFrom(DEST_ALIAS, SOURCE_SELECTOR, VERSION_TAG);
     lanes[1] = _laneFrom("zz-scratch-other-chain", 999, VERSION_TAG);
 
@@ -361,7 +368,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
   }
 
   function test_configsFor_skipsLanesPinnedToAnotherTag() public view {
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](2);
     lanes[0] = _laneFrom(DEST_ALIAS, SOURCE_SELECTOR, VERSION_TAG);
     lanes[1] = _laneFrom(DEST_ALIAS, 999, 0x00020002);
 
@@ -374,7 +381,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   /// @dev The array length IS the staged count: the over-allocated tail must not survive.
   function test_configsFor_lengthIsTheStagedCount() public view {
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](4);
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](4);
     lanes[0] = _laneFrom(DEST_ALIAS, 111, VERSION_TAG);
     lanes[1] = _laneFrom("zz-scratch-other-chain", 222, VERSION_TAG);
     lanes[2] = _laneFrom(DEST_ALIAS, 333, VERSION_TAG);
@@ -391,7 +398,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   /// @dev A lane already applied on-chain counts as matched but must not be staged.
   function test_configsFor_skipsLaneAlreadyCurrentButStillCountsIt() public {
-    Types.LaneConfig memory lane = _lane(DEST_ALIAS, 3, _generateSigners(4));
+    Types.LaneCommittee memory lane = _lane(DEST_ALIAS, 3, _generateSigners(4));
 
     // Apply it first, so isCurrent() is true on the second pass.
     SignatureQuorumValidator.SignatureConfig[] memory configs = new SignatureQuorumValidator.SignatureConfig[](1);
@@ -422,7 +429,7 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
 
   /// @dev The point of batching: two matched lanes become ONE call that applies both.
   function test_batchedCall_appliesEveryMatchedLaneInOneCall() public {
-    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](2);
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](2);
     lanes[0] = _laneFrom(DEST_ALIAS, 111, VERSION_TAG);
     lanes[1] = _laneFrom(DEST_ALIAS, 222, VERSION_TAG);
 

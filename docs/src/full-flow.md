@@ -13,7 +13,7 @@ own.
 **Not on this page:** fee sweeping or ongoing CCIP config sync — see
 [Operational notes](operations.md) when you need those.
 
-In a typical production run, `config/roles/*.json` names non-deployer holders (often a
+In a typical production run, `config/operator/chains/*.json` names non-deployer holders (often a
 Safe). Deploy **proposes** those roles on chain; each incoming holder **accepts** at some
 point after that — this walkthrough places it last, but acceptance can equally happen
 before or between the configure steps. The only rule is that each configure call is
@@ -38,7 +38,7 @@ batch) — there is no default. This walkthrough uses `EOA`.
 ```bash
 make install        # npm ci + git submodules
 cp .env.example .env    # fill in SEPOLIA_RPC_URL, BASE_SEPOLIA_RPC_URL, signing config
-cp config/version-tags.example.json config/version-tags.json   # ensure $TAG is listed
+make seed-operator-config   # config/operator.json (salt + tag catalog); ensure $TAG is listed
 make build
 ```
 
@@ -51,32 +51,33 @@ make build
 make add-chain CHAIN=sepolia      SELECTOR=16015286601757825753
 make add-chain CHAIN=base_sepolia SELECTOR=10344971235874465080
 
-# then hand-fill the operator fields each bootstrap lists as "still to fill in":
-#   resolverSalt (same value on BOTH chains), storageLocations
-# allowedFinality starts as {} (full finality only) and needs no edit unless a fast path is wanted
+# both files are complete as written: nothing left to hand-fill
 ```
 
 And create by hand, from the templates in `config/`:
 
-- `config/lanes/sepolia-to-base_sepolia.json` and `config/lanes/base_sepolia-to-sepolia.json`
+- `config/operator/lanes/sepolia-to-base_sepolia.json` and `config/operator/lanes/base_sepolia-to-sepolia.json`
   — lanes are **directed**, a bidirectional pair is two files; each must use the same
   `"versionTag"` as `$TAG` on both endpoints
-- `config/roles/sepolia.json` and `config/roles/base_sepolia.json` — each needs a
-  `verifiers[]` entry for `$TAG` **before** deploy
+- `config/operator/chains/sepolia.json` and `config/operator/chains/base_sepolia.json` — your
+  one `verifiers[]` entry for `$TAG` **before** deploy, holding its `storageLocations`
+  (aggregator URL), `allowedFinality` (`{}` = full finality only; no edit unless a fast path
+  is wanted), its `signatureConfig` (the committee that signs messages leaving that chain),
+  and its `roles`
 
 **Decide the roles before deploying** — the deploy scripts consume them, they are not
-applied later: factory and resolver ownership is *proposed to* `factory.owner` /
-`resolver.owner` at deploy time, and the verifier bakes `feeAggregator` and
+applied later: factory and resolver ownership is *proposed to* `factory.roles.owner` /
+`resolver.roles.owner` at deploy time, and the verifier bakes `feeAggregator` and
 `allowlistAdmin` from the roles entry into its constructor. `DeployVerifier` refuses to run
 while `verifier.owner`, `verifier.storageLocationsAdmin`, or `verifier.feeAggregator` is
 unset for the tag — see [its preconditions](deploy.md#3-deploy-the-verifier). (Leaving
-`factory.owner` / `resolver.owner` as the deployer is fine — ownership then just stays
+`factory.roles.owner` / `resolver.roles.owner` as the deployer is fine — ownership then just stays
 put until a later [handover](handover.md).)
 
 **Check the config before spending gas** — no RPC, no keys needed:
 
 ```bash
-# every config file parses + lanes agree with chains, roles and the tag catalog
+# every config file parses + lanes agree with chains, the operator files and the tag catalog
 make validate-config
 
 # per lane: selectors vs chain configs, salt identical, gasForVerification non-zero
@@ -126,7 +127,7 @@ make deploy-verifier   CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_RPC_URL
 ```
 
 Each deploy script also **proposes** ownership (and `storageLocationsAdmin` on the
-verifier) to the addresses in `config/roles/<alias>.json`. That is not the end of
+verifier) to the addresses in `config/operator/chains/<alias>.json`. That is not the end of
 handover — incoming holders must still run the accept scripts in step 5 unless every
 configured holder is the deployer.
 
@@ -144,7 +145,7 @@ no combined script to split; the grouping below is by **who must sign**, not by 
 file.
 
 Use the signer that holds that role on the chain you are configuring. When every role in
-`config/roles/<alias>.json` is still the deployer (typical testnet, before handover), the
+`config/operator/chains/<alias>.json` is still the deployer (typical testnet, before handover), the
 same `--aws` key works for every block. When roles differ — or after handover — run each
 block with that role's key or generate a Safe batch (`OUTPUT_MODE=SAFE`) from that holder.
 
@@ -162,7 +163,7 @@ make set-finality-config     CHAIN=sepolia TAG=$TAG RPC_URL=$SEPOLIA_RPC_URL OUT
 ```
 
 Two configure scripts are **not needed on a fresh deploy**: the constructor already set
-the dynamic config (from the roles file) and `storageLocations` (from the chain config).
+the dynamic config and `storageLocations` (both from that verifier's operator entry).
 `SetDynamicConfig` and `UpdateStorageLocations` are change operations for later — see
 [what a fresh deploy already has](configure.md#what-a-fresh-deploy-already-has).
 
@@ -207,7 +208,7 @@ make drift CHAIN=base_sepolia RPC_URL=$BASE_SEPOLIA_RPC_URL
 make parity LANE=sepolia-to-base_sepolia SOURCE_RPC=$SEPOLIA_RPC_URL      DEST_RPC=$BASE_SEPOLIA_RPC_URL
 make parity LANE=base_sepolia-to-sepolia SOURCE_RPC=$BASE_SEPOLIA_RPC_URL DEST_RPC=$SEPOLIA_RPC_URL
 
-make deployments-doc      # regenerate the deployed-addresses page, commit it
+make deployments-doc      # regenerate the deployed-addresses page
 ```
 
 All exit `0` clean / `1` finding / `2` couldn't run.
@@ -216,7 +217,7 @@ All exit `0` clean / `1` finding / `2` couldn't run.
 
 ## 5. Hand over — accept ownership
 
-Deploy already ran the propose leg for every two-step role in `config/roles/<alias>.json`
+Deploy already ran the propose leg for every two-step role in `config/operator/chains/<alias>.json`
 (factory owner, resolver owner, verifier owner, `storageLocationsAdmin`). This step is
 only the **accept** leg — each incoming holder runs it with **their** key or Safe. It
 sits last here, but nothing pins it there: accepting earlier just means the later
@@ -224,10 +225,10 @@ configure blocks are signed by the new holder.
 
 ### Skip this step when
 
-Every role in both `config/roles/*.json` files points at the **deployer address** (or
-`factory.owner` is unset). The deploy scripts keep or auto-accept those roles; nothing is
+Every role in both `config/operator/chains/*.json` files points at the **deployer address** (or
+`factory.roles.owner` is unset). The deploy scripts keep or auto-accept those roles; nothing is
 pending. That is fine for a solo testnet run; it is not the usual production shape.
-Confirm with `make drift` — role holders should match the roles file with no pending
+Confirm with `make drift` — role holders should match the operator file with no pending
 notes.
 
 ### Accept on each chain
@@ -248,10 +249,10 @@ make accept-owner CHAIN=sepolia TARGET=factory        RPC_URL=$SEPOLIA_RPC_URL O
 # resolver (if resolver.owner != deployer — not needed when deployer was accepted in-place at deploy)
 make accept-owner CHAIN=sepolia TARGET=resolver       RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
 
-# verifier owner (if verifiers[].owner != deployer)
+# verifier owner (if verifiers[].roles.owner != deployer)
 make accept-owner CHAIN=sepolia TARGET=verifier:$TAG  RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
 
-# storageLocationsAdmin (if verifiers[].storageLocationsAdmin != deployer)
+# storageLocationsAdmin (if verifiers[].roles.storageLocationsAdmin != deployer)
 make accept-sla   CHAIN=sepolia TAG=$TAG              RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
 ```
 
@@ -265,11 +266,11 @@ make drift CHAIN=base_sepolia RPC_URL=$BASE_SEPOLIA_RPC_URL
 ```
 
 `feeAggregator` and `allowlistAdmin` are **not** two-step — they were set in the verifier
-constructor from the roles file. Re-point them later with `SetDynamicConfig` only after
+constructor from the operator file. Re-point them later with `SetDynamicConfig` only after
 the new verifier owner has accepted.
 
 **Done when:** every accept has landed, `make drift` is clean on both chains, and
-on-chain owners/admins match `config/roles/*.json` (no pending ownership or
+on-chain owners/admins match `config/operator/chains/*.json` (no pending ownership or
 `storageLocationsAdmin` transfers).
 
 → [Handover](handover.md)

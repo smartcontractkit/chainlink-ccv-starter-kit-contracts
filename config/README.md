@@ -2,39 +2,41 @@
 
 Every deployment/config parameter lives here as JSON. The scripts under `script/` are generic loops that read these files, so one script serves every lane and chain you add here, with nothing hardcoded.
 
-Three categories:
+Each file has exactly one writer:
 
-| Dir            | One file per… | Purpose |
-|----------------|---------------|---------|
-| `version-tags.json` | repo     | the catalog of every verifier `versionTag` in use (cross-chain identities, one spelling everywhere) |
-| `chains/`      | chain         | deploy-time inputs: RMN address, storage locations (aggregator URL), CREATE2 resolver salt |
-| `lanes/`       | directed lane | per-lane config: `versionTag` (which verifier serves the lane), signer set + threshold, verification fee, router, allowlist |
-| `roles/`       | chain         | roles-as-data: the intended holder of every privileged role (owner, admins, fee aggregators) |
+| Path            | One file per… | Holds | Written by |
+|-----------------|---------------|-------|------------|
+| `chains/`       | chain         | Chainlink's reference, seven fixed keys: `alias`, `chainId`, `chainSelector`, `router`, `rmn`, `feeTokens`, `explorerAddressPath` | `script/config/sync-ccip-config.sh` |
+| `operator.json` | repo          | the operator's cross-chain identities: `resolverSalt`, the `versionTags` catalog | the operator |
+| `operator/chains/` | chain      | the operator's intent for that chain: one entry per verifier tag (finality, storage locations, committee, role holders), plus the resolver and factory role holders | the operator; `SnapshotOperator` drafts it from live state |
+| `operator/lanes/` | directed lane | per-lane config: `versionTag` (which verifier serves the lane), `remoteChainConfig` (fee, gas, payload size, optional router override), allowlist | the operator |
+| `deployments/`  | chain         | the record of deployed artifacts and their constructor args | the deploy scripts |
 
-Files ending in `.example.json` are illustrative. Files starting with `_template`
-document the full schema. Real per-deployment files should be named by the chain
-alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
+Files starting with `_template` document the full schema; files ending in `.example.json`
+are illustrative. Real files are named by the chain alias (`sepolia.json`) or lane
+(`sepolia-to-base_sepolia.json`).
 
 ---
 
 ## `chains/<alias>.json`
 
+Chainlink's per-chain reference, synced from the public CCIP API by
+`script/config/sync-ccip-config.sh`. Nothing in it is typed by hand:
+`bootstrap` creates the file complete, `check` reports drift against the API, `sync`
+accepts it. The loader rejects any key outside this set, so operator data cannot land here.
+
 ```jsonc
 {
-  "alias":            "sepolia",              // stable key; matches rpc_endpoints + roles file
+  "alias":            "sepolia",              // identity: names the file; matches rpc_endpoints + operator/deployment files
   "chainId":          11155111,
-  "chainSelector":    "16015286601757825753", // CCIP chain selector (string: exceeds JS safe int)
+  "chainSelector":    "16015286601757825753", // CCIP chain selector (string: exceeds JS safe int); the sync's join guard
+  "router":           "0x...",                 // Chainlink's local CCIP router. Lanes inherit it unless they override.
   "rmn":              "0x...",                 // Chainlink-provided RMN address. MUST be non-zero.
-  "router":           "0x...",                 // Chainlink's local CCIP router; synced from the API. Lanes inherit it unless they override.
-                                               // Synced fields: router, rmn, chainId, feeTokens, explorerAddressPath.
-  "allowedFinality":  {},                      // what a SENDER may request; {} = full finality only. See note below.
-  "storageLocations": ["https://aggregator.<operator>.example/ccv"], // operator's OWN aggregator endpoint(s)
   "feeTokens":        ["0x..."],               // fee tokens to report on / sweep. Empty => fee scripts no-op.
-  "resolverSalt":     "0x0000...0001",         // CREATE2 salt for the resolver. MUST be identical on every chain.
-  "explorerAddressPath": "https://sepolia.etherscan.io/address" // Synced from the API (chainMetadata.explorer.addressPath).
+  "explorerAddressPath": "https://sepolia.etherscan.io/address" // chainMetadata.explorer.addressPath from the API.
                                                      // A FULL URL prefix, not a path fragment: deployments-report.sh
                                                      // links addresses as <explorerAddressPath>/<addr>.
-                                                     // Empty or absent => plain unlinked addresses.
+                                                     // Empty => plain unlinked addresses.
 }
 ```
 
@@ -57,28 +59,7 @@ alias (`sepolia.json`) or lane (`sepolia-to-base_sepolia.json`).
 > a broken entry is a misconfiguration, never treated as an empty balance. `BalanceReport`
 > flags such an entry as `UNREADABLE`.
 
-> **`allowedFinality` is the ALLOWED finality** set on the verifier via
-> `setAllowedFinalityConfig`: the requests a sender may make, as alternatives. Full finality
-> is always allowed. Two optional keys widen it: `"allowSafeTag": true` also accepts a
-> request for the `safe` tag; `"minBlockDepth": N` (1..65535) also accepts a depth request
-> of N blocks or more. `{}` allows full finality only, the production default. The scripts
-> generate the FinalityCodec `bytes4` from this block, so the encoding is never typed by
-> hand; `{ "minBlockDepth": 1 }` waits one block instead of full finality, for lower latency.
-
-Notes:
-- `storageLocations` is a **cross-workstream input** from the off-chain/infra team
-  (the deployed aggregator hostname). It is per-operator and cannot be hardcoded.
-  The deploy should not block on it — it can be set/updated later via the
-  `UpdateStorageLocations` script (caller is the `storageLocationsAdmin`, not the owner).
-- `resolverSalt` must be the **same value on every chain** for the resolver to get
-  the same address everywhere. The factory itself gets address parity from a
-  fresh nonce-0 deployer (CREATE, not CREATE2) — it has no salt.
-- `DeployVerifier` takes `versionTag` as an argument (`--sig "run(string,bytes4)" <alias>
-  0x00010001`) and appends the new verifier to `deployments/<alias>.json`. Each lane pins
-  the verifier serving it via its own mandatory `versionTag` field; the catalog lives in
-  `config/version-tags.json`.
-
-## `lanes/<source>-to-<dest>.json`
+## `operator/lanes/<source>-to-<dest>.json`
 
 A **directed** lane (source → dest). Contracts deploy on both chains of every lane.
 
@@ -95,20 +76,12 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
   // scripts (ApplyOutbound cutover last).
   "versionTag": "0x00010001",
 
-  // -> applySignatureConfigs, keyed by SOURCE chain selector (inbound verification set).
-  //    Full-set REPLACEMENT every time — list the complete desired signer set.
-  //    Constraint: threshold below the signer count (no N-of-N) and above 2/3
-  //    (e.g. 10 signers -> threshold 7; 3-of-4 is the smallest compliant committee).
-  "signatureConfig": {
-    "threshold": 7,
-    "signers": ["0x...", "0x..."]
-  },
-
   // -> applyRemoteChainConfigUpdates, keyed by DEST chain selector (outbound).
   //    `router` is OPTIONAL: absent inherits the SOURCE chain's synced router
   //    (chains/<alias>.json, maintained by script/config/sync-ccip-config.sh).
   //    An explicit 0x0 PAUSES the lane — the only emergency lever (outbound).
   "remoteChainConfig": {
+    // "router":          "0x...",   // optional; omit to inherit the source chain's router
     "feeUSDCents":        0,
     "gasForVerification": 200000,
     "payloadSizeBytes":   0
@@ -124,55 +97,109 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
 }
 ```
 
-## `roles/<alias>.json`
+## `operator/chains/<alias>.json`
 
-Machine-checkable intent for the drift-check script. Verifier roles are per deployment,
-keyed by `versionTag` like the deployment record — declare a new verifier's entry BEFORE
-deploying it (`DeployVerifier` reads it to set DynamicConfig and propose the handovers,
-and refuses a tag with no entry).
+Everything the operator declares for one chain: machine-checkable intent that the
+configure scripts push on-chain and `DriftCheck` compares the live state against.
+
+One entry per verifier, keyed by `versionTag` like the deployment record, holding
+everything that verifier owns: the finality a sender may ask of it, the storage locations
+its signers publish to, the committee that signs the messages leaving this chain under its
+tag, and who holds each of its roles. All four are per verifier on-chain, so two verifiers
+running side by side during an upgrade can differ without either being drift. Declare an
+entry BEFORE deploying that verifier: `DeployVerifier` reads it to set DynamicConfig and
+propose the handovers, and refuses a tag with no entry.
+
+The resolver and the factory are one per chain. They carry role holders only, under the
+same `roles` key a verifier entry uses, so the rule holds across the whole file: whatever
+sits under `roles` is who should hold or receive something, everything beside it is a
+setting pushed on-chain.
 
 ```jsonc
 {
   "alias": "sepolia",
   "verifiers": [
     {
-      "versionTag":            "0x00010001", // matches deployments/<alias>.json
-      "owner":                 "0x...",  // 2-step ownable
-      "storageLocationsAdmin": "0x...",  // separate 2-step admin role
-      "allowlistAdmin":        "0x...",  // part of DynamicConfig
-      "feeAggregator":         "0x..."   // DynamicConfig.feeAggregator (distinct from resolver's!)
+      "versionTag": "0x00010001",  // matches deployments/<alias>.json
+
+      "allowedFinality": {},       // what a SENDER may request; {} = full finality only. See note below.
+
+      // The endpoints THIS verifier's signers publish to. Constructor argument, and
+      // updatable afterwards by the storageLocationsAdmin via UpdateStorageLocations.
+      "storageLocations": ["https://aggregator.<operator>.example/ccv"],
+
+      // -> applySignatureConfigs on EVERY destination verifier of this tag, keyed by this
+      //    chain's selector: the committee that signs messages LEAVING this chain, and
+      //    uploads them to the storageLocations above. Declared once here, so two
+      //    destinations cannot disagree. Full-set REPLACEMENT every time.
+      //    Constraint: threshold below the signer count (no N-of-N) and above 2/3
+      //    (e.g. 10 signers -> threshold 7; 3-of-4 is the smallest compliant committee).
+      //    threshold 0 with no signers = this chain is never a source under this tag.
+      "signatureConfig": { "threshold": 7, "signers": ["0x...", "0x..."] },
+
+      "roles": {
+        "owner":                 "0x...",  // 2-step ownable
+        "storageLocationsAdmin": "0x...",  // separate 2-step admin role
+        "allowlistAdmin":        "0x...",  // part of DynamicConfig
+        "feeAggregator":         "0x..."   // DynamicConfig.feeAggregator (distinct from resolver's!)
+      }
     }
   ],
   "resolver": {
-    "owner":         "0x...",          // 2-step ownable
-    "feeAggregator": "0x..."           // resolver setFeeAggregator (a SECOND, distinct fee destination)
+    "roles": {
+      "owner":         "0x...",        // 2-step ownable
+      "feeAggregator": "0x..."         // resolver setFeeAggregator (a SECOND, distinct fee destination)
+    }
   },
   "factory": {
-    "owner": "0x...",                   // transferred to governance after bootstrap
-    "allowlist": ["0x..."]              // REQUIRED: the FULL createAndCall set the
+    "roles": {
+      "owner": "0x...",                 // transferred to governance after bootstrap
+      "allowlist": ["0x..."]            // REQUIRED: the FULL createAndCall set the
                                         // factory should hold. BootstrapFactory
                                         // allowlists the deployer at construction, so
                                         // [] prunes it and nobody may createAndCall.
                                         // Applied by ApplyFactoryAllowlistUpdates.
+    }
   }
 }
 ```
 
-`DriftCheck` compares every RECORDED verifier against ITS entry; a recorded
-verifier without one is drift. Delete an entry together with its deployment record
-when the verifier retires.
+> **`allowedFinality` is the ALLOWED finality** set on the verifier via
+> `setAllowedFinalityConfig`: the requests a sender may make, as alternatives. Full finality
+> is always allowed. Two optional keys widen it: `"allowSafeTag": true` also accepts a
+> request for the `safe` tag; `"minBlockDepth": N` (1..65535) also accepts a depth request
+> of N blocks or more. `{}` allows full finality only, the production default. The scripts
+> generate the FinalityCodec `bytes4` from this block, so the encoding is never typed by
+> hand; `{ "minBlockDepth": 1 }` waits one block instead of full finality, for lower latency.
 
-## `version-tags.json`
+Notes:
+- `storageLocations` is an **input from the off-chain component**
+  (the deployed aggregator hostname). It is per-operator and cannot be hardcoded.
+  The deploy should not block on it — it can be set/updated later via the
+  `UpdateStorageLocations` script (caller is the `storageLocationsAdmin`, not the owner).
+- `DriftCheck` compares every RECORDED verifier against ITS entry; a recorded
+  verifier without one is drift. Delete an entry together with its deployment record
+  when the verifier retires.
 
-The repo-wide catalog of every `versionTag` in use. Tags are CROSS-CHAIN identities (a
-lane's tag must match on both endpoints), so the catalog is one file, not per chain:
-one spelling everywhere. `DeployVerifier` refuses to deploy an uncataloged tag, and a
-lane may only pin a catalogued one. Entries follow the documented scheme — 2 bytes
-operator id + 2 bytes version, both halves non-zero — which the loader enforces here
-(the contracts themselves treat the tag as an opaque `bytes4`).
+## `operator.json`
+
+The operator's cross-chain identities. One file for the whole repo, because both values
+must be spelled identically on every chain.
+
+- `resolverSalt`: the CREATE2 salt for the resolver. The same value on every chain is what
+  gives the resolver the same address everywhere (the factory itself gets address parity
+  from a fresh nonce-0 deployer — CREATE, not CREATE2 — and has no salt). The loader
+  rejects a zero salt.
+- `versionTags`: the catalog of every verifier `versionTag` in use. `DeployVerifier` takes
+  the tag as an argument (`--sig "run(string,bytes4)" <alias> 0x00010001`), refuses an
+  uncataloged one, and appends the new verifier to `deployments/<alias>.json`; a lane may
+  only pin a catalogued tag. Entries follow the documented scheme — 2 bytes operator id +
+  2 bytes version, both halves non-zero — which the loader enforces here (the contracts
+  themselves treat the tag as an opaque `bytes4`).
 
 ```jsonc
 {
+  "resolverSalt": "0x0000...0001",
   "versionTags": [
     { "tag": "0x00010001", "description": "committee verifier v1" }
   ]

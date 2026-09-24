@@ -247,14 +247,14 @@ if [ "$MODE" = check ]; then
     exit $status
 fi
 
-# A clone has no config/deployments/*.json — the directory is gitignored — so a first
-# `make deployments-doc` there would replace a populated page with the empty placeholder
-# and exit 0. Refuse instead: emptying the record is a decision, not a side effect.
+# A clone with no config/deployments/*.json would otherwise have its first
+# `make deployments-doc` replace a populated page with the empty placeholder and exit 0.
+# Refuse instead: emptying the record is a decision, not a side effect.
 if printf '%s' "$body" | grep -q "$EMPTY_MARKER" \
     && [ -f "$OUT" ] && ! grep -q "$EMPTY_MARKER" "$OUT"; then
     echo "[deployments-report] REFUSING to write: no deployment records found, but $OUT" >&2
-    echo "  holds generated content. config/deployments/ is gitignored, so this is what a" >&2
-    echo "  fresh clone looks like. Delete $OUT first if you really mean to reset it." >&2
+    echo "  holds generated content - this is what a clone with no records looks like." >&2
+    echo "  Delete $OUT first if you really mean to reset it." >&2
     exit 2
 fi
 

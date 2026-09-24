@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sync-ccip-config.sh - pull + verify per-chain CCIP-core config from the public CCIP REST
-# API v2 into config/chains/<name>.json, PRESERVING every CCV/roles field.
+# API v2 into config/chains/<name>.json, the committed reference every script reads.
 #
 # A selector the API does not serve is SKIPPED by the --all sweep (local chains are not
 # in upstream) but is an ERROR when the chain is named explicitly (may be a typo'd
@@ -11,9 +11,9 @@
 # the active ARMProxy. Lane-level CCIP version lives in /lanes, not /chains.
 #
 # The sync OWNS (overwrites) only the CCIP-core fields the source provides that the target already
-# carries: router, rmn, feeTokens, explorerAddressPath (+ chainId refresh). It PRESERVES everything
-# else byte-for-byte: alias, chainSelector, allowedFinality, storageLocations,
-# resolverSalt. The immutable chainSelector is a GUARD (source.chainSelector must equal the file's).
+# carries: router, rmn, feeTokens, explorerAddressPath (+ chainId refresh). The two other keys are
+# identity: alias names the file, and the immutable chainSelector is a GUARD (source.chainSelector
+# must equal the file's). A no-drift sync leaves the file byte-identical.
 # A core field the source serves as null (explorerAddressPath is nullable) is skipped, not zeroed.
 # feeTokens is APPEND-ONLY: upstream additions merge in, but a token upstream drops is kept (and
 # NOTEd, not drift) so accrued fees stay sweepable — sweep, then hand-edit to retire it.
@@ -32,7 +32,8 @@
 #                                                             in a deployed verifier).
 #
 
-# Exit codes: 0 OK/clean | 1 drift-or-error | 2 MISSING_TOOL
+# Exit codes: 0 clean | 1 drift-or-error | 2 could not run — no verdict either way (a missing
+# tool, or the source was unreachable; stderr names which). Same shape as drift-check.sh.
 set -euo pipefail
 
 err() { echo "[sync-ccip-config] $*" >&2; }
@@ -49,7 +50,8 @@ HERE="script/config"
 CHAINS_DIR="config/chains"
 
 # Real per-deployment chain configs only: `_template.json` documents the schema and
-# `*.example.json` are illustrative, so neither carries a usable chainSelector.
+# `*.example.json` are illustrative, so neither carries a usable chainSelector; `zz-scratch-*`
+# are test fixtures.
 list_chains() {
     for f in "$CHAINS_DIR"/*.json; do
         case "$(basename "$f")" in
@@ -85,6 +87,12 @@ run_one() { # <name> <mode:check|sync> <sweep:0|1>
         return 0
     fi
     [ -s "$errfile" ] && sed 's/^/      ./' "$errfile"
+    if [ "$srcrc" -eq 5 ]; then
+        # No verdict without the source, which is not drift: 2 lets a scheduled check warn.
+        echo "  UNREACHABLE $n: source not reachable, no drift verdict"
+        rm -f "$flatfile" "$errfile"
+        return 2
+    fi
     if [ "$srcrc" -ne 0 ]; then
         rm -f "$flatfile" "$errfile"
         return 1
@@ -99,9 +107,7 @@ run_one() { # <name> <mode:check|sync> <sweep:0|1>
 #
 # Seeds config/chains/<alias>.json from _template.json with the CCIP-core values the API
 # serves (router, rmn, chainId, feeTokens, explorerAddressPath). NEVER overwrites: if the file already exists
-# it only compares and WARNS, so a bootstrap can be re-run safely at any time. Fields the
-# API cannot know (resolverSalt, storageLocations) keep their template
-# placeholders for the operator to fill in.
+# it only compares and WARNS, so a bootstrap can be re-run safely at any time.
 cmd_bootstrap() {
     local n="${1:?usage: bootstrap <chainAlias> <chainSelector>}"
     local sel="${2:?usage: bootstrap <chainAlias> <chainSelector>}"
@@ -201,9 +207,23 @@ main() {
             else
                 names="$target"
             fi
+            # An empty sweep is not a clean sweep: say so rather than exiting 0 silently.
+            if [ "$sweep" = "1" ] && [ -z "$names" ]; then
+                echo "== $sub =="
+                echo "  NOTE no chain configs under $CHAINS_DIR: nothing checked"
+                return 0
+            fi
             echo "== $sub =="
+            local one
             for n in $names; do
-                run_one "$n" "$sub" "$sweep" || rc=1
+                one=0
+                run_one "$n" "$sub" "$sweep" || one=$?
+                # a real verdict outranks "could not run", which outranks clean
+                if [ "$one" -eq 2 ]; then
+                    [ "$rc" -eq 0 ] && rc=2
+                elif [ "$one" -ne 0 ]; then
+                    rc=1
+                fi
             done
             return $rc
             ;;

@@ -98,7 +98,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     );
   }
 
-  /// @dev Regression for the DELETED chain-level tag-equality rule: with per-lane tags,
+  /// @dev Tags are per lane: with per-lane tags,
   ///      a lane may pin a DIFFERENT versionTag than other lanes on the same pair, as
   ///      long as both endpoints record it.
   function test_configParity_lanePinnedToSecondVerifierPasses() public {
@@ -128,10 +128,12 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     );
   }
 
-  function test_configParity_resolverSaltDivergence() public view {
-    Types.ChainConfig memory dst = _dstChain();
-    dst.resolverSalt = bytes32(uint256(999));
-    assertEq(script.checkConfigParity(_lane(), _srcChain(), dst, _dep(), _dep()), 1, "salt divergence");
+  /// @dev Same address on both chains means the same salt went in; a differing record
+  ///      says one deploy used another salt.
+  function test_configParity_recordedResolverSaltDivergence() public view {
+    Types.Deployment memory destDeployment = _dep();
+    destDeployment.resolverParams.salt = bytes32(uint256(999));
+    assertEq(script.checkConfigParity(_lane(), _srcChain(), _dstChain(), _dep(), destDeployment), 1, "salt divergence");
   }
 
   /// @dev A stale lane selector registers the outbound impl under a key no message ever
@@ -169,16 +171,14 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   }
 
   function test_configParity_countsEveryMismatchInOnePass() public view {
-    Types.ChainConfig memory dst = _dstChain();
-    dst.resolverSalt = bytes32(uint256(999));
-
     Types.Deployment memory destDeployment = _dep();
     destDeployment.verifiers[0].versionTag = VERSION_TAG_V2; // lane's verifier missing on dest
+    destDeployment.resolverParams.salt = bytes32(uint256(999));
 
     Types.LaneConfig memory lane = _lane();
     lane.remote.gasForVerification = 0;
 
-    assertEq(script.checkConfigParity(lane, _srcChain(), dst, _dep(), destDeployment), 3, "no short-circuit");
+    assertEq(script.checkConfigParity(lane, _srcChain(), _dstChain(), _dep(), destDeployment), 3, "no short-circuit");
   }
 
   // ===========================================================================
@@ -202,13 +202,13 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     assertEq(script.checkSourceSide(lane, _dep()), 1, "router mismatch");
   }
 
-  /// @dev Direction check: the signer set is NOT a source-side concern. Corrupting it
-  ///      must not register on this side.
+  /// @dev Direction check: the signer set is NOT a source-side concern. It is not a lane
+  ///      field either, so this side is handed no committee to be wrong about.
   function test_sourceSide_ignoresSignatureConfig() public view {
-    Types.LaneConfig memory lane = _lane();
-    lane.signatureConfig.threshold = 99;
-    lane.signatureConfig.signers = new address[](0);
-    assertEq(script.checkSourceSide(lane, _dep()), 0, "signatures are a dest-side concern");
+    Types.LaneCommittee memory entry = _entry();
+    entry.committee.threshold = 99;
+    entry.committee.signers = new address[](0);
+    assertEq(script.checkSourceSide(entry.lane, _dep()), 0, "signatures are a dest-side concern");
   }
 
   // ===========================================================================
@@ -216,7 +216,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   // ===========================================================================
 
   function test_destSide_clean() public view {
-    assertEq(script.checkDestSide(_lane(), VERSION_TAG, _dep()), 0, "dest side wired");
+    assertEq(script.checkDestSide(_entry(), VERSION_TAG, _dep()), 0, "dest side wired");
   }
 
   /// @dev A verifier recorded on the dest but never registered on its resolver's
@@ -230,7 +230,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     deployment.verifiers[0].addr = address(verifier);
     deployment.verifiers[1].versionTag = VERSION_TAG_V2;
     deployment.verifiers[1].addr = address(verifierV2);
-    assertEq(script.checkDestSide(_lane(), VERSION_TAG_V2, deployment), 2, "unregistered verifier");
+    assertEq(script.checkDestSide(_entry(), VERSION_TAG_V2, deployment), 2, "unregistered verifier");
   }
 
   /// @dev A tag the dest deployment does not record at all cannot be checked on-chain;
@@ -239,44 +239,44 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     vm.expectRevert("ConfigLib: no verifier with versionTag 0x00010002 recorded for  - deploy that verifier first");
     // called for its expected revert; the return is irrelevant
     // forge-lint: disable-next-line(unused-return)
-    script.checkDestSide(_lane(), VERSION_TAG_V2, _dep());
+    script.checkDestSide(_entry(), VERSION_TAG_V2, _dep());
   }
 
   function test_destSide_unsetSignatureConfig() public view {
-    Types.LaneConfig memory lane = _lane();
-    lane.source.chainSelector = 4444; // no signer set for this source
-    assertEq(script.checkDestSide(lane, VERSION_TAG, _dep()), 1, "unset signer set is one clear mismatch");
+    Types.LaneCommittee memory entry = _entry();
+    entry.lane.source.chainSelector = 4444; // no signer set for this source
+    assertEq(script.checkDestSide(entry, VERSION_TAG, _dep()), 1, "unset signer set is one clear mismatch");
   }
 
   function test_destSide_thresholdMismatch() public view {
-    Types.LaneConfig memory lane = _lane();
-    lane.signatureConfig.threshold = THRESHOLD + 1;
-    assertEq(script.checkDestSide(lane, VERSION_TAG, _dep()), 1, "threshold mismatch");
+    Types.LaneCommittee memory entry = _entry();
+    entry.committee.threshold = THRESHOLD + 1;
+    assertEq(script.checkDestSide(entry, VERSION_TAG, _dep()), 1, "threshold mismatch");
   }
 
   function test_destSide_signerSetMismatch() public view {
-    Types.LaneConfig memory lane = _lane();
-    lane.signatureConfig.signers[0] = address(0xBAD);
-    assertEq(script.checkDestSide(lane, VERSION_TAG, _dep()), 1, "signer set mismatch");
+    Types.LaneCommittee memory entry = _entry();
+    entry.committee.signers[0] = address(0xBAD);
+    assertEq(script.checkDestSide(entry, VERSION_TAG, _dep()), 1, "signer set mismatch");
   }
 
   function test_destSide_signerOrderIsIrrelevant() public view {
-    Types.LaneConfig memory lane = _lane();
+    Types.LaneCommittee memory entry = _entry();
     address[] memory reversed = new address[](3);
     reversed[0] = signers[2];
     reversed[1] = signers[1];
     reversed[2] = signers[0];
-    lane.signatureConfig.signers = reversed;
-    assertEq(script.checkDestSide(lane, VERSION_TAG, _dep()), 0, "EnumerableSet order carries no meaning");
+    entry.committee.signers = reversed;
+    assertEq(script.checkDestSide(entry, VERSION_TAG, _dep()), 0, "EnumerableSet order carries no meaning");
   }
 
   /// @dev Direction check, mirror of the source-side one: the remote chain config is not
   ///      a dest-side concern.
   function test_destSide_ignoresRemoteChainConfig() public view {
-    Types.LaneConfig memory lane = _lane();
-    lane.remote.router = address(0xBAD);
-    lane.remote.gasForVerification = 1;
-    assertEq(script.checkDestSide(lane, VERSION_TAG, _dep()), 0, "remote config is a source-side concern");
+    Types.LaneCommittee memory entry = _entry();
+    entry.lane.remote.router = address(0xBAD);
+    entry.lane.remote.gasForVerification = 1;
+    assertEq(script.checkDestSide(entry, VERSION_TAG, _dep()), 0, "remote config is a source-side concern");
   }
 
   // ===========================================================================
@@ -298,20 +298,26 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
     vm.expectRevert("LaneParityCheck: no code at dest resolver (wrong RPC?)");
     // called for its expected revert; the return is irrelevant
     // forge-lint: disable-next-line(unused-return)
-    script.checkDestSide(_lane(), VERSION_TAG, deployment);
+    script.checkDestSide(_entry(), VERSION_TAG, deployment);
   }
 
   // ===========================================================================
   //  fixtures
   // ===========================================================================
 
-  function _lane() internal view returns (Types.LaneConfig memory lane) {
+  /// @dev The committee is declared on the SOURCE chain, not in the lane file, so the
+  ///      dest-side check takes the pair.
+  function _entry() internal view returns (Types.LaneCommittee memory entry) {
+    entry.lane = _lane();
+    entry.committee.threshold = THRESHOLD;
+    entry.committee.signers = signers;
+  }
+
+  function _lane() internal pure returns (Types.LaneConfig memory lane) {
     lane.name = "src_to_dst";
     lane.source = Types.LaneEndpoint({aliasName: SOURCE_ALIAS, chainSelector: SOURCE_SELECTOR});
     lane.dest = Types.LaneEndpoint({aliasName: DEST_ALIAS, chainSelector: DEST_SELECTOR});
     lane.versionTag = VERSION_TAG;
-    lane.signatureConfig.threshold = THRESHOLD;
-    lane.signatureConfig.signers = signers;
     lane.remote = Types.RemoteChainConfig({
       router: ROUTER,
       feeUSDCents: FEE_USD_CENTS,
@@ -323,13 +329,11 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   function _srcChain() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = SOURCE_ALIAS;
     chainConfig.chainSelector = SOURCE_SELECTOR;
-    chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
   function _dstChain() internal pure returns (Types.ChainConfig memory chainConfig) {
     chainConfig.aliasName = DEST_ALIAS;
     chainConfig.chainSelector = DEST_SELECTOR;
-    chainConfig.resolverSalt = RESOLVER_SALT;
   }
 
   /// @dev One local deployment stands in for both sides — which is also the correct
@@ -337,6 +341,7 @@ contract LaneParityCheckTest is CommitteeVerifierSetup {
   function _dep() internal view returns (Types.Deployment memory deployment) {
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
+    deployment.resolverParams.salt = RESOLVER_SALT;
     deployment.verifiers = _verifiersOf(address(verifier));
   }
 }

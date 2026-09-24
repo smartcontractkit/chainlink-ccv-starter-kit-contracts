@@ -127,7 +127,8 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
   }
 
   function test_toAllowlistConfigArgs_translatesExampleLane() public view {
-    Types.LaneConfig memory lane = ConfigLib.readLaneByPath("config/lanes/sepolia-to-base_sepolia.example.json");
+    Types.LaneConfig memory lane =
+      ConfigLib.readLaneByPath("config/operator/lanes/sepolia-to-base_sepolia.example.json");
     BaseVerifier.AllowlistConfigArgs memory args = script.toAllowlistConfigArgs(lane, _none());
 
     assertEq(args.destChainSelector, lane.dest.chainSelector, "dest selector");

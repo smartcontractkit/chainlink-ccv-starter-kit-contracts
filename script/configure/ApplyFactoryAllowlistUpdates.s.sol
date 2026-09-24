@@ -10,7 +10,7 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title ApplyFactoryAllowlistUpdates
 /// @notice Reconciles the CREATE2Factory's createAndCall allowlist with
-///         `factory.allowlist` in config/roles/<alias>.json — the desired FULL set.
+///         `factory.roles.allowlist` in config/operator/chains/<alias>.json — the desired FULL set.
 ///         Stages only the delta (removes + adds) and skips when already matching,
 ///         so --rpc-url is required in BOTH output modes.
 ///         Caller must be the factory OWNER (applyAllowListUpdates is onlyOwner).
@@ -20,9 +20,9 @@ import {console2} from "forge-std/console2.sol";
 ///      Handover order: (1) BootstrapFactory, (2) resolver deployed and VERIFIED,
 ///      (3) configured factory owner has ACCEPTED ownership, (4) run this script.
 ///      To authorize a replacement deployment account later: add it to
-///      `factory.allowlist`, run this, deploy, remove it, run this again.
+///      `factory.roles.allowlist`, run this, deploy, remove it, run this again.
 ///
-/// @dev `factory.allowlist` is the desired FULL set and is REQUIRED in the roles file.
+/// @dev `factory.roles.allowlist` is the desired FULL set and is REQUIRED in the operator file.
 ///      [] is valid intent: nobody may createAndCall until the owner re-adds an account.
 ///
 /// Usage:
@@ -49,14 +49,14 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
     // here with a legible reason rather than as a bare revert inside getAllowList().
     _assertReachable(deployment.factory, "factory");
 
-    Types.RolesConfig memory roles = ConfigLib.readRoles(chainAlias);
+    Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
 
     address[] memory current = CREATE2Factory(deployment.factory).getAllowList();
-    (address[] memory removes, address[] memory adds) = diff(current, roles.factoryAllowlist);
+    (address[] memory removes, address[] memory adds) = diff(current, operator.factory.roles.allowlist);
 
     console2.log("[ApplyFactoryAllowlistUpdates] chain:", chainAlias);
     console2.log("  target factory:", deployment.factory);
-    console2.log("  desired size:", roles.factoryAllowlist.length);
+    console2.log("  desired size:", operator.factory.roles.allowlist.length);
     console2.log("  on-chain size:", current.length);
 
     if (removes.length == 0 && adds.length == 0) {
@@ -72,7 +72,7 @@ contract ApplyFactoryAllowlistUpdates is BaseScript {
     for (uint256 i = 0; i < adds.length; ++i) {
       console2.log("  ADD:   ", adds[i]);
     }
-    if (roles.factoryAllowlist.length == 0) {
+    if (operator.factory.roles.allowlist.length == 0) {
       console2.log("  NOTE: desired set is empty; nobody can createAndCall until the owner re-adds an account");
     }
 
