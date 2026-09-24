@@ -23,6 +23,9 @@ Needed only for specific `make` targets:
 
 ## Install
 
+Fork the kit and clone your fork. Your config and deployment records live in
+[`config/`](config-schema.md) and belong in your own git history.
+
 ```bash
 curl -L https://foundry.paradigm.xyz | bash && foundryup   # Foundry — see their guide for alternatives
 

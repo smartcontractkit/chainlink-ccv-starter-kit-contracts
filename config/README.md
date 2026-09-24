@@ -16,6 +16,16 @@ Files starting with `_template` document the full schema; files ending in `.exam
 are illustrative. Real files are named by the chain alias (`sepolia.json`) or lane
 (`sepolia-to-base_sepolia.json`).
 
+## Fork the kit before you start
+
+The kit ships templates and examples only. Your own config lives in this directory and
+belongs in your own git history, so fork the kit and work from your fork. Commit all
+three:
+
+- `chains/`: Chainlink's reference, written by the sync tooling
+- `operator.json` and `operator/`: your config, written by you
+- `deployments/`: the addresses you deployed, written by the deploy scripts
+
 ---
 
 ## `chains/<alias>.json`
@@ -79,7 +89,7 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
   // -> applyRemoteChainConfigUpdates, keyed by DEST chain selector (outbound).
   //    `router` is OPTIONAL: absent inherits the SOURCE chain's synced router
   //    (chains/<alias>.json, maintained by script/config/sync-ccip-config.sh).
-  //    An explicit 0x0 PAUSES the lane — the only emergency lever (outbound).
+  //    An explicit 0x0 pauses the lane: see "Pausing a lane" below.
   "remoteChainConfig": {
     // "router":          "0x...",   // optional; omit to inherit the source chain's router
     "feeUSDCents":        0,
@@ -96,6 +106,14 @@ A **directed** lane (source → dest). Contracts deploy on both chains of every 
   }
 }
 ```
+
+### Pausing a lane
+
+Set `"router": "0x0000000000000000000000000000000000000000"` in the lane file, keep
+`gasForVerification` non-zero, and run `make apply-remote-config CHAIN=<source> TAG=<versionTag>`.
+Outbound traffic to that destination stops. To resume, remove the `router` key, so the lane
+inherits the source chain's router from `chains/<source>.json` again, and run the same
+target.
 
 ## `operator/chains/<alias>.json`
 
