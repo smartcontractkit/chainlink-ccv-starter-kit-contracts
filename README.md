@@ -78,7 +78,7 @@ chapter that explains it in depth.
 ## Testing
 
 ```bash
-make test          # hermetic; no RPC
+make test          # hermetic; no RPC; seeds config/operator.json if absent
 make sync-selftest   # offline config-sync selftest
 make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 ```

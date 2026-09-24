@@ -42,6 +42,15 @@ make build    # forge build — default profile, pinned for deterministic addres
 Always deploy from this profile. Compiler settings live in `foundry.toml`; changing them
 breaks CREATE2 address parity across machines — see [Deploying](deploy.md#address-determinism).
 
+## Test
+
+```bash
+make test    # forge test; seeds config/operator.json from the example if absent
+```
+
+The tests read `config/operator.json`. Run `make test`, or `make seed-operator-config`
+once before a bare `forge test`.
+
 ## A fresh clone has no config
 
 A fresh clone has templates and examples only; nothing runs until you write your own config:
