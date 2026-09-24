@@ -36,7 +36,7 @@ batch) — there is no default. This walkthrough uses `EOA`.
 ## 0. One-time setup
 
 ```bash
-make install        # npm ci + git submodules
+make install        # forge 1.8.1 (the pinned version) + npm ci + git submodules
 cp .env.example .env    # fill in SEPOLIA_RPC_URL, BASE_SEPOLIA_RPC_URL, signing config
 make seed-operator-config   # config/operator.json (salt + tag catalog); ensure $TAG is listed
 make build

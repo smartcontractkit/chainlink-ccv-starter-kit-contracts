@@ -3,7 +3,7 @@
 # Recipes that expand an RPC URL are prefixed with `@`: make echoes recipe lines by
 # default, and RPC URLs usually carry an API key. Keep the `@` when editing them.
 
-.PHONY: help install build build-dev clean \
+.PHONY: help install install-forge build build-dev clean \
         check-forge seed-operator-config \
         test sync-selftest fmt fmt-check lint lint-sh lint-typos \
         bootstrap-factory deploy-resolver deploy-verifier verify \
@@ -63,7 +63,15 @@ endef
 help:             ## list every target
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*##' $(MAKEFILE_LIST) | awk -F':.*?## *' '{printf "  %-25s %s\n", $$1, $$2}'
 
-install:          ## npm ci + git submodules
+# foundryup switches the machine-wide forge, so skip it when the pin is already met.
+install-forge:    ## pinned forge via foundryup; no-op when already installed
+	@if forge --version 2>/dev/null | head -1 | grep -q "$(FOUNDRY_VERSION)"; then \
+		echo "forge $(FOUNDRY_VERSION) already installed"; \
+	else \
+		foundryup --install $(FOUNDRY_VERSION); \
+	fi
+
+install: install-forge ## forge (pinned) + npm ci + git submodules
 	npm ci
 	git submodule update --init --recursive
 

@@ -27,16 +27,11 @@ Fork the kit and clone your fork. Your config and deployment records live in
 [`config/`](config-schema.md) and belong in your own git history.
 
 ```bash
-curl -L https://foundry.paradigm.xyz | bash && foundryup   # Foundry — see their guide for alternatives
-
-npm ci                                # clean install, exactly what package-lock.json pins
-git submodule update --init --recursive   # forge-std, pinned by foundry.lock
+curl -L https://foundry.paradigm.xyz | bash   # Foundry's installer, once per machine — see their guide for alternatives
+make install                          # forge 1.8.1 (the pinned version) + npm ci + forge-std submodule
 cp .env.example .env                  # then fill in RPC URLs and signing config
 make seed-operator-config             # config/operator.json (resolver salt + tag catalog) from the example
 ```
-
-Use `npm ci`, not `npm install` — it installs exactly what the lockfile pins and fails
-loudly if `package.json` and `package-lock.json` have drifted.
 
 ## Build
 
