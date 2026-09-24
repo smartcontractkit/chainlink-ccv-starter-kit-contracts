@@ -4,9 +4,17 @@ Runtime behaviour and constraints that the config files do not express.
 
 ## There is no pause function
 
-The **only** emergency lever is outbound: set `router = 0` for a destination via
-`ApplyRemoteChainConfigUpdates`. That destination's `forwardToVerifier` then reverts
-`RemoteChainNotSupported`, and `ccipSend` fails.
+The **only** emergency lever is outbound: `router = 0` for a destination on the source verifier. That destination's `getFee` and `forwardToVerifier` then revert `RemoteChainNotSupported`, and `ccipSend` fails.
+
+```bash
+# on the lane's SOURCE chain; requires LANE, RPC_URL, OUTPUT_MODE (+ SAFE_ADDRESS in SAFE mode)
+make pause-lane LANE=sepolia-to-base_sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=SAFE SAFE_ADDRESS=0x...
+```
+
+`PauseLane` reads the destination's current on-chain config, zeroes only the router, and
+skips the call when it is already zero. It then writes `remoteChainConfig.router = 0x0`
+into the lane file so `apply-remote-config` keeps the pause. Commit that change. To
+resume, delete the `router` key from the lane file and run `apply-remote-config`.
 
 It is **per destination**, not global. Pausing one lane leaves every other destination on
 the same verifier working.

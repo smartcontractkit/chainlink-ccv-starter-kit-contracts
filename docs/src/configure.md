@@ -106,7 +106,8 @@ make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_R
 - **`ApplyRemoteChainConfigUpdates`** — per destination: the local router to send through,
   the fee in US dollar cents, and the gas and payload size reserved for verifying on
   arrival. A zero `router` here is the **only outbound pause** in the system, so the script
-  warns rather than refusing. `gasForVerification` must be non-zero or `BaseVerifier`
+  warns rather than refusing; `make pause-lane LANE=<name>` sets it for one lane and
+  records it in the lane file. `gasForVerification` must be non-zero or `BaseVerifier`
   reverts `DestGasCannotBeZero`.
 - **`ApplyAllowlistUpdates`** — which senders on this chain may send to each destination.
   `allowedSenders` is the desired **full** set: the script reads the on-chain set, stages
