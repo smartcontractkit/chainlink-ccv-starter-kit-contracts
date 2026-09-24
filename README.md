@@ -62,6 +62,9 @@ test/            unit + integration tests
 
 ## Quick start
 
+Fork this repository and clone your fork. Your config and deployment records live in
+[`config/`](config/README.md) and belong in your own git history.
+
 ```bash
 foundryup
 npm ci
