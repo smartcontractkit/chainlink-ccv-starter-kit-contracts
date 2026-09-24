@@ -10,6 +10,7 @@ are always **0** clean, **1** finding, **2** could not run.
 | `function not found` from `forge script` | missing `--sig` | every script needs an explicit signature, e.g. `--sig "run(string)" sepolia` |
 | config file not found / revert on `readChain` | running from wrong directory or no config written yet | run from repo root; follow [step 1 of the full flow](full-flow.md#1-write-the-config) |
 | fresh clone, scripts fail immediately | no operator config yet | seed `config/operator.json`, write operator + lane files from the templates — see [Getting started](getting-started.md#a-fresh-clone-has-no-config) |
+| `forge test` reverts with `ConfigLib: missing config/operator.json` | fresh clone, operator file not seeded | run `make test`, or `make seed-operator-config` then `forge test` |
 | uncataloged tag / unknown versionTag | tag missing from `config/operator.json` | add the tag to the catalog before `DeployVerifier` or lane files |
 
 ## Deploy
