@@ -289,5 +289,5 @@ parity:           ## LANE=<name> SOURCE_RPC=.. DEST_RPC=..; all three legs, wors
 commands-doc:     ## regenerate docs/src/commands.md from the Makefile | caller=n/a | mode=n/a
 	./script/governance/commands-report.sh
 
-commands-check:   ## CI: fail if the doc is stale, or a target is missing a ## description | caller=n/a | mode=n/a
+commands-check:   ## CI: fail if the doc is stale, or a target is missing a help description | caller=n/a | mode=n/a
 	@./script/governance/commands-report.sh --check > /dev/null
