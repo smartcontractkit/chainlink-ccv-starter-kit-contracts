@@ -92,4 +92,4 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 | `make parity-config` | LANE=<name>; config-vs-config only — no RPC | any | n/a | LANE |
 | `make parity` | LANE=<name> SOURCE_RPC=.. DEST_RPC=..; all three legs, worst-of exit | any | n/a | LANE, SOURCE_RPC, DEST_RPC |
 | `make commands-doc` | regenerate docs/src/commands.md from the Makefile | n/a | n/a | none |
-| `make commands-check` | CI: fail if the doc is stale, or a target is missing a ## description | n/a | n/a | none |
+| `make commands-check` | CI: fail if the doc is stale, or a target is missing a help description | n/a | n/a | none |
