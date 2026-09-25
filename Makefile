@@ -14,7 +14,8 @@
         transfer-sla accept-sla cancel-sla \
         sweep-fees balance-report \
         snapshot drift parity parity-config deployments-doc deployments-check validate-config \
-        discover add-chain sync-check sync-chain
+        discover add-chain sync-check sync-chain \
+        commands-doc commands-check
 
 # Build, fmt and lint are version-sensitive: the forge-lint disable comments name lint
 # ids that older releases reject as "unknown id". Keep in step with the version pinned
@@ -149,26 +150,26 @@ sync-chain:       ## accept upstream CCIP values for ONE chain
 # FOUNDRY_PROFILE is pinned inline: the resolver's CREATE2 address depends on its
 # initcode, and the `dev` profile compiles different bytecode. The inline prefix wins
 # over a profile exported in the shell or passed on the make command line.
-bootstrap-factory: ## CREATE2Factory; must be the deployer's FIRST tx on the chain
+bootstrap-factory: ## CREATE2Factory; must be the deployer's FIRST tx on the chain | caller=deployer | mode=eoa
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make bootstrap-factory CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";            exit 2; }
 	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/BootstrapFactory.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
-deploy-resolver:  ## resolver via CREATE2; must land at the same address on every chain
+deploy-resolver:  ## resolver via CREATE2; must land at the same address on every chain | caller=deployer | mode=eoa
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-resolver CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
 	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployResolver.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
-deploy-verifier:  ## CommitteeVerifier for TAG; appends to the deployment record
+deploy-verifier:  ## CommitteeVerifier for TAG; appends to the deployment record | caller=deployer | mode=eoa
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-verifier CHAIN=sepolia TAG=0x00010001"; exit 2; }
 	@test -n "$(TAG)"     || { echo "TAG is required (the verifier's bytes4 versionTag, e.g. TAG=0x00010001)"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
 	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
 		--sig "run(string,bytes4)" $(CHAIN) $(TAG) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
-verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag>
+verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag> | caller=deployer | mode=n/a
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make verify CHAIN=sepolia"; exit 2; }
 # `origin`, not the value: an unset ONLY means "verify everything" and omits the flag,
 # while ONLY= is a target the caller meant to give and forgot, so it is passed through
@@ -176,108 +177,117 @@ verify:           ## source-verify recorded contracts; ONLY=factory|resolver|ver
 	./script/deploy/verify.sh $(CHAIN) $(if $(filter-out undefined,$(origin ONLY)),--only $(ONLY))
 
 # ---- configure: per verifier (CHAIN + TAG; OUTPUT_MODE=EOA|SAFE) ----
-apply-remote-config: ## lane remoteChainConfig on the SOURCE chain's verifier
+apply-remote-config: ## lane remoteChainConfig on the SOURCE chain's verifier | caller=owner | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/ApplyRemoteChainConfigUpdates.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-pause-lane:       ## stop new sends on a lane (router = 0 on the SOURCE verifier); writes the lane file, commit it
+pause-lane:       ## stop new sends on a lane (router = 0 on the SOURCE verifier); writes the lane file, commit it | caller=owner | mode=eoa,safe
 	$(call run-lane-script,script/configure/PauseLane.s.sol,"run(string)",$(LANE))
 
-apply-allowlists: ## lane sender allowlists on the SOURCE chain's verifier
+apply-allowlists: ## lane sender allowlists on the SOURCE chain's verifier | caller=owner-or-allowlistAdmin | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/ApplyAllowlistUpdates.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-apply-signature-configs: ## committee signer sets on the DEST chain's verifier
+apply-signature-configs: ## committee signer sets on the DEST chain's verifier | caller=owner | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/ApplySignatureConfigs.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-set-dynamic-config: ## verifier { feeAggregator, allowlistAdmin } from operator config
+set-dynamic-config: ## verifier { feeAggregator, allowlistAdmin } from operator config | caller=owner | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/SetDynamicConfig.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-set-finality-config: ## verifier allowed-finality cap from operator config
+set-finality-config: ## verifier allowed-finality cap from operator config | caller=owner | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/SetAllowedFinalityConfig.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-update-storage-locations: ## verifier storageLocations (caller: storageLocationsAdmin)
+update-storage-locations: ## verifier storageLocations (caller: storageLocationsAdmin) | caller=storageLocationsAdmin | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/UpdateStorageLocations.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
 # ---- configure: resolver-scoped (CHAIN only) ----
-apply-inbound:    ## resolver inbound map (versionTag -> verifier) for lanes INTO this chain
+apply-inbound:    ## resolver inbound map (versionTag -> verifier) for lanes INTO this chain | caller=owner | mode=eoa,safe
 	$(call run-script,script/configure/ApplyInboundImplementationUpdates.s.sol,"run(string)",$(CHAIN))
 
-apply-outbound:   ## resolver outbound map (dest selector -> verifier) for lanes FROM this chain
+apply-outbound:   ## resolver outbound map (dest selector -> verifier) for lanes FROM this chain | caller=owner | mode=eoa,safe
 	$(call run-script,script/configure/ApplyOutboundImplementationUpdates.s.sol,"run(string)",$(CHAIN))
 
-set-fee-aggregator: ## resolver feeAggregator from operator config
+set-fee-aggregator: ## resolver feeAggregator from operator config | caller=owner | mode=eoa,safe
 	$(call run-script,script/configure/SetFeeAggregator.s.sol,"run(string)",$(CHAIN))
 
-apply-factory-allowlist: ## factory createAndCall allowlist from operator config; prunes the bootstrap deployer
+apply-factory-allowlist: ## factory createAndCall allowlist from operator config; prunes the bootstrap deployer | caller=owner | mode=eoa,safe
 	$(call run-script,script/configure/ApplyFactoryAllowlistUpdates.s.sol,"run(string)",$(CHAIN))
 
 # ---- ownership: owner roles (CHAIN + TARGET=verifier:<tag>|resolver|factory) ----
-transfer-owner:   ## current owner PROPOSES the configured holder
+transfer-owner:   ## current owner PROPOSES the configured holder | caller=owner | mode=eoa,safe
 	@test -n "$(TARGET)" || { echo "TARGET is required: verifier:<tag> | resolver | factory"; exit 2; }
 	$(call run-script,script/ownership/TransferOwnership.s.sol,"run(string,string)",$(CHAIN) $(TARGET))
 
-accept-owner:     ## incoming owner ACCEPTS (run with THEIR signer / Safe)
+accept-owner:     ## incoming owner ACCEPTS (run with THEIR signer / Safe) | caller=incoming-owner | mode=eoa,safe
 	@test -n "$(TARGET)" || { echo "TARGET is required: verifier:<tag> | resolver | factory"; exit 2; }
 	$(call run-script,script/ownership/AcceptOwnership.s.sol,"run(string,string)",$(CHAIN) $(TARGET))
 
-cancel-owner:     ## current owner clears a pending transfer
+cancel-owner:     ## current owner clears a pending transfer | caller=owner | mode=eoa,safe
 	@test -n "$(TARGET)" || { echo "TARGET is required: verifier:<tag> | resolver | factory"; exit 2; }
 	$(call run-script,script/ownership/CancelOwnership.s.sol,"run(string,string)",$(CHAIN) $(TARGET))
 
 # ---- ownership: storageLocationsAdmin (CHAIN + TAG) ----
-transfer-sla:     ## current admin PROPOSES the configured storageLocationsAdmin
+transfer-sla:     ## current admin PROPOSES the configured storageLocationsAdmin | caller=storageLocationsAdmin | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/ownership/TransferStorageLocationsAdmin.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-accept-sla:       ## incoming admin ACCEPTS (run with THEIR signer / Safe)
+accept-sla:       ## incoming admin ACCEPTS (run with THEIR signer / Safe) | caller=incoming-storageLocationsAdmin | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/ownership/AcceptStorageLocationsAdmin.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
-cancel-sla:       ## current admin clears a pending transfer
+cancel-sla:       ## current admin clears a pending transfer | caller=storageLocationsAdmin | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/ownership/CancelStorageLocationsAdmin.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
 
 # ---- fees ----
-sweep-fees:       ## withdraw fee-token balances to the aggregators
+sweep-fees:       ## withdraw fee-token balances to the aggregators | caller=any (permissionless) | mode=eoa,safe
 	$(call run-script,script/fees/SweepFees.s.sol,"run(string)",$(CHAIN))
 
-balance-report:   ## read-only fee balances (no OUTPUT_MODE, no broadcast)
+balance-report:   ## read-only fee balances (no OUTPUT_MODE, no broadcast) | caller=any | mode=n/a
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make balance-report CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";               exit 2; }
 	@forge script script/fees/BalanceReport.s.sol --sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL)
 
 # ---- governance ----
-snapshot:         ## write live roles + verifier settings to out/governance/ (read-only)
+snapshot:         ## write live roles + verifier settings to out/governance/ (read-only) | caller=any | mode=n/a
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make snapshot CHAIN=sepolia"; exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";          exit 2; }
 	@forge script script/governance/SnapshotOperator.s.sol \
 		--sig "run(string)" $(CHAIN) --rpc-url $(RPC_URL)
 
-drift:            ## CI-schedulable; exit 0 clean / 1 drift / 2 rpc-unavailable
+drift:            ## CI-schedulable; exit 0 clean / 1 drift / 2 rpc-unavailable | caller=any | mode=n/a
 	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make drift CHAIN=sepolia";              exit 2; }
 	@test -n "$(RPC_URL)" || { echo "RPC_URL is empty (is the chain's *_RPC_URL exported?)";        exit 2; }
 	@./script/governance/drift-check.sh $(CHAIN) $(RPC_URL)
 
-deployments-doc:  ## regenerate docs/src/deployments.md from config/
+deployments-doc:  ## regenerate docs/src/deployments.md from config/ | caller=any | mode=n/a
 	./script/governance/deployments-report.sh
 
-deployments-check: ## CI: fail if the doc is stale, or if the resolver address diverges
+# "CI" here means an operator's own deployment repo, not this kit's CI: the check reads
+# real config/deployments/ records, which an operator commits in their fork. This kit
+# ships only the template, so there is nothing to check upstream; do not wire it here.
+deployments-check: ## CI: fail if the doc is stale, or if the resolver address diverges | caller=any | mode=n/a
 	@./script/governance/deployments-report.sh --check > /dev/null
 
-validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC
+validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC | caller=any | mode=n/a
 	forge script script/governance/ValidateConfig.s.sol --tc ValidateConfig --sig "run()"
 
-parity-config:    ## LANE=<name>; config-vs-config only — no RPC
+parity-config:    ## LANE=<name>; config-vs-config only — no RPC | caller=any | mode=n/a
 	@test -n "$(LANE)" || { echo "LANE is required, e.g. make parity-config LANE=sepolia-to-base_sepolia"; exit 2; }
 	forge script script/governance/LaneParityCheck.s.sol --sig "runConfig(string)" $(LANE)
 
-parity:           ## LANE=<name> SOURCE_RPC=.. DEST_RPC=..; all three legs, worst-of exit
+parity:           ## LANE=<name> SOURCE_RPC=.. DEST_RPC=..; all three legs, worst-of exit | caller=any | mode=n/a
 	@test -n "$(LANE)"       || { echo "LANE is required, e.g. make parity LANE=sepolia-to-base_sepolia"; exit 2; }
 	@test -n "$(SOURCE_RPC)" || { echo "SOURCE_RPC is empty (export the source chain's RPC)";          exit 2; }
 	@test -n "$(DEST_RPC)"   || { echo "DEST_RPC is empty (export the dest chain's RPC)";              exit 2; }
 	@./script/governance/lane-parity-check.sh $(LANE) $(SOURCE_RPC) $(DEST_RPC)
+
+commands-doc:     ## regenerate docs/src/commands.md from the Makefile | caller=n/a | mode=n/a
+	./script/governance/commands-report.sh
+
+commands-check:   ## CI: fail if the doc is stale, or a target is missing a help description | caller=n/a | mode=n/a
+	@./script/governance/commands-report.sh --check > /dev/null
