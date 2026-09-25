@@ -45,6 +45,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: forge lint
 
+      # Catches a Makefile edit (new target, changed help text/roles) that forgot to
+      # regenerate docs/src/commands.md, the same way deployments-check catches a stale
+      # deployments.md.
+      - name: Check command reference is up to date
+        if: ${{ !cancelled() }}
+        run: make commands-check
+
       # The shell wrappers have no test suite, so shellcheck is their only gate.
       # ubuntu-latest ships shellcheck, so no install step is needed.
       - name: Lint shell scripts

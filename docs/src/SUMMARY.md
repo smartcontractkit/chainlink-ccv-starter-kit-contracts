@@ -26,5 +26,6 @@
 
 ## Reference
 
+- [Command reference](commands.md)
 - [Config sync commands](config-sync-reference.md)
 - [Troubleshooting](troubleshooting.md)
