@@ -65,6 +65,37 @@ the lanes you meant to configure. The Safe batch under `out/safe/<alias>/` is no
 per-lane view: each configure script collapses every matched lane into a single call, so
 one entry covers all of them. Keep retired and in-progress lanes outside `config/operator/lanes/`.
 
+### Retiring a lane
+
+Moving a lane file out of `config/operator/lanes/` stops the scripts from staging it, but
+does **not** undo anything already on-chain. Most importantly, the destination verifier
+keeps the lane's committee: its signers and threshold remain a valid quorum for messages
+from that source selector until they are removed explicitly. To retire a lane completely:
+
+1. On the **source** chain, pause it first: `make pause-lane LANE=<name>` (router = 0).
+   The verifier's `remoteChainConfig` cannot be listed on-chain, so neither the scripts nor
+   `DriftCheck` will notice it once the file is gone.
+2. Move the lane file out of `config/operator/lanes/`.
+3. On the **destination** chain, revoke the committee by re-running
+   `apply-signature-configs` with the removal opt-in:
+
+   ```bash
+   REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true \
+     make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_RPC_URL OUTPUT_MODE=SAFE
+   ```
+
+   This removes every source selector configured on that verifier that no lane in
+   `config/operator/lanes/` declares for it (destination = `CHAIN`, `versionTag` = `TAG`).
+   Without the flag the run only prints a `WARN undeclared signature config left LIVE` line
+   per selector and stages the upserts alone. The same applies after repinning a lane to a
+   new `versionTag`: the old verifier's committee for that source stays live until you run
+   the removal against the old tag.
+4. `make drift CHAIN=<dest>` reports any committee still left behind as
+   `DRIFT_DETECTED verifier <tag> signature config for a source selector no lane declares`.
+5. On the source chain, drift also reports the resolver's outbound entry for the retired
+   destination as `resolver outbound impl for a dest selector no lane declares`; see
+   [Operational notes](operations.md#rotating-a-verifier).
+
 ## What each script configures
 
 Ten scripts across three contracts. Every one is a single privileged call.
@@ -121,7 +152,10 @@ make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_R
   every time, because the contract clears the existing set first. The script enforces two
   properties unless `ALLOW_WEAK_COMMITTEE=true`: liveness, so no N-of-N committee (one
   offline signer would halt the lane), and safety, so the threshold must exceed 2/3 of the
-  set. The smallest committee that needs no waiver is 3-of-4.
+  set. The smallest committee that needs no waiver is 3-of-4. A source selector configured
+  on the verifier that no lane declares for this destination and tag is left live and
+  reported with a WARN, unless `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true` is set, in which case the
+  same call removes it; see [Retiring a lane](#retiring-a-lane).
 
 ### Per chain (verifier)
 
