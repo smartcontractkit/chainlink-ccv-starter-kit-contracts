@@ -210,6 +210,11 @@ contract LaneParityCheck is Script {
   /// @notice Destination-side invariants. The signer set is keyed by source selector and
   ///         the inbound implementation by the lane's `versionTag`; both live on the
   ///         dest verifier recorded for that tag.
+  /// @dev Lane-scoped by design, so it does NOT enumerate the dest verifier's other
+  ///      signature configs: a retired lane has no file to name here, and an orphan from
+  ///      another lane would fail this lane's parity for a reason it does not own. The
+  ///      closed-world check (an on-chain committee no lane declares) is
+  ///      `DriftCheck.checkSignatureConfigs`, which sees every lane for the chain.
   function checkDestSide(
     Types.LaneCommittee memory entry,
     bytes4 versionTag,

@@ -449,6 +449,52 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   }
 
   // ===========================================================================
+  //  signature configs — closed world (on-chain -> lanes)
+  // ===========================================================================
+
+  /// @dev The setUp-wired committee for REMOTE_SELECTOR is declared by the inbound lane.
+  function test_signatureConfigs_declaredCommitteeIsClean() public view {
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), _lanes()), 0, "declared committee");
+  }
+
+  /// @dev CLOSED WORLD: retiring the inbound lane (moving its file out) leaves its
+  ///      committee live on-chain. That must be drift, in the per-area seam and in checkAll.
+  function test_drift_signatureConfigNoLaneDeclares() public view {
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
+    lanes[0] = _outboundLane();
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), lanes), 1, "undeclared committee is drift");
+    assertEq(script.checkAll(_deployment(), _roles(), lanes), 1, "and checkAll counts it");
+  }
+
+  /// @dev A lane repinned to another tag declares a committee for THAT verifier only;
+  ///      the old verifier's entry is still undeclared.
+  function test_drift_signatureConfigDeclaredOnlyForAnotherTag() public view {
+    Types.LaneCommittee[] memory lanes = _lanes();
+    lanes[1].lane.versionTag = VERSION_TAG_V2;
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), lanes), 1, "other tag does not declare it");
+  }
+
+  /// @dev A committee for an extra source selector no lane names is drift, next to a
+  ///      clean declared one.
+  function test_drift_extraSignatureConfigOnChain() public {
+    SignatureQuorumValidator.SignatureConfig[] memory extra = new SignatureQuorumValidator.SignatureConfig[](1);
+    extra[0] = SignatureQuorumValidator.SignatureConfig({sourceChainSelector: 7777, threshold: 1, signers: signers});
+    verifier.applySignatureConfigs(new uint64[](0), extra);
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), _lanes()), 1, "extra committee is drift");
+  }
+
+  /// @dev Removing the undeclared committee on-chain clears the drift.
+  function test_signatureConfigs_cleanAfterRemoval() public {
+    uint64[] memory removals = new uint64[](1);
+    removals[0] = REMOTE_SELECTOR;
+    verifier.applySignatureConfigs(removals, new SignatureQuorumValidator.SignatureConfig[](0));
+
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
+    lanes[0] = _outboundLane();
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), lanes), 0, "revoked committee is not drift");
+  }
+
+  // ===========================================================================
   //  reachability is an environment problem, not drift
   // ===========================================================================
 
