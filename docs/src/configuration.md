@@ -30,8 +30,8 @@ the sync tooling never touches.
 Onboarding a new chain:
 
 ```bash
-# 1. find the chain's selector — requires: nothing
-make discover
+# 1. find the chain's selector — requires: nothing (mainnet by default)
+make discover CCIP_ENV=testnet
 
 # 2. create config/chains/<alias>.json with the Chainlink fields filled in
 #    requires: CHAIN, SELECTOR
@@ -57,6 +57,9 @@ make sync-chain CHAIN=sepolia  # accept upstream values, one chain — requires:
 inside a deployed verifier and has no getter** — the config file is the only record of
 what was deployed. Treat a post-deploy `rmn` drift as something to investigate, one
 chain at a time.
+
+A `chainId` that differs from upstream is a `CONFLICT` in both `sync-check` and `sync-chain` and is never
+written; only a `0` chainId is filled in.
 
 `explorerAddressPath` is nullable upstream. When the API serves no explorer for a chain
 the field is skipped entirely — never compared, never written — so a value you set by

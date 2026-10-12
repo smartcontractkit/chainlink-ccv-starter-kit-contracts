@@ -49,6 +49,15 @@ def diffs($cfg; $src):
       | select(norm($k; $s[$k]) != norm($k; $cfg[$k]))
       | {key: $k, config: $cfg[$k], source: $s[$k]} ];
 
+# chainId is fixed per chain selector: the source may fill a zero or null, never replace a
+# non-zero value. One "chainId: config=… source=…" line when the two disagree, else nothing.
+def chain_id_conflict($cfg; $src):
+    if ($cfg | has("chainId")) and ($src.chainId != null)
+       and (($cfg.chainId // 0) | tostring) != "0"
+       and norm("chainId"; $cfg.chainId) != norm("chainId"; $src.chainId)
+    then "chainId: config=\($cfg.chainId | render(.)) source=\($src.chainId | render(.))"
+    else empty end;
+
 # One "field: config=… source=…" line per difference.
 def diff_lines($cfg; $src):
     diffs($cfg; $src)[]

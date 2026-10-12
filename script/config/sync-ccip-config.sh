@@ -11,7 +11,7 @@
 # the active ARMProxy. Lane-level CCIP version lives in /lanes, not /chains.
 #
 # The sync OWNS (overwrites) only the CCIP-core fields the source provides that the target already
-# carries: router, rmn, feeTokens, explorerAddressPath (+ chainId refresh). The two other keys are
+# carries: router, rmn, feeTokens, explorerAddressPath (+ chainId, filled only while it is 0). The two other keys are
 # identity: alias names the file, and the immutable chainSelector is a GUARD (source.chainSelector
 # must equal the file's). A no-drift sync leaves the file byte-identical.
 # A core field the source serves as null (explorerAddressPath is nullable) is skipped, not zeroed.
@@ -22,7 +22,8 @@
 # Selectors and chainIds are compared as opaque text, never coerced to numbers.
 #
 # Usage:
-#   sync-ccip-config.sh discover [--env testnet|mainnet]      list the API catalog + local status
+#   sync-ccip-config.sh discover [--env mainnet|testnet]      list the API catalog + local status
+#                                                             (default mainnet)
 #   sync-ccip-config.sh bootstrap <name> <selector>          seed config/chains/<name>.json from the
 #                                                             template + API; never overwrites
 #   sync-ccip-config.sh check   [<name>|--all]                drift check (no write)
@@ -30,10 +31,20 @@
 #                                                             `sync --all`: accepting upstream values
 #                                                             is a per-chain decision (rmn is immutable
 #                                                             in a deployed verifier).
+#                                                             A non-zero chainId that differs is a
+#                                                             CONFLICT in check and sync alike.
+#
+# Every subcommand takes --allow-custom-api-base, required to use a CCIP_API_BASE other than
+# the default.
 #
 
+# CCIP_API_BASE overrides the API base URL. It must be https:// (anything else exits 2), a
+# non-default base exits 2 without --allow-custom-api-base and is warned about on stderr with it,
+# and every run prints the base it uses (see _ccip-api.sh).
+#
 # Exit codes: 0 clean | 1 drift-or-error | 2 could not run — no verdict either way (a missing
-# tool, or the source was unreachable; stderr names which). Same shape as drift-check.sh.
+# tool, a refused CCIP_API_BASE, or the source was unreachable; stderr names which). Same shape
+# as drift-check.sh.
 set -euo pipefail
 
 err() { echo "[sync-ccip-config] $*" >&2; }
@@ -48,6 +59,8 @@ done
 cd "$(dirname "$0")/../.."
 HERE="script/config"
 CHAINS_DIR="config/chains"
+# shellcheck source=script/config/_ccip-api.sh
+. "$HERE/_ccip-api.sh"
 
 # Real per-deployment chain configs only: `_template.json` documents the schema and
 # `*.example.json` are illustrative, so neither carries a usable chainSelector; `zz-scratch-*`
@@ -78,7 +91,7 @@ run_one() { # <name> <mode:check|sync> <sweep:0|1>
     flatfile="$(mktemp)"
     errfile="$(mktemp)"
     # stdout = flat JSON (-> flatfile); stderr (errors from the source) -> errfile, shown indented
-    bash "$HERE/ccip-config-source.sh" "$sel" > "$flatfile" 2> "$errfile" || srcrc=$?
+    bash "$HERE/ccip-config-source.sh" "$sel" ${SOURCE_FLAG:+"$SOURCE_FLAG"} > "$flatfile" 2> "$errfile" || srcrc=$?
     if [ "$srcrc" -eq 4 ] && [ "$sweep" = "1" ]; then
         # A chain the upstream does not serve cannot drift against it. Named queries
         # still fail on 404: the selector may be a typo.
@@ -116,7 +129,7 @@ cmd_bootstrap() {
     local flatfile errfile srcrc=0
     flatfile="$(mktemp)"
     errfile="$(mktemp)"
-    bash "$HERE/ccip-config-source.sh" "$sel" > "$flatfile" 2> "$errfile" || srcrc=$?
+    bash "$HERE/ccip-config-source.sh" "$sel" ${SOURCE_FLAG:+"$SOURCE_FLAG"} > "$flatfile" 2> "$errfile" || srcrc=$?
     [ -s "$errfile" ] && sed 's/^/      ./' "$errfile"
     if [ "$srcrc" -ne 0 ]; then
         rm -f "$flatfile" "$errfile"
@@ -130,7 +143,7 @@ cmd_bootstrap() {
 }
 
 cmd_discover() {
-    local env="testnet"
+    local env="mainnet"
     while [ $# -gt 0 ]; do
         case "$1" in
             --env)
@@ -143,7 +156,19 @@ cmd_discover() {
                 ;;
         esac
     done
-    local base="${CCIP_API_BASE:-https://api.ccip.chain.link/v2}"
+    case "$env" in
+        mainnet | testnet) ;;
+        *)
+            err "discover: --env must be mainnet or testnet, got '$env'"
+            exit 1
+            ;;
+    esac
+    local base="$API_BASE"
+    if [ "$env" = "mainnet" ]; then
+        echo "Environment: mainnet (--env testnet for testnets)"
+    else
+        echo "Environment: testnet (--env mainnet for production)"
+    fi
     local body map
     body="$(mktemp)"
     map="$(mktemp)"
@@ -152,7 +177,7 @@ cmd_discover() {
     # shellcheck disable=SC2064
     trap "rm -f '$body' '$map'" EXIT
     local code
-    code="$(curl -sS --retry 3 --max-time 30 -o "$body" -w '%{http_code}' "${base}/chains?environment=${env}" 2> /dev/null)" || {
+    code="$(ccip_api_get "${base}/chains?environment=${env}" "$body" 2> /dev/null)" || {
         err "API_UNREACHABLE: ${base}/chains?environment=${env}"
         exit 1
     }
@@ -168,7 +193,7 @@ cmd_discover() {
         jq -r '(if type=="array" then . else .chains end)[]
             | [.name, (.chainFamily // "?"), (.chainSelector|tostring), (.chainId|tostring)] | @tsv' "$body" |
             awk -F'\t' -v OFS='\t' '
-              NR==FNR { nm[$1]=$2; next }
+              FILENAME == ARGV[1] { nm[$1]=$2; next }
               { st = ($3 in nm) ? "configured("nm[$3]")" : "available"; print $1,$2,$3,$4,st }
             ' "$map" - | sort
     } | column -t -s "$(printf '\t')"
@@ -177,8 +202,21 @@ cmd_discover() {
 }
 
 main() {
+    local allow_custom=0 args=()
+    for a in "$@"; do
+        if [ "$a" = "--allow-custom-api-base" ]; then allow_custom=1; else args+=("$a"); fi
+    done
+    set -- ${args[@]+"${args[@]}"}
+    SOURCE_FLAG=""
+    [ "$allow_custom" = "1" ] && SOURCE_FLAG="--allow-custom-api-base"
     local sub="${1:-}"
     [ $# -gt 0 ] && shift || true
+    case "$sub" in
+        discover | bootstrap | check | sync)
+            API_BASE="$(ccip_api_base "$allow_custom")" || exit 2
+            echo "CCIP API: $API_BASE"
+            ;;
+    esac
     case "$sub" in
         discover) cmd_discover "$@" ;;
         bootstrap) cmd_bootstrap "$@" ;;

@@ -32,7 +32,7 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 
 | Target | Purpose | Caller | Mode | Key inputs |
 |---|---|---|---|---|
-| `make discover` | list the CCIP API chain catalog + local config status | n/a | n/a | none |
+| `make discover` | list the CCIP API chain catalog (CCIP_ENV=mainnet\|testnet, default mainnet) + local config status | n/a | n/a | none |
 | `make add-chain` | seed config/chains/<alias>.json from the API; never overwrites | n/a | n/a | CHAIN, SELECTOR |
 | `make sync-check` | config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run | n/a | n/a | none |
 | `make sync-chain` | accept upstream CCIP values for ONE chain | n/a | n/a | CHAIN |

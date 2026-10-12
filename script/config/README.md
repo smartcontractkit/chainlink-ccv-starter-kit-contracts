@@ -14,8 +14,8 @@ Four subcommands; run with no arguments to print the built-in help.
 ## `discover` — what chains exist
 
 ```bash
-./script/config/sync-ccip-config.sh discover                # testnet catalog (default)
-./script/config/sync-ccip-config.sh discover --env mainnet
+./script/config/sync-ccip-config.sh discover                # mainnet catalog (default)
+./script/config/sync-ccip-config.sh discover --env testnet  # make discover CCIP_ENV=testnet
 ```
 
 Lists every chain the API serves — name, family, selector, chainId — and marks the ones
@@ -81,6 +81,10 @@ naming such tokens. To retire one: sweep its fees (`SweepFees` reads this config
 sweep while the token is still listed), then hand-edit it out — the sync will not
 re-add a token the upstream no longer serves.
 
+`chainId` never changes for a chain selector. `sync` fills it only while it is `0`; a
+different non-zero value is a `CONFLICT` in both `check` and `sync` (exit 1, nothing
+written, no flag overrides it), because one side is wrong. Fix the file by hand.
+
 `sync` takes one chain at a time: accepting upstream values is a per-chain decision, and
 `rmn` is immutable in a deployed verifier — the config is the only record of what was
 deployed, so it should never be bulk-overwritten.
@@ -102,6 +106,7 @@ of what was deployed. Syncing over it makes the record lie.
 sync-ccip-config.sh      the CLI: discover / bootstrap / check / sync
 ccip-config-source.sh    fetch + decode: GET /chains/{selector}, pick the isActive
                          entry per contract, refuse anything that is not 0x + 40 hex
+_ccip-api.sh             the transport both API callers share: base-URL guard + pinned curl
 _bootstrap-chain.sh      create-if-absent, warn-on-difference
 _merge-core.sh           compare, and (sync only) write
 core-fields.jq           the owned field set and comparison rules, shared by both
@@ -109,6 +114,7 @@ core-fields.jq           the owned field set and comparison rules, shared by bot
 
 The fetch layer is the one untrusted boundary, so validation lives there. Everything
 above it is covered by an offline selftest (`make sync-selftest`) that swaps the fetcher for a stub — see `script/config/selftest.sh`.
+The same selftest runs the real fetcher against a fake `curl` to check the transport guard below.
 
 Debugging: run the source directly to see the raw decoded output —
 
@@ -116,5 +122,30 @@ Debugging: run the source directly to see the raw decoded output —
 ./script/config/ccip-config-source.sh 16015286601757825753 | jq .
 ```
 
-`CCIP_API_BASE` points every command at a different API host.
+### `CCIP_API_BASE`
+
+`CCIP_API_BASE` points every command at a different API host (default
+`https://api.ccip.chain.link/v2`). The API is where `router` and `rmn` come from, and those
+end up in verifier constructor args, so the override is guarded:
+
+- It must be `https://host[:port][/path]`. `http://`, embedded credentials, a query or a
+  fragment are refused (`BAD_API_BASE`, exit 2 from `sync-ccip-config.sh`, 3 from the source).
+  A trailing slash is stripped.
+- Every request is pinned to https, redirects included, with TLS 1.2 or later
+  (`--proto =https --proto-redir =https --tlsv1.2`).
+- A base other than the default is refused (`CUSTOM_API_BASE_REFUSED`, same exit codes)
+  unless the command also gets `--allow-custom-api-base`. Through make, pass
+  `ALLOW_CUSTOM_API_BASE=true` on the command line (e.g.
+  `make sync-check ALLOW_CUSTOM_API_BASE=true`); the same variable exported in the
+  environment is ignored. A `CCIP_API_BASE` left exported in a shell profile or CI
+  environment therefore fails every run instead of silently switching hosts.
+- Every `discover` / `bootstrap` / `check` / `sync` run prints `CCIP API: <base>` first, and
+  an allowed non-default base also prints a `WARN` on stderr naming it, so a substituted host
+  shows up in CI logs.
+- The chain selector must be 1–20 digits, and `discover --env` must be `mainnet` or `testnet`,
+  before either goes into a URL.
+
+TLS authenticates the host, not the content. These checks protect the transport and the
+origin. They cannot detect a compromised upstream, so review every `router` / `rmn` change
+that `sync` reports.
 

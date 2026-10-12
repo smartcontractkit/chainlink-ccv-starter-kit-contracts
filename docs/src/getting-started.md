@@ -56,8 +56,8 @@ once before a bare `forge test`.
 A fresh clone has templates and examples only; nothing runs until you write your own config:
 
 ```bash
-# list chains + selectors from the CCIP API — requires: nothing
-make discover
+# list chains + selectors from the CCIP API — requires: nothing (mainnet by default)
+make discover CCIP_ENV=testnet
 
 # create config/chains/<alias>.json with the Chainlink fields — requires: CHAIN, SELECTOR
 make add-chain CHAIN=sepolia SELECTOR=16015286601757825753

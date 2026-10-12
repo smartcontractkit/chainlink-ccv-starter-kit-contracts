@@ -26,6 +26,7 @@ CHAIN   ?=
 LANE    ?=
 TAG     ?=
 SELECTOR ?=                 # CCIP chain selector, for add-chain
+CCIP_ENV ?=                 # discover catalog: mainnet (default) | testnet
 TARGET  ?=                  # ownership target: verifier:<tag> | resolver | factory
 RPC_URL ?=
 SOURCE_RPC ?=
@@ -131,20 +132,24 @@ clean:            ## forge clean
 	forge clean
 
 # ---- chain config (Chainlink CCIP API) ----
-discover:         ## list the CCIP API chain catalog + local config status
-	./script/config/sync-ccip-config.sh discover
+# ALLOW_CUSTOM_API_BASE=true on the make command line (not from the environment) passes
+# --allow-custom-api-base, required to use a CCIP_API_BASE other than the default.
+CUSTOM_API_BASE_FLAG = $(if $(and $(filter command line,$(origin ALLOW_CUSTOM_API_BASE)),$(filter true 1,$(ALLOW_CUSTOM_API_BASE))),--allow-custom-api-base)
+
+discover:         ## list the CCIP API chain catalog (CCIP_ENV=mainnet|testnet, default mainnet) + local config status
+	./script/config/sync-ccip-config.sh discover $(if $(CCIP_ENV),--env $(CCIP_ENV)) $(CUSTOM_API_BASE_FLAG)
 
 add-chain:        ## seed config/chains/<alias>.json from the API; never overwrites
 	@test -n "$(CHAIN)"    || { echo "CHAIN is required, e.g. make add-chain CHAIN=sepolia SELECTOR=16015286601757825753"; exit 2; }
 	@test -n "$(SELECTOR)" || { echo "SELECTOR is required (the chain's CCIP selector; make discover lists them)"; exit 2; }
-	./script/config/sync-ccip-config.sh bootstrap $(CHAIN) $(SELECTOR)
+	./script/config/sync-ccip-config.sh bootstrap $(CHAIN) $(SELECTOR) $(CUSTOM_API_BASE_FLAG)
 
 sync-check:       ## config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run
-	./script/config/sync-ccip-config.sh check --all
+	./script/config/sync-ccip-config.sh check --all $(CUSTOM_API_BASE_FLAG)
 
 sync-chain:       ## accept upstream CCIP values for ONE chain
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make sync-chain CHAIN=sepolia"; exit 2; }
-	./script/config/sync-ccip-config.sh sync $(CHAIN)
+	./script/config/sync-ccip-config.sh sync $(CHAIN) $(CUSTOM_API_BASE_FLAG)
 
 # ---- deploy (EOA path) ----
 # FOUNDRY_PROFILE is pinned inline: the resolver's CREATE2 address depends on its
