@@ -31,7 +31,9 @@ source's entry declares a committee for it. Where both
 directions of a lane exist — two files pair when each one's `source.alias` is the other's
 `dest.alias` — the pair must pin the same `versionTag` and mirror each other's selectors;
 a one-way lane is left alone. `config/operator.json` must parse with a non-zero
-`resolverSalt`, and every recorded resolver must have been deployed with it. The action
+`resolverSalt`, and every recorded resolver must have been deployed with it. Every
+`verifiers[]` roles entry and the resolver's must name a non-zero `feeAggregator` (a zero
+one strands fees); `ALLOW_ZERO_FEE_AGGREGATOR=true` downgrades that to a `WARN`. The action
 scripts parse lazily, so without this a broken file surfaces only when the first script
 touches it, possibly mid-ceremony. Run it first, on every config edit.
 

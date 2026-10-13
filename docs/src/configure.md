@@ -136,7 +136,12 @@ make update-storage-locations CHAIN=sepolia TAG=$TAG RPC_URL=$SEPOLIA_RPC_URL OU
 - **`SetDynamicConfig`** — sets `{ feeAggregator, allowlistAdmin }` as one struct for the
   selected verifier, so it always writes both. Changing one means passing the current value
   of the other; both come from the `verifiers[]` entry for `$TAG` in
-  `config/operator/chains/<alias>.json`.
+  `config/operator/chains/<alias>.json`. A zero `feeAggregator` is refused unless
+  `ALLOW_ZERO_FEE_AGGREGATOR=true`, the same rule `DeployVerifier` enforces: with no
+  aggregator every fee withdrawal reverts, so fees accrue with nowhere to go. A zero
+  `allowlistAdmin` is allowed (no admin; the owner still manages allowlists), but when the
+  verifier has a non-zero admin on-chain the script prints a prominent `WARN` that the call
+  will clear it. When the on-chain config already matches, nothing is staged.
 - **`SetAllowedFinalityConfig`** — the finality requests the verifier will accept, from
   the `allowedFinality` block. `{}` is full finality only; `{ "minBlockDepth": 1 }` also
   permits the depth-1 fast path. One value per verifier, **not per lane** —
@@ -172,7 +177,8 @@ make set-fee-aggregator CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
   not by source chain** — an incoming message carries the tag it was sealed with. Tags
   already matching on-chain are skipped, so `--rpc-url` is required even in SAFE mode.
 - **`SetFeeAggregator`** — where the resolver sends withdrawn fees. Distinct from the
-  verifier's aggregator; see below.
+  verifier's aggregator; see below. A zero `resolver.roles.feeAggregator` is refused unless
+  `ALLOW_ZERO_FEE_AGGREGATOR=true`.
 
 ## Pruning the factory allowlist
 
@@ -219,7 +225,9 @@ is pre-set except what you configure explicitly (`SetFeeAggregator`, inbound/out
 The verifier's `DynamicConfig.feeAggregator` and the resolver's `setFeeAggregator` are
 **different settings on different contracts**, and each contract withdraws its own fees to
 its own aggregator. Set both. A zero aggregator makes `withdrawFeeTokens` revert on that
-contract.
+contract, so `SetDynamicConfig`, `SetFeeAggregator`, `DeployVerifier` and
+`make validate-config` refuse one. `ALLOW_ZERO_FEE_AGGREGATOR=true` waives it everywhere except
+`DeployVerifier`.
 
 `SetDynamicConfig` handles the verifier's, and a fresh deploy already carries it.
 `SetFeeAggregator` handles the resolver's, which is unset until you run it. `BalanceReport`

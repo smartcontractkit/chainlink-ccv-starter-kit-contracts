@@ -159,15 +159,15 @@ setting pushed on-chain.
       "roles": {
         "owner":                 "0x...",  // 2-step ownable
         "storageLocationsAdmin": "0x...",  // separate 2-step admin role
-        "allowlistAdmin":        "0x...",  // part of DynamicConfig
-        "feeAggregator":         "0x..."   // DynamicConfig.feeAggregator (distinct from resolver's!)
+        "allowlistAdmin":        "0x...",  // part of DynamicConfig; zero = no admin (allowed)
+        "feeAggregator":         "0x..."   // DynamicConfig.feeAggregator (distinct from resolver's!); must be non-zero
       }
     }
   ],
   "resolver": {
     "roles": {
       "owner":         "0x...",        // 2-step ownable
-      "feeAggregator": "0x..."         // resolver setFeeAggregator (a SECOND, distinct fee destination)
+      "feeAggregator": "0x..."         // resolver setFeeAggregator (a SECOND, distinct fee destination); must be non-zero
     }
   },
   "factory": {

@@ -34,8 +34,9 @@ something this repo controls, and it looks different in traces: `CursedByRMN` ra
 ## Two fee destinations
 
 The verifier's `DynamicConfig.feeAggregator` and the resolver's `setFeeAggregator` are
-different settings on different contracts. **Set both.** A zero aggregator is a valid
-state that intentionally makes fee withdrawals revert.
+different settings on different contracts. **Set both.** A zero aggregator makes fee
+withdrawals revert, so the scripts refuse one unless `ALLOW_ZERO_FEE_AGGREGATOR=true` — see
+[Configuring](configure.md#two-fee-destinations-not-one).
 
 ## Immutable values
 

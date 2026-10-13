@@ -72,6 +72,9 @@ require(resolver == predicted, "DeployResolver: deployed address != predicted (d
 Ownership is proposed to `resolver.roles.owner`. If that is the deployer, the script accepts
 in-place so the resolver is immediately usable.
 
+The resolver takes no constructor arguments, so its fee aggregator is not set at deploy: it
+stays zero on-chain until you run `make set-fee-aggregator`.
+
 **Confirm the resolver address matches the other chains before continuing.** Divergence
 here is silent and only surfaces later as fee-quoting reverts.
 

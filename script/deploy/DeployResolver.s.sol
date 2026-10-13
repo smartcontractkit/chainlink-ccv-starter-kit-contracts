@@ -81,5 +81,6 @@ contract DeployResolver is Script {
     ConfigLib.writeDeployment(deployment);
     console2.log("  recorded ->", ConfigLib.deploymentPath(chainAlias));
     console2.log("  ACTION: confirm this matches the resolver address on other chains.");
+    console2.log("  ACTION: run set-fee-aggregator; the resolver's feeAggregator is unset until then.");
   }
 }

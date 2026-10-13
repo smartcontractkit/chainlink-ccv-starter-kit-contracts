@@ -62,6 +62,8 @@ contract DeployVerifier is Script {
     // Requiring it here means fees are never stranded. Do not loosen this to match
     // the contract.
     require(verifierRoles.feeAggregator != address(0), "DeployVerifier: verifier.feeAggregator role unset");
+    // allowlistAdmin is deliberately NOT required: zero is a legitimate "no allowlist
+    // admin" state, in which only the owner manages the sender allowlists.
 
     address deployer = msg.sender;
 

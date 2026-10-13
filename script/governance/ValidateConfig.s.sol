@@ -13,7 +13,8 @@ import {console2} from "forge-std/console2.sol";
 ///         cross-file agreements (lane endpoints exist, selectors match, the operator
 ///         file carries a roles entry for every lane-pinned tag and the source's a
 ///         committee for it, a bidirectional pair agrees on the tag and mirrors its
-///         selectors, every recorded resolver used the repo-wide resolverSalt). One
+///         selectors, every recorded resolver used the repo-wide resolverSalt, every
+///         verifier and resolver roles entry names a non-zero feeAggregator). One
 ///         [PASS]/[FAIL] line per file, no RPC.
 /// @dev The action scripts parse lazily — a broken file surfaces only when the first
 ///      script touches it, possibly mid-ceremony. This runs the same parses up front.
@@ -36,13 +37,42 @@ contract ConfigLoader {
     return ConfigLib.readChainByPath(path);
   }
 
-  /// @dev Returns only the alias: the parse itself is the test, and the alias is all the
-  ///      caller compares. Handing the whole struct back across the seam costs nothing
-  ///      useful and is heavy to decode.
+  /// @dev Returns only the alias and the zero-feeAggregator findings: the parse itself is
+  ///      the test, and those are all the caller compares. Handing the whole struct back
+  ///      across the seam costs nothing useful and is heavy to decode.
   function loadOperator(
     string calldata path
-  ) external view returns (string memory aliasName) {
-    return ConfigLib.readOperatorByPath(path).aliasName;
+  ) external view returns (string memory aliasName, string memory zeroFeeAggregators) {
+    Types.OperatorConfig memory operator = ConfigLib.readOperatorByPath(path);
+    return (operator.aliasName, zeroFeeAggregatorRoles(operator));
+  }
+
+  /// @notice Comma-separated list of the roles entries whose feeAggregator is zero, or ""
+  ///         when every verifier and the resolver name one.
+  /// @dev A zero aggregator makes every fee withdrawal revert, stranding accrued fees.
+  ///      DeployVerifier refuses one, SetDynamicConfig / SetFeeAggregator refuse one
+  ///      unless ALLOW_ZERO_FEE_AGGREGATOR waives it; this catches it before either runs.
+  function zeroFeeAggregatorRoles(
+    Types.OperatorConfig memory operator
+  ) public pure returns (string memory list) {
+    for (uint256 i = 0; i < operator.verifiers.length; ++i) {
+      if (operator.verifiers[i].roles.feeAggregator == address(0)) {
+        list = _append(
+          list,
+          string.concat("verifiers[", ConfigLib.tagToString(operator.verifiers[i].versionTag), "].roles.feeAggregator")
+        );
+      }
+    }
+    if (operator.resolver.roles.feeAggregator == address(0)) {
+      list = _append(list, "resolver.roles.feeAggregator");
+    }
+  }
+
+  function _append(
+    string memory list,
+    string memory item
+  ) private pure returns (string memory) {
+    return bytes(list).length == 0 ? item : string.concat(list, ", ", item);
   }
 
   function loadLane(
@@ -74,6 +104,8 @@ contract ValidateConfig is Script {
   // Set once config/operator.json parses; the deployments check compares recorded salts to it.
   bool private s_haveSalt;
   bytes32 private s_resolverSalt;
+  // ALLOW_ZERO_FEE_AGGREGATOR: the same waiver SetDynamicConfig / SetFeeAggregator honour.
+  bool private s_allowZeroFeeAggregator;
 
   function run() external {
     console2.log(
@@ -81,6 +113,7 @@ contract ValidateConfig is Script {
     );
     s_loader = new ConfigLoader();
     vm.allowCheatcodes(address(s_loader));
+    s_allowZeroFeeAggregator = vm.envOr("ALLOW_ZERO_FEE_AGGREGATOR", false);
 
     _checkOperatorFile();
     _checkChains();
@@ -151,9 +184,20 @@ contract ValidateConfig is Script {
     for (uint256 i = 0; i < paths.length; ++i) {
       string memory aliasName = _basename(paths[i]);
       string memory rel = string.concat(OPERATOR_DIR, aliasName, ".json");
-      try s_loader.loadOperator(paths[i]) returns (string memory declared) {
+      try s_loader.loadOperator(paths[i]) returns (string memory declared, string memory zeroFeeAggregators) {
         if (!_eq(declared, aliasName)) {
           _fail(rel, string.concat("declares alias '", declared, "' (must equal the filename)"));
+        } else if (bytes(zeroFeeAggregators).length != 0 && !s_allowZeroFeeAggregator) {
+          _fail(
+            rel,
+            string.concat(
+              "zero ",
+              zeroFeeAggregators,
+              " - fee withdrawals would revert and strand fees; set it (or ALLOW_ZERO_FEE_AGGREGATOR=true)"
+            )
+          );
+        } else if (bytes(zeroFeeAggregators).length != 0) {
+          _pass(rel, string.concat("WARN zero ", zeroFeeAggregators, ", waived by ALLOW_ZERO_FEE_AGGREGATOR"));
         } else {
           _pass(rel, "");
         }
