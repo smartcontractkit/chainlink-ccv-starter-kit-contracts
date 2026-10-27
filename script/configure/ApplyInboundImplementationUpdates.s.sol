@@ -50,8 +50,16 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     string calldata chainAlias
   ) external {
     _initOutput(chainAlias);
+    _run(chainAlias, ConfigLib.readDeployment(chainAlias), ConfigLib.readLanes());
+  }
 
-    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+  /// @dev run() past output selection, with its config reads as parameters so a test can
+  ///      drive it without the env or `config/`. Every path ends in the one `_flush`.
+  function _run(
+    string memory chainAlias,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) internal {
     // The diff below reads the resolver, so an unreachable one must fail here with a
     // legible reason rather than as a bare revert inside the first getter call.
     _assertReachable(deployment.resolver, "resolver");
@@ -59,21 +67,21 @@ contract ApplyInboundImplementationUpdates is BaseScript {
     console2.log("[ApplyInboundImplementationUpdates] chain:", chainAlias);
     console2.log("  target resolver:", deployment.resolver);
 
-    bytes4[] memory tags = _dedupedDestTags(ConfigLib.readLanes(), chainAlias);
+    bytes4[] memory tags = _dedupedDestTags(lanes, chainAlias);
     if (tags.length == 0) {
       console2.log("  nothing to do: no lane has this chain as destination");
-      return;
+    } else {
+      (VersionedVerifierResolver.InboundImplementationArgs[] memory args, uint256 staged) =
+        _buildInboundArgs(deployment, tags);
+      if (staged == 0) {
+        console2.log("  nothing to do: every inbound version is already current:", tags.length);
+      } else {
+        console2.log("  staging versions:", staged, "of", tags.length);
+        _stage(callFor(deployment.resolver, args));
+      }
     }
 
-    (VersionedVerifierResolver.InboundImplementationArgs[] memory args, uint256 staged) =
-      _buildInboundArgs(deployment, tags);
-    if (staged == 0) {
-      console2.log("  nothing to do: every inbound version is already current:", tags.length);
-      return;
-    }
-    console2.log("  staging versions:", staged, "of", tags.length);
-
-    _stage(callFor(deployment.resolver, args));
+    // Reached with nothing staged too, so a stale batch from an earlier run is removed.
     _flush("apply-inbound-implementations");
   }
 

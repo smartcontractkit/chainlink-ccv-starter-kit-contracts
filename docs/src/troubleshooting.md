@@ -33,6 +33,7 @@ are always **0** clean, **1** finding, **2** could not run.
 | `BaseScript: SAFE output needs SAFE_ADDRESS` | SAFE mode without executing Safe | set `SAFE_ADDRESS=0x…` to the Safe that will import the batch |
 | `BaseScript: no code at verifier …` | RPC points at wrong network or verifier not deployed | check `--rpc-url` matches the chain alias; confirm tag is in deployment record |
 | stray lane configured | extra file in `config/operator/lanes/` | only files in that directory are live inputs — move retired lanes out; see [configure § lane directory](configure.md#the-lane-directory-is-the-input-set) |
+| `WARN undeclared signature config left LIVE` from `apply-signature-configs` | the dest verifier still holds a committee for a source selector no lane declares for this tag (a retired or repinned lane) | if the lane is retired, re-run with `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true` to revoke it; see [Retiring a lane](configure.md#retiring-a-lane) |
 | `allowedSenders requires allowlistEnabled=true` / `InvalidAllowListRequest` | senders listed while `allowlistEnabled: false` | enable the allowlist, or empty `allowedSenders` |
 | committee has no redundancy | threshold == signer count (N-of-N): one offline signer halts the lane | add signers or lower the threshold, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
 | committee threshold too low | threshold ≤ 2/3 of the signer set | raise the threshold, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
@@ -46,6 +47,7 @@ are always **0** clean, **1** finding, **2** could not run.
 | drift exit 2 | RPC down, missing deployment record, or revert without drift marker | fix infrastructure first — not the same as drift |
 | parity fails on `versionTag` | lane tag ≠ recorded verifier on one chain | deploy verifier with that tag on both chains, or fix the lane file |
 | signer sets never checked on a chain | chain is only ever a lane *source* | signer config lives on the destination — run drift on the dest chain too |
+| drift: `signature config for a source selector no lane declares` | a committee is still live on that verifier for a lane that was retired or repinned to another tag | `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=… TAG=…`; during a verifier rotation, expected until the old verifier drains |
 
 ## Signing and RPC
 
@@ -60,5 +62,6 @@ are always **0** clean, **1** finding, **2** could not run.
 - **Wrong `rmn` at deploy** — immutable, no getter; only prevention is careful review before `deploy-verifier`.
 - **Placeholder config applied cleanly** — drift and parity compare config to chain, not intent to production readiness.
 - **Retired lane still routable on-chain** — deleting a lane file stops configure scripts from mentioning it, but nothing automatically clears the outbound mapping; see [Operational notes](operations.md#rotating-a-verifier).
+- **Retired lane's `remoteChainConfig` on the source verifier** — the verifier keeps it in a mapping with no enumerating getter, so once the lane file is gone neither drift nor any script can see it. Pause the lane (`make pause-lane`) *before* moving its file out; see [Retiring a lane](configure.md#retiring-a-lane). (The destination committee, by contrast, is enumerable: drift flags it and `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true` revokes it.)
 
 For deploy-time revert messages in full, see the table in [Deploying §3](deploy.md#3-deploy-the-verifier).
