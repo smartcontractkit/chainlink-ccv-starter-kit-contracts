@@ -177,6 +177,7 @@ contract ConfigLibTest is Test {
       assertTrue(_endsWithJson(lanes[i]), "listed path must end in .json");
       assertFalse(_contains(lanes[i], "_template"), "must skip _template files");
       assertFalse(_contains(lanes[i], ".example."), "must skip .example files");
+      assertFalse(_contains(lanes[i], "zz-scratch-"), "must skip zz-scratch fixtures");
     }
   }
 

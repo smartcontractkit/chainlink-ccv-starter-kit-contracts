@@ -54,8 +54,15 @@ without moving the resolver. The ordering is load-bearing:
 2. `make deploy-verifier CHAIN=… TAG=<new> RPC_URL=…` on every chain.
 3. Register its **inbound** implementation on the destination (`ApplyInboundImplementationUpdates`).
 4. Flip the lane's `versionTag` in `config/operator/lanes/*.json` and re-run configure on both chains.
+   Edit the existing file in place: a copy under a new name is a second file for the same
+   direction, which validation and the configure scripts reject.
 5. Switch the **outbound** implementation on the source (`ApplyOutboundImplementationUpdates`) — cutover last.
 6. Retire the old inbound mapping **only after in-flight messages drain** (stage `{tag, address(0)}`, delete the deployment record entry).
+   Before deleting the record entry, revoke the old verifier's committees on each destination
+   (`REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=… TAG=<old>`).
+   Until then `make drift` reports them as `signature config for a source selector no lane
+   declares`, which is expected during the drain. Once the record entry is deleted, drift no
+   longer looks at that verifier.
 
 The old tag's inbound mapping must outlive the outbound switch. Messages already signed
 with the old tag are still arriving, and they resolve through that mapping. Nothing

@@ -35,6 +35,9 @@ a one-way lane is left alone. `config/operator.json` must parse with a non-zero
 scripts parse lazily, so without this a broken file surfaces only when the first script
 touches it, possibly mid-ceremony. Run it first, on every config edit.
 
+Two lane files for the **same** direction (same aliases, or same selectors) fail whatever
+their tags: see [one file per directed lane](configure.md#one-file-per-directed-lane).
+
 ## Drift check
 
 ```bash
@@ -45,6 +48,18 @@ make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 Reconciles live on-chain state against `config/operator/chains` and
 `config/operator/lanes` — role holders, fee aggregators, storage locations, finality config,
 resolver implementations, and per-lane remote config.
+
+The resolver maps and each recorded verifier's signature configs are compared
+**closed-world**: an on-chain entry that no lane declares is drift too. For signature
+configs that means a committee on this chain's verifier for a source selector that no lane
+with this destination and that verifier's `versionTag` declares, typically left behind by a
+retired lane. Revoke it with `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make
+apply-signature-configs`; see [Retiring a lane](configure.md#retiring-a-lane).
+
+Two lane files for the same direction touching this chain are reported as drift too, even
+when the chain matches both: every configure script refuses to run until one file is
+removed, so re-applying cannot clear it. See
+[one file per directed lane](configure.md#one-file-per-directed-lane).
 
 Exit codes: **0** clean, **1** drift, **2** RPC unreachable or another failure.
 
@@ -62,6 +77,10 @@ configuration never seems to be checked, the reverse lane file is probably missi
 `rmn` is immutable with no getter, so it is the one configured value with **zero drift
 coverage** — a wrong value sits there indefinitely looking correct. Verify it before
 deploying; see [Deploying](deploy.md#3-deploy-the-verifier).
+
+A verifier's `remoteChainConfig` has no enumerating getter, so it is compared only for the
+lanes that exist: a retired lane's source-side entry is invisible. Pause the lane before
+retiring its file.
 
 ## Lane parity check
 

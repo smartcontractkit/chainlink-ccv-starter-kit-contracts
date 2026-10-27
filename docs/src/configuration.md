@@ -69,7 +69,8 @@ Field semantics, the `--env mainnet` flag, and debugging the raw API output are 
 
 A lane file describes traffic in **one direction only**: `<source>-to-<dest>.json` covers
 source → destination. Traffic the other way is its own lane — a second file with the
-names flipped.
+names flipped. Each direction has exactly **one** file, even across a verifier rotation:
+[one file per directed lane](configure.md#one-file-per-directed-lane).
 
 This is not bookkeeping — each field belongs to one side, so reversing the direction
 changes what every value means:

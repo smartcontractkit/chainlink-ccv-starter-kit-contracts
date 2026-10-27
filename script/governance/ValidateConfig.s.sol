@@ -12,8 +12,9 @@ import {console2} from "forge-std/console2.sol";
 ///         through the same strict ConfigLib loaders the action scripts use, plus the
 ///         cross-file agreements (lane endpoints exist, selectors match, the operator
 ///         file carries a roles entry for every lane-pinned tag and the source's a
-///         committee for it, a bidirectional pair agrees on the tag and mirrors its
-///         selectors, every recorded resolver used the repo-wide resolverSalt). One
+///         committee for it, no two lanes declare the same direction, a bidirectional
+///         pair agrees on the tag and mirrors its selectors, every recorded resolver used
+///         the repo-wide resolverSalt). One
 ///         [PASS]/[FAIL] line per file, no RPC.
 /// @dev The action scripts parse lazily — a broken file surfaces only when the first
 ///      script touches it, possibly mid-ceremony. This runs the same parses up front.
@@ -198,15 +199,35 @@ contract ValidateConfig is Script {
     _checkLanePairs(lanes);
   }
 
+  /// @notice The cross-lane check alone, on lanes the caller supplies.
+  /// @dev Reverts `ValidationFailed` like `run()` when any pair fails.
+  function checkLanePairs(
+    Types.LaneConfig[] memory lanes
+  ) external {
+    _checkLanePairs(lanes);
+    if (s_failures > 0) revert ValidationFailed(s_failures);
+  }
+
   /// @dev A bidirectional lane is TWO files and nothing forces them to agree. Two files
   ///      pair when each one's `source.alias` is the other's `dest.alias`. The tag is a
   ///      cross-chain identity, so a divergence means the files describe different
   ///      topologies. `i < j` reports each pair once; a one-way lane has no reverse.
+  ///      Two files for the same direction fail whatever their tags.
   function _checkLanePairs(
     Types.LaneConfig[] memory lanes
   ) private {
     for (uint256 i = 0; i < lanes.length; ++i) {
       for (uint256 j = i + 1; j < lanes.length; ++j) {
+        if (ConfigLib.sameDirection(lanes[i], lanes[j])) {
+          _fail(
+            string.concat(LANES_DIR, lanes[j].name, ".json"),
+            string.concat(
+              "declares the same direction as ", LANES_DIR, lanes[i].name, ".json - one file per directed lane"
+            )
+          );
+          continue;
+        }
+
         bool isReverse = _eq(lanes[i].source.aliasName, lanes[j].dest.aliasName)
           && _eq(lanes[i].dest.aliasName, lanes[j].source.aliasName);
         if (!isReverse) continue;

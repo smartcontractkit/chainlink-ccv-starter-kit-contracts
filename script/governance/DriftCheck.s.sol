@@ -8,6 +8,9 @@ import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
+import {
+  SignatureQuorumValidator
+} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -43,6 +46,12 @@ import {console2} from "forge-std/console2.sol";
 ///      `verifiers` array), and the resolver maps are compared CLOSED-WORLD: an on-chain
 ///      inbound registration whose tag is not in the record is drift (a registered
 ///      inbound verifier is attack surface), as is an outbound entry no lane declares.
+///      Each recorded verifier's signature configs are compared CLOSED-WORLD too
+///      (`getAllSignatureConfigs()`): a committee for a source selector no lane declares
+///      is still a valid quorum, so it is drift. `remoteChainConfig` is NOT closed-world:
+///      `BaseVerifier` keeps it in a plain mapping with no enumerating getter, so a
+///      retired lane's source-side entry is invisible here (pause it with
+///      `make pause-lane` before retiring the lane file).
 ///
 /// Usage (direct):
 ///   forge script script/governance/DriftCheck.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
@@ -57,7 +66,7 @@ contract DriftCheck is Script {
     ConfigLib.assertChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
-    Types.LaneCommittee[] memory lanes = ConfigLib.readLaneCommittees();
+    Types.LaneCommittee[] memory lanes = ConfigLib.readLaneCommitteesAllowingDuplicates();
 
     console2.log("[DriftCheck] chain:", chainAlias);
     console2.log("  lanes considered:", lanes.length);
@@ -82,6 +91,41 @@ contract DriftCheck is Script {
     drift += checkVerifierConfig(deployment, operator);
     drift += checkResolverImplementations(deployment, operator, lanes);
     drift += checkLanes(deployment, operator, lanes);
+    drift += checkSignatureConfigs(deployment, operator, lanes);
+    drift += checkLaneDirections(operator, lanes);
+  }
+
+  /// @notice Two lane files for the same direction (`ConfigLib.sameDirection`), reported
+  ///         once per pair that touches this chain.
+  function checkLaneDirections(
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
+  ) public pure returns (uint256 drift) {
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      Types.LaneConfig memory lane = lanes[i].lane;
+      for (uint256 j = i + 1; j < lanes.length; ++j) {
+        Types.LaneConfig memory other = lanes[j].lane;
+        if (!ConfigLib.sameDirection(lane, other)) continue;
+        if (!_touches(lane, operator.aliasName) && !_touches(other, operator.aliasName)) continue;
+        console2.log(
+          string.concat(
+            "DRIFT_DETECTED lanes ",
+            lane.name,
+            " and ",
+            other.name,
+            " declare the same direction - remove one file; every configure script refuses to run until then"
+          )
+        );
+        ++drift;
+      }
+    }
+  }
+
+  function _touches(
+    Types.LaneConfig memory lane,
+    string memory aliasName
+  ) private pure returns (bool) {
+    return _stringsEqual(lane.source.aliasName, aliasName) || _stringsEqual(lane.dest.aliasName, aliasName);
   }
 
   /// @notice Owners and admin/fee roles vs `config/operator/chains/<alias>.json`.
@@ -289,6 +333,50 @@ contract DriftCheck is Script {
         console2.log("  dest selector:", outbound[i].destChainSelector);
         console2.log("  actual:", outbound[i].verifier);
         ++drift;
+      }
+    }
+  }
+
+  /// @notice Every recorded verifier's on-chain signature configs vs the lanes, compared
+  ///         CLOSED-WORLD: on-chain -> lanes. (lanes -> on-chain is `checkLanes`.)
+  /// @dev A committee is declared for a verifier only by a lane whose DEST is this chain
+  ///      and whose versionTag is that verifier's. Anything else on-chain is a signer set
+  ///      that still forms a valid quorum for its source selector, typically left behind
+  ///      by a lane file moved out of `config/operator/lanes/` or repinned to another tag.
+  ///      The fix is `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs`.
+  function checkSignatureConfigs(
+    Types.Deployment memory deployment,
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
+  ) public view returns (uint256 drift) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      bytes4 tag = deployment.verifiers[i].versionTag;
+      SignatureQuorumValidator.SignatureConfig[] memory onChain =
+        SignatureQuorumValidator(deployment.verifiers[i].addr).getAllSignatureConfigs();
+      for (uint256 j = 0; j < onChain.length; ++j) {
+        bool declared = false;
+        for (uint256 k = 0; k < lanes.length; ++k) {
+          Types.LaneConfig memory lane = lanes[k].lane;
+          if (
+            _stringsEqual(lane.dest.aliasName, operator.aliasName) && lane.versionTag == tag
+              && lane.source.chainSelector == onChain[j].sourceChainSelector
+          ) declared = true;
+        }
+        if (!declared) {
+          console2.log(
+            string.concat(
+              "DRIFT_DETECTED verifier ",
+              ConfigLib.tagToString(tag),
+              " signature config for a source selector no lane declares - remove it: REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=",
+              operator.aliasName,
+              " TAG=",
+              ConfigLib.tagToString(tag)
+            )
+          );
+          console2.log("  source selector:", onChain[j].sourceChainSelector);
+          console2.log("  threshold / signers:", onChain[j].threshold, onChain[j].signers.length);
+          ++drift;
+        }
       }
     }
   }

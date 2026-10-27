@@ -293,8 +293,9 @@ library ConfigLib {
     );
   }
 
-  /// @notice Returns the file paths of every real lane config (skips `_template`
-  ///         and `*.example.json`). Feed each path to `readLaneByPath`.
+  /// @notice Returns the file paths of every real lane config (skips `_template`,
+  ///         `*.example.json` and `zz-scratch-*` test fixtures). Feed each path to
+  ///         `readLaneByPath`.
   /// @dev For callers that need "every lane touching chain X" — they filter on
   ///      `lane.source`/`lane.dest`. To fetch a single known lane, use `readLane`.
   /// @dev Sorted before returning. `vm.readDir` order is filesystem-dependent, and the
@@ -306,7 +307,10 @@ library ConfigLib {
     uint256 n = 0;
     for (uint256 i = 0; i < entries.length; ++i) {
       string memory p = entries[i].path;
-      if (_hasSuffix(p, ".json") && !_contains(p, "_template") && !_contains(p, ".example.")) {
+      if (
+        _hasSuffix(p, ".json") && !_contains(p, "_template") && !_contains(p, ".example.")
+          && !_contains(p, "zz-scratch-")
+      ) {
         buf[n++] = p;
       }
     }
@@ -335,12 +339,53 @@ library ConfigLib {
     }
   }
 
-  /// @notice Every lane in `config/operator/lanes/`, parsed.
+  /// @notice Every lane in `config/operator/lanes/`, parsed. Reverts when two files
+  ///         declare the same direction (see `requireUniqueDirections`).
   function readLanes() internal view returns (Types.LaneConfig[] memory lanes) {
     string[] memory paths = listLanes();
+    lanes = _readLanePaths(paths);
+    requireUniqueDirections(lanes, paths);
+  }
+
+  /// @notice Every lane, parsed, without the same-direction check. Used by DriftCheck.
+  function readLanesAllowingDuplicates() internal view returns (Types.LaneConfig[] memory) {
+    return _readLanePaths(listLanes());
+  }
+
+  function _readLanePaths(
+    string[] memory paths
+  ) private view returns (Types.LaneConfig[] memory lanes) {
     lanes = new Types.LaneConfig[](paths.length);
     for (uint256 i = 0; i < paths.length; ++i) {
       lanes[i] = readLaneByPath(paths[i]);
+    }
+  }
+
+  /// @notice True when two lanes describe the same direction: the same aliases at both
+  ///         ends, or the same selectors at both ends. Tags do not matter.
+  function sameDirection(
+    Types.LaneConfig memory a,
+    Types.LaneConfig memory b
+  ) internal pure returns (bool) {
+    return (_stringsEqual(a.source.aliasName, b.source.aliasName) && _stringsEqual(a.dest.aliasName, b.dest.aliasName))
+      || (a.source.chainSelector == b.source.chainSelector && a.dest.chainSelector == b.dest.chainSelector);
+  }
+
+  /// @notice Reverts when two lanes describe the same direction, naming both files.
+  /// @param paths The file each lane was read from, index for index.
+  function requireUniqueDirections(
+    Types.LaneConfig[] memory lanes,
+    string[] memory paths
+  ) internal pure {
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      for (uint256 j = i + 1; j < lanes.length; ++j) {
+        require(
+          !sameDirection(lanes[i], lanes[j]),
+          string.concat(
+            "ConfigLib: ", paths[i], " and ", paths[j], " declare the same direction - one file per directed lane"
+          )
+        );
+      }
     }
   }
 
@@ -355,8 +400,18 @@ library ConfigLib {
   }
 
   /// @notice Every lane paired with its source's committee, for the scripts that need both.
-  function readLaneCommittees() internal view returns (Types.LaneCommittee[] memory paired) {
-    Types.LaneConfig[] memory lanes = readLanes();
+  function readLaneCommittees() internal view returns (Types.LaneCommittee[] memory) {
+    return _pairCommittees(readLanes());
+  }
+
+  /// @notice `readLaneCommittees` over `readLanesAllowingDuplicates`. For DriftCheck only.
+  function readLaneCommitteesAllowingDuplicates() internal view returns (Types.LaneCommittee[] memory) {
+    return _pairCommittees(readLanesAllowingDuplicates());
+  }
+
+  function _pairCommittees(
+    Types.LaneConfig[] memory lanes
+  ) private view returns (Types.LaneCommittee[] memory paired) {
     paired = new Types.LaneCommittee[](lanes.length);
     for (uint256 i = 0; i < lanes.length; ++i) {
       paired[i] = Types.LaneCommittee({lane: lanes[i], committee: committeeFor(lanes[i])});

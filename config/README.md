@@ -72,6 +72,8 @@ accepts it. The loader rejects any key outside this set, so operator data cannot
 ## `operator/lanes/<source>-to-<dest>.json`
 
 A **directed** lane (source → dest). Contracts deploy on both chains of every lane.
+One file per direction: a second file with the same source and dest (even under another
+`versionTag`) fails `make validate-config` and is refused by the configure scripts.
 
 ```jsonc
 {
