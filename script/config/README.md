@@ -86,8 +86,20 @@ re-add a token the upstream no longer serves.
 deployed, so it should never be bulk-overwritten.
 
 Treat a post-deploy `rmn` drift as something to investigate, not accept: `rmn` is
-immutable inside a deployed verifier and has no getter, so the config is the only record
-of what was deployed. Syncing over it makes the record lie.
+immutable inside a deployed verifier and has no getter, so the deployment record is the
+only witness of what each verifier was built with.
+
+`sync` therefore gates the two security-relevant core fields, and when it refuses it
+writes nothing for that chain (not even the ungated fields):
+
+| field | refused when | override |
+|---|---|---|
+| `rmn` | a verifier in `config/deployments/<name>.json` records the current value | `ALLOW_RMN_CHANGE=true` |
+| `router` | always (lanes without an override inherit it) | `ALLOW_ROUTER_CHANGE=true` |
+
+`check` never writes; it prints `PENDING` with the override a gated change would need.
+After an accepted `rmn` change, `make drift` flags every verifier still on the old value
+until it is redeployed.
 
 ## The intended rhythm
 

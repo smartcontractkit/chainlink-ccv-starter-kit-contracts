@@ -9,6 +9,21 @@ import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
 import {IRouter} from "@chainlink/contracts-ccip/contracts/interfaces/IRouter.sol";
 
+/// @dev Drives run()'s body in SAFE mode with in-memory config: the env and `config/` are
+///      process-global, so going through them would make the test order-sensitive.
+contract ApplyRemoteChainConfigUpdatesHarness is ApplyRemoteChainConfigUpdates {
+  function runSafe(
+    string calldata outputAlias,
+    string calldata chainAlias,
+    bytes4 versionTag,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) external {
+    _initOutput(OutputMode.SAFE, outputAlias, address(0x5AFE));
+    _run(chainAlias, versionTag, deployment, lanes);
+  }
+}
+
 /// @notice Exercises the ApplyRemoteChainConfigUpdates builder against the real
 ///         audited CommitteeVerifier (deployed by the fixture, owned by this test).
 contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
@@ -236,5 +251,34 @@ contract ApplyRemoteChainConfigUpdatesTest is CommitteeVerifierSetup {
 
     assertTrue(script.isCurrent(address(verifier), lanes[0]), "remote 111 configured");
     assertTrue(script.isCurrent(address(verifier), lanes[1]), "remote 222 configured");
+  }
+
+  // ---------------------------------------------------------------------------
+  //  run: a run that stages nothing still clears the previous run's batch
+  // ---------------------------------------------------------------------------
+
+  function test_run_nothingToDo_removesStaleBatch() public {
+    string memory outputAlias = "test/remote-config-nothing-to-do";
+    string memory path =
+      _plantStaleBatch(outputAlias, string.concat("apply-remote-chain-config-", SRC_ALIAS, "-0x00010001"));
+    assertTrue(_applyRemoteChainConfig(ROUTER, 200000), "setup: apply failed");
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    assertTrue(script.isCurrent(address(verifier), lane), "setup: already current");
+
+    new ApplyRemoteChainConfigUpdatesHarness()
+      .runSafe(outputAlias, SRC_ALIAS, VERSION_TAG, _fixtureDeployment(SRC_ALIAS), _oneLane(lane));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
+  function test_run_noMatchingLanes_removesStaleBatch() public {
+    string memory outputAlias = "test/remote-config-no-matching-lanes";
+    string memory path =
+      _plantStaleBatch(outputAlias, string.concat("apply-remote-chain-config-", SRC_ALIAS, "-0x00010001"));
+
+    new ApplyRemoteChainConfigUpdatesHarness()
+      .runSafe(outputAlias, SRC_ALIAS, VERSION_TAG, _fixtureDeployment(SRC_ALIAS), new Types.LaneConfig[](0));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
   }
 }

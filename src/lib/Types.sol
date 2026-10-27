@@ -12,7 +12,11 @@ pragma solidity 0.8.26;
 ///      the drift check incomplete.
 /// @dev The recorded deploy params are exempt from that rule: they record what a past
 ///      deploy constructed, not declared intent, so differing from current config is
-///      normal rather than drift.
+///      normal rather than drift. `VerifierDeployment.rmn` is the one exception, compared
+///      against the chain config by `DriftCheck.checkRecordedRmn`: it is immutable with no
+///      on-chain getter, so the record is its only readable copy, and the config side is
+///      rewritten by the CCIP API sync. A difference there means the next deploy-verifier
+///      would build on a different RMN than the verifiers already live, not a stale param.
 library Types {
   // ----------------------------- config/chains ------------------------------
   /// @dev Chainlink's per-chain reference, synced from the CCIP API and committed. The

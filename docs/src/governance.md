@@ -8,7 +8,7 @@ Each check answers a different question. None replaces another.
 | `DriftCheck` | does chain X match X's own config? | one chain, one RPC |
 | `LaneParityCheck` | do the two halves of a lane agree with each other? | one lane, two RPCs |
 | `make sync-check` | does my config still match Chainlink's API? | all chains, no RPC — see [Configuration](configuration.md#where-the-chainlink-fields-come-from) |
-| `deployments-report.sh --check` | is the deployed-addresses page current, and the resolver identical everywhere? | all records, no RPC |
+| `deployments-report.sh --check` | is the deployed-addresses page current, the resolver identical everywhere, and every recorded `rmn` equal to its chain config's? | all records, no RPC |
 
 All of them share one exit-code convention — **0** clean, **1** a real finding, **2** the
 check could not run — so a single CI shape covers them.
@@ -44,7 +44,15 @@ make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 
 Reconciles live on-chain state against `config/operator/chains` and
 `config/operator/lanes` — role holders, fee aggregators, storage locations, finality config,
-resolver implementations, and per-lane remote config.
+resolver implementations, and per-lane remote config — plus each recorded verifier's
+deploy-time `rmn` against `config/chains` (see [What drift cannot see](#what-drift-cannot-see)).
+
+The resolver maps and each recorded verifier's signature configs are compared
+**closed-world**: an on-chain entry that no lane declares is drift too. For signature
+configs that means a committee on this chain's verifier for a source selector that no lane
+with this destination and that verifier's `versionTag` declares, typically left behind by a
+retired lane. Revoke it with `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make
+apply-signature-configs`; see [Retiring a lane](configure.md#retiring-a-lane).
 
 Exit codes: **0** clean, **1** drift, **2** RPC unreachable or another failure.
 
@@ -53,15 +61,33 @@ than the alias, a missing deployment record — exits 2, never 1, so CI can dist
 "the check broke" from real drift. Both drift and parity verify the connected chainid
 against the chain config before reading anything.
 
+Because the chainid has already matched, a recorded verifier, resolver or factory with **no
+code** on that chain is a bad record, not a bad RPC: a `--broadcast` deploy whose
+transaction never landed (forge writes the record before sending), a deploy against a fork
+with the same chainid, a copy of another chain's file, or a hand-edited entry. Drift reports
+it as `DRIFT_DETECTED ... has NO CODE at its recorded address` (exit 1), skips only that
+contract's checks, and still compares everything else. Re-run an interrupted deploy with
+`--resume`; otherwise fix or remove the entry in `config/deployments/<alias>.json`.
+
 Drift is direction-aware. Running against a chain that is only ever a lane *source* will
 not check signer sets, because those live on the destination. If a chain's inbound
 configuration never seems to be checked, the reverse lane file is probably missing.
 
 ### What drift cannot see
 
-`rmn` is immutable with no getter, so it is the one configured value with **zero drift
-coverage** — a wrong value sits there indefinitely looking correct. Verify it before
-deploying; see [Deploying](deploy.md#3-deploy-the-verifier).
+`rmn` is immutable with no getter, so drift can never read the value a verifier was
+actually built with. What it does compare, with no RPC, is each verifier's **recorded**
+deploy-time `rmn` in `config/deployments/<alias>.json` against the chain config's `rmn`. A
+mismatch is reported as `DRIFT_DETECTED verifier <tag> rmn (IMMUTABLE ...)` (exit 1): no
+configuration change fixes it, so either the upstream ARMProxy moved and that verifier
+needs a redeploy, or the chain config is wrong. `make sync-chain` refuses to make that
+change silently (see [Configuration](configuration.md#where-the-chainlink-fields-come-from)).
+A value that was already wrong at deploy time is in both files and passes, so verify it
+before deploying; see [Deploying](deploy.md#3-deploy-the-verifier).
+
+A verifier's `remoteChainConfig` has no enumerating getter, so it is compared only for the
+lanes that exist: a retired lane's source-side entry is invisible. Pause the lane before
+retiring its file.
 
 ## Lane parity check
 
@@ -135,14 +161,15 @@ against the `name` field inside the JSON, which must equal the filename.
 ```bash
 # requires: nothing — reads config/ locally
 make deployments-doc      # regenerate docs/src/deployments.md from config/
-make deployments-check    # CI: exit 1 if the page is stale or the resolver diverges
+make deployments-check    # CI: exit 1 if the page is stale, the resolver diverges, or an rmn mismatches
 ```
 
 Renders the recorded deployments into the [Deployed addresses](deployments.md) page —
 no RPC, one row per chain that has both a deployment record and a chain config. Verifiers
 are listed as `versionTag` → address. While rendering it asserts the recorded **resolver
 address is identical on every chain** and exits `1` if not, so the generator doubles as a
-check.
+check. A verifier whose recorded `rmn` differs from its chain config's is marked
+`❌ RMN MISMATCH` in the page and exits `1` the same way.
 
 It shows what the records *claim*, not what the chains hold — on-chain truth stays with
 drift and parity above. Regenerating the page is a deliberate step, not a CI side effect:

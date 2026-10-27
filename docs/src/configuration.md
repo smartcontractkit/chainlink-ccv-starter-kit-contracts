@@ -54,9 +54,19 @@ make sync-chain CHAIN=sepolia  # accept upstream values, one chain — requires:
 (**0** clean, **1** drift, **2** couldn't run), so it slots into the same CI shape.
 
 `sync-chain` accepts upstream values one chain at a time, because `rmn` is **immutable
-inside a deployed verifier and has no getter** — the config file is the only record of
-what was deployed. Treat a post-deploy `rmn` drift as something to investigate, one
-chain at a time.
+inside a deployed verifier and has no getter**. Treat a post-deploy `rmn` drift as
+something to investigate, one chain at a time.
+
+`router` and `rmn` are the two security-relevant fields, so `sync-chain` refuses to change
+them without an explicit override, and writes nothing for that chain when it refuses:
+
+- **`rmn`**, when a verifier recorded in `config/deployments/<alias>.json` was built on the
+  current value: `ALLOW_RMN_CHANGE=true make sync-chain CHAIN=<alias>`. Those verifiers keep
+  the old RMN, so `make drift` then flags each one until it is redeployed.
+- **`router`**, always: `ALLOW_ROUTER_CHANGE=true make sync-chain CHAIN=<alias>`. Every
+  lane without a router override picks it up on the next `make apply-remote-config`.
+
+`sync-check` stays read-only and names a pending change with the override it would need.
 
 `explorerAddressPath` is nullable upstream. When the API serves no explorer for a chain
 the field is skipped entirely — never compared, never written — so a value you set by

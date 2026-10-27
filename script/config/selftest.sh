@@ -288,6 +288,97 @@ echo "hygiene"
 check "no temp files left in the config dir" \
     "$(find "$TMP/config/chains" -name '.*' -type f | wc -l | tr -d ' ')" "0"
 
+# ================================================================ rmn/router gate
+# `sync` refuses to change rmn while a recorded verifier was built on the current value,
+# and refuses any router change, unless ALLOW_RMN_CHANGE / ALLOW_ROUTER_CHANGE is set.
+# `check` stays read-only and names the override a pending change would need.
+DEP_DIR="$TMP/config/deployments"
+DEP="$DEP_DIR/fixture.json"
+SOURCE_ROUTER="0xRRRR000000000000000000000000000000000001"
+LOCAL_ROUTER="0xBEEF000000000000000000000000000000000002"
+mkdir -p "$DEP_DIR"
+# record_rmn <rmn>: a deployment record whose one verifier was built on <rmn>.
+record_rmn() {
+    jq -n --arg rmn "$1" '{alias: "fixture", verifiers: [{versionTag: "0x00010001", address: "0x0000000000000000000000000000000000000001", args: {rmn: $rmn}}]}' > "$DEP"
+}
+# Lowercased: the match against the config's rmn is case-insensitive.
+record_rmn "$(echo "$LOCAL_RMN" | tr '[:upper:]' '[:lower:]')"
+
+echo "gate: rmn change while a recorded verifier holds the current rmn - refused"
+edit ".rmn = \"$LOCAL_RMN\" | .explorerAddressPath = \"https://old-explorer.example/address\""
+before="$(hash_of "$CFG")"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 1" "$rc" "1"
+check "reports REFUSED for rmn" "$(echo "$out" | grep -c 'REFUSED fixture: rmn change')" "1"
+check "names the verifier" "$(echo "$out" | grep -c '0x00010001')" "1"
+check "says how to override" "$(echo "$out" | grep -c 'ALLOW_RMN_CHANGE=true')" "1"
+check "nothing written, not even the ungated field" "$(hash_of "$CFG")" "$before"
+
+echo "gate: check names the pending rmn change and its override, read-only"
+out="$(ALLOW_RMN_CHANGE=true run check fixture)"
+rc=$?
+check "check exits 1" "$rc" "1"
+check "reports PENDING with the override" "$(echo "$out" | grep -c 'PENDING fixture: the rmn change needs ALLOW_RMN_CHANGE=true')" "1"
+check "file unchanged" "$(hash_of "$CFG")" "$before"
+
+echo "gate: rmn change allowed with ALLOW_RMN_CHANGE=true"
+out="$(ALLOW_RMN_CHANGE=true run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "reports OVERRIDE" "$(echo "$out" | grep -c 'OVERRIDE fixture: rmn change accepted')" "1"
+check "rmn taken from source" "$(jq -r .rmn "$CFG")" "$SOURCE_RMN"
+check "ungated field synced too" "$(jq -r .explorerAddressPath "$CFG")" "https://fixture.example/address"
+
+echo "gate: rmn change with no verifier on the current rmn - not gated"
+edit ".rmn = \"$LOCAL_RMN\""
+record_rmn "0xCCCC000000000000000000000000000000000001"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "no REFUSED" "$(echo "$out" | grep -c REFUSED)" "0"
+check "rmn taken from source" "$(jq -r .rmn "$CFG")" "$SOURCE_RMN"
+record_rmn "$SOURCE_RMN"
+
+echo "gate: unchanged rmn with a recorded verifier on it - passes"
+before="$(hash_of "$CFG")"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "reports MATCH" "$(echo "$out" | grep -c ' MATCH fixture')" "1"
+check "file unchanged" "$(hash_of "$CFG")" "$before"
+edit '.explorerAddressPath = "https://old-explorer.example/address"'
+out="$(run sync fixture)"
+rc=$?
+check "an ungated change beside it syncs without an override" "$rc" "0"
+check "no gate line" "$(echo "$out" | grep -cE 'REFUSED|PENDING|OVERRIDE')" "0"
+
+echo "gate: router change - refused without the override"
+edit ".router = \"$LOCAL_ROUTER\""
+before="$(hash_of "$CFG")"
+out="$(run sync fixture)"
+rc=$?
+check "sync exits 1" "$rc" "1"
+check "reports REFUSED for router" "$(echo "$out" | grep -c 'REFUSED fixture: router change')" "1"
+check "says how to override" "$(echo "$out" | grep -c 'ALLOW_ROUTER_CHANGE=true')" "1"
+check "file unchanged" "$(hash_of "$CFG")" "$before"
+out="$(ALLOW_RMN_CHANGE=true run sync fixture)"
+rc=$?
+check "the rmn override does not cover router" "$rc" "1"
+out="$(run check fixture)"
+check "check reports PENDING for router" "$(echo "$out" | grep -c 'PENDING fixture: the router change needs ALLOW_ROUTER_CHANGE=true')" "1"
+check "check leaves the file alone" "$(hash_of "$CFG")" "$before"
+
+echo "gate: router change - allowed with ALLOW_ROUTER_CHANGE=true"
+out="$(ALLOW_ROUTER_CHANGE=true run sync fixture)"
+rc=$?
+check "sync exits 0" "$rc" "0"
+check "reports OVERRIDE" "$(echo "$out" | grep -c 'OVERRIDE fixture: router change accepted')" "1"
+check "router taken from source" "$(jq -r .router "$CFG")" "$SOURCE_ROUTER"
+rm -f "$DEP"
+check "gate: no temp files left in the config dir" \
+    "$(find "$TMP/config/chains" -name '.*' -type f | wc -l | tr -d ' ')" "0"
+
 echo
 printf '[selftest] %s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

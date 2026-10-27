@@ -122,8 +122,9 @@ redeployed verifier.
 Two constructor arguments are **immutable**:
 
 - **`rmn`** — stored as `IRMN internal immutable i_rmn` with no getter. It cannot be read
-  back, so `DriftCheck` can never verify it, and the only way to change it is to redeploy
-  the verifier. Worth double-checking against the chain config before this step.
+  back, and the only way to change it is to redeploy the verifier. `DriftCheck` compares
+  the value recorded here against the chain config, so a later upstream change is caught,
+  but a value wrong at deploy time is not. Worth double-checking before this step.
 - **`versionTag`** — a new tag means a new verifier deployment plus resolver re-wiring.
 
 ## Address determinism

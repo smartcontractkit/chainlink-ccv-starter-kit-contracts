@@ -22,8 +22,9 @@ make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 
 Wraps `DriftCheck.s.sol`: reconciles live on-chain state against `config/chains`,
 `config/chains/`, `config/operator/chains/` and `config/operator/lanes/` for one chain — role holders, fee aggregators, storage
-locations, finality config, resolver implementations, per-lane remote config. Needs an
-RPC. Direction-aware: a chain that is only ever a lane *source* will not have its signer
+locations, finality config, resolver implementations, per-lane remote config, and each
+recorded verifier's deploy-time `rmn` against the chain config (no RPC needed for that
+one). Needs an RPC. Direction-aware: a chain that is only ever a lane *source* will not have its signer
 sets checked (those live on the destination).
 
 ## `lane-parity-check.sh` — the two chains of one lane vs each other
@@ -70,6 +71,9 @@ afterwards. Emits:
 - **Resolver address parity** — asserts every recorded resolver is the SAME address;
   a divergence prints the distinct addresses and exits `1`, so the generator doubles as
   a CI check
+- **RMN mismatch** — a verifier whose recorded `rmn` differs from its chain config's is
+  marked `❌ RMN MISMATCH` and also exits `1`: `rmn` is immutable, so this needs a
+  redeploy or a corrected chain config
 
 `--check` renders to stdout without writing and additionally exits `1` when the page on
 disk no longer matches `config/`, or is missing entirely — regeneration is a deliberate

@@ -43,7 +43,9 @@ Two constructor arguments cannot be changed after deployment:
 
 - **`versionTag`** — `bytes4`, non-zero. A new tag means a new verifier deployment plus
   resolver re-wiring. Scheme: 2 bytes operator id, 2 bytes version.
-- **`rmn`** — no getter, so no check can ever verify it. Get it right before deploying.
+- **`rmn`** — no getter, so no check can read it back. Drift compares the recorded
+  deploy-time value with the chain config, which catches a later change but not a value
+  that was wrong from the start. Get it right before deploying.
 
 ## Rotating a verifier
 
@@ -56,6 +58,11 @@ without moving the resolver. The ordering is load-bearing:
 4. Flip the lane's `versionTag` in `config/operator/lanes/*.json` and re-run configure on both chains.
 5. Switch the **outbound** implementation on the source (`ApplyOutboundImplementationUpdates`) — cutover last.
 6. Retire the old inbound mapping **only after in-flight messages drain** (stage `{tag, address(0)}`, delete the deployment record entry).
+   Before deleting the record entry, revoke the old verifier's committees on each destination
+   (`REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=… TAG=<old>`).
+   Until then `make drift` reports them as `signature config for a source selector no lane
+   declares`, which is expected during the drain. Once the record entry is deleted, drift no
+   longer looks at that verifier.
 
 The old tag's inbound mapping must outlive the outbound switch. Messages already signed
 with the old tag are still arriving, and they resolve through that mapping. Nothing

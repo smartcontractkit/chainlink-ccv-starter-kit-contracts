@@ -15,7 +15,17 @@
 #
 #  Writes atomically: temp file in the SAME directory, validated, then mv.
 #
-#  Exit: 0 clean/wrote | 1 drift (check mode) | 2 guard fail.
+#  GATE: router and rmn are the security-relevant core fields, so `sync` refuses to change
+#  either without an explicit override, and writes nothing at all when refused:
+#    - rmn: when a verifier recorded in config/deployments/<name>.json was built on the
+#      current value. rmn is an immutable constructor argument with no getter, so the new
+#      value would silently split the next deploy-verifier from its siblings.
+#      Override: ALLOW_RMN_CHANGE=true.
+#    - router: always. Lanes with no router override inherit it on the next configure run.
+#      Override: ALLOW_ROUTER_CHANGE=true.
+#  `check` stays read-only and reports a gated change as PENDING with the override it needs.
+#
+#  Exit: 0 clean/wrote | 1 drift (check mode) or a gated change refused (sync) | 2 guard fail.
 # =============================================================================
 set -uo pipefail
 
@@ -66,7 +76,60 @@ fi
 echo "  MISMATCH $NAME [$ENVIRONMENT]:"
 while IFS= read -r line; do printf '      - %s\n' "$line"; done <<< "$DIFF_LINES"
 
+# ---- GATE: router and rmn need an explicit override ---------------------------
+CHANGED_KEYS="$(jqlib -r --slurpfile src "$FLAT_PATH" \
+    'include "core-fields"; diffs(.; $src[0])[] | .key' "$CONFIG_PATH")"
+DEPLOYMENT_PATH="$(dirname "$CONFIG_PATH")/../deployments/$(basename "$CONFIG_PATH")"
+REFUSED=0
+
+# gate <field> <override var> <why> <what to do>
+gate() {
+    local field="$1" var="$2" why="$3" todo="$4"
+    if [ "$MODE" != "sync" ]; then
+        echo "  PENDING $NAME: the $field change needs $var=true to sync - $why"
+        return
+    fi
+    case "${!var:-}" in
+        true | 1)
+            echo "  OVERRIDE $NAME: $field change accepted ($var) - $why"
+            ;;
+        *)
+            echo "  REFUSED $NAME: $field change - $why"
+            echo "      $todo"
+            REFUSED=1
+            ;;
+    esac
+}
+
+if grep -qx rmn <<< "$CHANGED_KEYS"; then
+    BOUND_TAGS=""
+    if [ -f "$DEPLOYMENT_PATH" ]; then
+        BOUND_TAGS="$(jq -r --arg old "$(jq -r '.rmn' "$CONFIG_PATH")" \
+            '[.verifiers[]? | select((.args.rmn // "" | ascii_downcase) == ($old | ascii_downcase))
+              | .versionTag] | join(", ")' "$DEPLOYMENT_PATH")" || {
+            echo "  ERROR $NAME: could not read $DEPLOYMENT_PATH" >&2
+            exit 2
+        }
+    fi
+    if [ -n "$BOUND_TAGS" ]; then
+        gate rmn ALLOW_RMN_CHANGE \
+            "verifier(s) $BOUND_TAGS recorded in $DEPLOYMENT_PATH were built on the current rmn, which is IMMUTABLE" \
+            "Confirm the new ARMProxy with Chainlink. If it is genuine, re-run with ALLOW_RMN_CHANGE=true and redeploy those verifiers: they keep the old RMN, make drift flags each one until then, and a new deploy-verifier would build on the new one. If it is not, leave the config as it is."
+    fi
+fi
+
+if grep -qx router <<< "$CHANGED_KEYS"; then
+    gate router ALLOW_ROUTER_CHANGE \
+        "every lane without a router override inherits it on the next make apply-remote-config" \
+        "Confirm the new router with Chainlink. If it is genuine, re-run with ALLOW_ROUTER_CHANGE=true, then re-run make apply-remote-config for those lanes and check make parity."
+fi
+
 [ "$MODE" = "sync" ] || exit 1
+
+if [ "$REFUSED" -eq 1 ]; then
+    echo "  Nothing written for $NAME: a gated change was refused (no field was synced)"
+    exit 1
+fi
 
 # ---- write ---------------------------------------------------------------------
 CHANGED="$(jqlib -r --slurpfile src "$FLAT_PATH" \

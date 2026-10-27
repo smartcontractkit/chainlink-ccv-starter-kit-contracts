@@ -28,6 +28,8 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   uint64 internal constant REMOTE_SELECTOR = 2222;
 
   address internal constant ROUTER = address(0x9001);
+  /// @dev An ARMProxy other than the one every fixture verifier was constructed with.
+  address internal constant ROTATED_RMN = address(0xB0B);
   address internal constant RESOLVER_FEE_AGGREGATOR = address(0xFEE2);
   uint16 internal constant FEE_USD_CENTS = 25;
   uint32 internal constant GAS_FOR_VERIFICATION = 200_000;
@@ -88,7 +90,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
   // ===========================================================================
 
   function test_clean_reportsNoDrift() public view {
-    assertEq(script.checkAll(_deployment(), _roles(), _lanes()), 0, "clean state must report no drift");
+    assertEq(script.checkAll(_deployment(), _chain(), _roles(), _lanes()), 0, "clean state must report no drift");
   }
 
   // ===========================================================================
@@ -441,33 +443,140 @@ contract DriftCheckTest is CommitteeVerifierSetup {
 
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0].versionTag = VERSION_TAG;
-    deployment.verifiers[0].addr = address(verifier);
-    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
-    deployment.verifiers[1].addr = address(verifierV2);
-    assertEq(script.checkAll(deployment, _rolesBothVerifiers(), _lanes()), 0, "two live verifiers, no drift");
+    deployment.verifiers[0] = _verifierRecord(VERSION_TAG, address(verifier));
+    deployment.verifiers[1] = _verifierRecord(VERSION_TAG_V2, address(verifierV2));
+    assertEq(script.checkAll(deployment, _chain(), _rolesBothVerifiers(), _lanes()), 0, "two live verifiers, no drift");
   }
 
   // ===========================================================================
-  //  reachability is an environment problem, not drift
+  //  signature configs — closed world (on-chain -> lanes)
   // ===========================================================================
 
-  function test_unreachableVerifier_revertsWithoutMarker() public {
-    Types.Deployment memory deployment = _deployment();
-    deployment.verifiers[0].addr = address(0xC0DE1E55); // recorded, but no code here
-    vm.expectRevert("DriftCheck: no code at recorded verifier for versionTag 0x00010001 (wrong --rpc-url?)");
-    // called for its expected revert; the return is irrelevant
-    // forge-lint: disable-next-line(unused-return)
-    script.checkAll(deployment, _roles(), _lanes());
+  /// @dev The setUp-wired committee for REMOTE_SELECTOR is declared by the inbound lane.
+  function test_signatureConfigs_declaredCommitteeIsClean() public view {
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), _lanes()), 0, "declared committee");
   }
 
-  function test_unreachableResolver_revertsWithoutMarker() public {
+  /// @dev CLOSED WORLD: retiring the inbound lane (moving its file out) leaves its
+  ///      committee live on-chain. That must be drift, in the per-area seam and in checkAll.
+  function test_drift_signatureConfigNoLaneDeclares() public view {
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
+    lanes[0] = _outboundLane();
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), lanes), 1, "undeclared committee is drift");
+    assertEq(script.checkAll(_deployment(), _chain(), _roles(), lanes), 1, "and checkAll counts it");
+  }
+
+  /// @dev A lane repinned to another tag declares a committee for THAT verifier only;
+  ///      the old verifier's entry is still undeclared.
+  function test_drift_signatureConfigDeclaredOnlyForAnotherTag() public view {
+    Types.LaneCommittee[] memory lanes = _lanes();
+    lanes[1].lane.versionTag = VERSION_TAG_V2;
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), lanes), 1, "other tag does not declare it");
+  }
+
+  /// @dev A committee for an extra source selector no lane names is drift, next to a
+  ///      clean declared one.
+  function test_drift_extraSignatureConfigOnChain() public {
+    SignatureQuorumValidator.SignatureConfig[] memory extra = new SignatureQuorumValidator.SignatureConfig[](1);
+    extra[0] = SignatureQuorumValidator.SignatureConfig({sourceChainSelector: 7777, threshold: 1, signers: signers});
+    verifier.applySignatureConfigs(new uint64[](0), extra);
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), _lanes()), 1, "extra committee is drift");
+  }
+
+  /// @dev Removing the undeclared committee on-chain clears the drift.
+  function test_signatureConfigs_cleanAfterRemoval() public {
+    uint64[] memory removals = new uint64[](1);
+    removals[0] = REMOTE_SELECTOR;
+    verifier.applySignatureConfigs(removals, new SignatureQuorumValidator.SignatureConfig[](0));
+
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
+    lanes[0] = _outboundLane();
+    assertEq(script.checkSignatureConfigs(_deployment(), _roles(), lanes), 0, "revoked committee is not drift");
+  }
+
+  // ===========================================================================
+  //  reachability: a codeless recorded address is drift for that contract only
+  // ===========================================================================
+  // A wrong --rpc-url never gets this far: run() matches the chainid first. So a recorded
+  // address with no code is a bad record, reported as drift while every other contract
+  // is still compared.
+
+  address internal constant CODELESS = address(0xC0DE1E55);
+
+  function test_unreachableVerifier_isDriftAndOtherChecksStillRun() public view {
     Types.Deployment memory deployment = _deployment();
-    deployment.resolver = address(0xC0DE1E55);
-    vm.expectRevert("DriftCheck: no code at recorded resolver (wrong --rpc-url?)");
-    // called for its expected revert; the return is irrelevant
-    // forge-lint: disable-next-line(unused-return)
-    script.checkAll(deployment, _roles(), _lanes());
+    deployment.verifiers[0].addr = CODELESS;
+    Types.OperatorConfig memory operator = _roles();
+    operator.resolver.roles.feeAggregator = address(0xBAD);
+
+    assertEq(script.checkReachability(deployment), 1, "codeless verifier is drift");
+    // The verifier's own checks are skipped instead of reverting...
+    assertEq(script.checkVerifierConfig(deployment, operator), 0, "verifier config skipped");
+    assertEq(script.checkSignatureConfigs(deployment, operator, _lanes()), 0, "signature configs skipped");
+    assertEq(script.checkLanes(deployment, operator, _lanes()), 0, "lane legs skipped");
+    // ...while drift elsewhere is still found: the resolver role, and the resolver maps
+    // that point at the real verifier rather than the recorded address.
+    assertEq(script.checkRoles(deployment, operator), 1, "resolver feeAggregator still compared");
+    assertEq(script.checkResolverImplementations(deployment, operator, _lanes()), 2, "inbound + outbound");
+    assertEq(script.checkAll(deployment, _chain(), operator, _lanes()), 4, "all counted, nothing reverted");
+  }
+
+  function test_unreachableResolver_isDriftAndItsChecksAreSkipped() public view {
+    Types.Deployment memory deployment = _deployment();
+    deployment.resolver = CODELESS;
+    assertEq(script.checkReachability(deployment), 1, "codeless resolver is drift");
+    assertEq(script.checkResolverImplementations(deployment, _roles(), _lanes()), 0, "resolver maps skipped");
+    assertEq(script.checkAll(deployment, _chain(), _roles(), _lanes()), 1, "only the reachability drift");
+  }
+
+  function test_unreachableFactory_isDriftAndItsChecksAreSkipped() public view {
+    Types.Deployment memory deployment = _deployment();
+    deployment.factory = CODELESS;
+    assertEq(script.checkReachability(deployment), 1, "codeless factory is drift");
+    assertEq(script.checkAll(deployment, _chain(), _roles(), _lanes()), 1, "only the reachability drift");
+  }
+
+  function test_reachability_cleanFixtureAndUnrecordedContractsAreNotDrift() public view {
+    Types.Deployment memory deployment = _deployment();
+    assertEq(script.checkReachability(deployment), 0, "every recorded contract has code");
+    deployment.resolver = address(0);
+    deployment.factory = address(0);
+    assertEq(script.checkReachability(deployment), 0, "unrecorded is not codeless");
+  }
+
+  // ===========================================================================
+  //  recorded rmn vs chain config (record-vs-config, no RPC)
+  // ===========================================================================
+
+  function test_recordedRmn_matchesChainConfig() public view {
+    assertEq(script.checkRecordedRmn(_deployment(), _chain()), 0, "recorded rmn == config rmn");
+  }
+
+  /// @dev The upstream ARMProxy moved and a sync rewrote the chain config: every verifier
+  ///      built on the old one is now flagged, since its rmn is immutable.
+  function test_drift_recordedRmnDiffersFromChainConfig() public view {
+    Types.ChainConfig memory chainConfig = _chain();
+    chainConfig.rmn = ROTATED_RMN;
+    assertEq(script.checkRecordedRmn(_deployment(), chainConfig), 1, "rmn mismatch is drift");
+    assertEq(script.checkAll(_deployment(), chainConfig, _roles(), _lanes()), 1, "and checkAll counts it");
+  }
+
+  function test_drift_recordedRmn_perVerifier() public {
+    _deploySecondVerifier();
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers = new Types.VerifierDeployment[](2);
+    deployment.verifiers[0] = _verifierRecord(VERSION_TAG, address(verifier));
+    deployment.verifiers[1] = _verifierRecord(VERSION_TAG_V2, address(verifierV2));
+    deployment.verifiers[1].rmn = ROTATED_RMN;
+    assertEq(script.checkRecordedRmn(deployment, _chain()), 1, "only the verifier built on another rmn");
+  }
+
+  /// @dev No RPC is needed for this comparison, so a codeless record is still compared.
+  function test_drift_recordedRmn_comparedForCodelessRecord() public view {
+    Types.Deployment memory deployment = _deployment();
+    deployment.verifiers[0].addr = CODELESS;
+    deployment.verifiers[0].rmn = ROTATED_RMN;
+    assertEq(script.checkRecordedRmn(deployment, _chain()), 1, "compared without code");
   }
 
   // ===========================================================================
@@ -485,7 +594,7 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     Types.LaneCommittee[] memory lanes = _lanes();
     lanes[0].lane.remote.router = address(0xBAD);
 
-    assertEq(script.checkAll(_deployment(), operator, lanes), 4, "every mismatch reported in one pass");
+    assertEq(script.checkAll(_deployment(), _chain(), operator, lanes), 4, "every mismatch reported in one pass");
   }
 
   // ===========================================================================
@@ -497,6 +606,13 @@ contract DriftCheckTest is CommitteeVerifierSetup {
     deployment.factory = address(factory);
     deployment.resolver = address(resolver);
     deployment.verifiers = _verifiersOf(address(verifier));
+  }
+
+  function _chain() internal pure returns (Types.ChainConfig memory chainConfig) {
+    chainConfig.aliasName = ALIAS;
+    chainConfig.chainSelector = LOCAL_SELECTOR;
+    chainConfig.rmn = RMN;
+    chainConfig.router = ROUTER;
   }
 
   function _roles() internal view returns (Types.OperatorConfig memory operator) {

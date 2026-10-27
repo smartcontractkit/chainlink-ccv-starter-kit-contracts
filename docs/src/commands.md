@@ -35,7 +35,7 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 | `make discover` | list the CCIP API chain catalog + local config status | n/a | n/a | none |
 | `make add-chain` | seed config/chains/<alias>.json from the API; never overwrites | n/a | n/a | CHAIN, SELECTOR |
 | `make sync-check` | config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run | n/a | n/a | none |
-| `make sync-chain` | accept upstream CCIP values for ONE chain | n/a | n/a | CHAIN |
+| `make sync-chain` | accept upstream CCIP values for ONE chain; a router or rmn change needs ALLOW_ROUTER_CHANGE=true / ALLOW_RMN_CHANGE=true | n/a | n/a | CHAIN |
 
 ## Deploy
 
@@ -87,7 +87,7 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 | `make snapshot` | write live roles + verifier settings to out/governance/ (read-only) | any | n/a | CHAIN, RPC_URL |
 | `make drift` | CI-schedulable; exit 0 clean / 1 drift / 2 rpc-unavailable | any | n/a | CHAIN, RPC_URL |
 | `make deployments-doc` | regenerate docs/src/deployments.md from config/ | any | n/a | none |
-| `make deployments-check` | CI: fail if the doc is stale, or if the resolver address diverges | any | n/a | none |
+| `make deployments-check` | CI: fail if the doc is stale, the resolver address diverges, or a recorded rmn differs from config | any | n/a | none |
 | `make validate-config` | parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC | any | n/a | none |
 | `make parity-config` | LANE=<name>; config-vs-config only — no RPC | any | n/a | LANE |
 | `make parity` | LANE=<name> SOURCE_RPC=.. DEST_RPC=..; all three legs, worst-of exit | any | n/a | LANE, SOURCE_RPC, DEST_RPC |

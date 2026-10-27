@@ -9,7 +9,8 @@
 #
 #  Also asserts the cross-chain invariant while it is here: the resolver must be at
 #  the SAME address on every chain. A divergence is flagged in the output and sets
-#  a non-zero exit, so this doubles as a CI check.
+#  a non-zero exit, so this doubles as a CI check. A verifier whose recorded rmn
+#  differs from its chain config's is flagged the same way (rmn is immutable).
 #
 #  Explorer links come from the optional `explorerAddressPath` field (synced from the API).
 #
@@ -17,7 +18,7 @@
 #           (no args)  write docs/src/deployments.md
 #           --check    print to stdout, write nothing; exit 1 if the file is stale
 #
-#  Exit: 0 OK | 1 resolver divergence or (with --check) stale output
+#  Exit: 0 OK | 1 resolver divergence, rmn mismatch, or (with --check) stale output
 #        2 MISSING_TOOL, bad arguments, a malformed record, or a refused write
 # =============================================================================
 set -uo pipefail
@@ -118,7 +119,7 @@ link() {
 addr() { jq -r --arg k "$2" '.[$k].address // "'"$ZERO"'"' "$DEPLOYMENTS_DIR/$1.json"; }
 
 render() {
-    local names resolvers=""
+    local names resolvers="" rmn_mismatch=""
     names="$(aliases)"
 
     echo "# Deployed addresses"
@@ -166,19 +167,34 @@ render() {
     echo "|---|---:|---|---|---|"
     for n in $names; do
         local rec="$DEPLOYMENTS_DIR/$n.json"
-        local chain_id selector salt rmn_cell
+        local chain_id selector salt rmn_cell chain_rmn
         chain_id="$(jq -r '.chainId' "$CHAINS_DIR/$n.json")"
         selector="$(jq -r '.chainSelector' "$CHAINS_DIR/$n.json")"
+        chain_rmn="$(jq -r '.rmn // empty' "$CHAINS_DIR/$n.json")"
         salt="$(jq -r '.resolver.salt // "not recorded"' "$rec")"
         rmn_cell=""
         while IFS=$'\t' read -r tag rmn; do
             [ -n "$tag" ] || continue
             rmn_cell="$rmn_cell${rmn_cell:+<br>}\`$tag\` → \`$rmn\`"
+            # rmn is immutable with no getter, so the record is the only witness of what the
+            # verifier was built with; a chain config that moved since is a finding.
+            if [ "$rmn" != "not recorded" ] \
+                && [ "$(printf '%s' "$rmn" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$chain_rmn" | tr '[:upper:]' '[:lower:]')" ]; then
+                rmn_cell="$rmn_cell ❌ **RMN MISMATCH**: chain config has \`${chain_rmn:-none}\`"
+                rmn_mismatch="yes"
+            fi
         done < <(jq -r '.verifiers[]? | "\(.versionTag)\t\(.args.rmn // "not recorded")"' "$rec")
         [ -n "$rmn_cell" ] || rmn_cell="not recorded"
         printf '| `%s` | %s | `%s` | %s | `%s` |\n' "$n" "$chain_id" "$selector" "$rmn_cell" "$salt"
     done
     echo
+    if [ -n "$rmn_mismatch" ]; then
+        echo "> ❌ A verifier's recorded \`rmn\` differs from its chain config. \`rmn\` is immutable,"
+        echo "> so configuration cannot fix it: redeploy that verifier if the new ARMProxy is"
+        echo "> genuine, or correct \`config/chains/<alias>.json\` if it is not. \`make drift\`"
+        echo "> reports the same mismatch."
+        echo
+    fi
 
     echo "### Verifier storage locations at deploy time"
     echo
@@ -231,6 +247,7 @@ render() {
 body="$(render)"
 status=0
 printf '%s' "$body" | grep -q "DIVERGES" && status=1
+printf '%s' "$body" | grep -q "RMN MISMATCH" && status=1
 
 if [ "$MODE" = check ]; then
     printf '%s\n' "$body"

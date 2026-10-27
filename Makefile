@@ -142,7 +142,7 @@ add-chain:        ## seed config/chains/<alias>.json from the API; never overwri
 sync-check:       ## config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run
 	./script/config/sync-ccip-config.sh check --all
 
-sync-chain:       ## accept upstream CCIP values for ONE chain
+sync-chain:       ## accept upstream CCIP values for ONE chain; a router or rmn change needs ALLOW_ROUTER_CHANGE=true / ALLOW_RMN_CHANGE=true
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make sync-chain CHAIN=sepolia"; exit 2; }
 	./script/config/sync-ccip-config.sh sync $(CHAIN)
 
@@ -270,7 +270,7 @@ deployments-doc:  ## regenerate docs/src/deployments.md from config/ | caller=an
 # "CI" here means an operator's own deployment repo, not this kit's CI: the check reads
 # real config/deployments/ records, which an operator commits in their fork. This kit
 # ships only the template, so there is nothing to check upstream; do not wire it here.
-deployments-check: ## CI: fail if the doc is stale, or if the resolver address diverges | caller=any | mode=n/a
+deployments-check: ## CI: fail if the doc is stale, the resolver address diverges, or a recorded rmn differs from config | caller=any | mode=n/a
 	@./script/governance/deployments-report.sh --check > /dev/null
 
 validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC | caller=any | mode=n/a

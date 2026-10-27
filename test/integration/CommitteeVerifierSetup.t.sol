@@ -66,8 +66,18 @@ abstract contract CommitteeVerifierSetup is Test {
     address verifierAddr
   ) internal pure returns (Types.VerifierDeployment[] memory list) {
     list = new Types.VerifierDeployment[](1);
-    list[0].versionTag = VERSION_TAG;
-    list[0].addr = verifierAddr;
+    list[0] = _verifierRecord(VERSION_TAG, verifierAddr);
+  }
+
+  /// @notice One recorded verifier, with the deploy-time `rmn` the fixture constructs every
+  ///         verifier with.
+  function _verifierRecord(
+    bytes4 tag,
+    address verifierAddr
+  ) internal pure returns (Types.VerifierDeployment memory entry) {
+    entry.versionTag = tag;
+    entry.addr = verifierAddr;
+    entry.rmn = RMN;
   }
 
   /// @notice Single-entry `verifiers` array for operator-config fixtures.
@@ -94,6 +104,30 @@ abstract contract CommitteeVerifierSetup is Test {
       allowlistAdmin: address(this),
       feeAggregator: FEE_AGGREGATOR
     });
+  }
+
+  /// @notice An in-memory deployment record of this fixture, for driving a script's run body.
+  function _fixtureDeployment(
+    string memory chainAlias
+  ) internal view returns (Types.Deployment memory deployment) {
+    deployment.aliasName = chainAlias;
+    deployment.factory = address(factory);
+    deployment.resolver = address(resolver);
+    deployment.verifiers = _verifiersOf(address(verifier));
+  }
+
+  /// @notice Leaves a batch at `out/safe/<outputAlias>/<name>.json`, as an earlier run would
+  ///         have, so a test can assert that a run staging nothing removes it.
+  /// @dev `outputAlias` is under `test/` (git-ignored) and unique per test: tests run in parallel.
+  function _plantStaleBatch(
+    string memory outputAlias,
+    string memory name
+  ) internal returns (string memory path) {
+    string memory dir = string.concat("out/safe/", outputAlias);
+    vm.createDir(dir, true);
+    path = string.concat(dir, "/", name, ".json");
+    vm.writeFile(path, "{}");
+    assertTrue(vm.exists(path), "setup: stale batch planted");
   }
 
   /// @notice Sanity check that the fixture wired up as expected.

@@ -128,7 +128,7 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     lanes[0] = _entryOf(lane);
 
     assertEq(
-      driftCheck.checkAll(_deployment(), _roles(), lanes),
+      driftCheck.checkAll(_deployment(), _chainConfig(), _roles(), lanes),
       0,
       "a lane configured through the scripts must not read back as drift"
     );
@@ -240,7 +240,8 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
 
   /// @notice Wire verifier 1, deploy verifier 2, pin the lane to it, wire, and cut
   ///         over. Verifier 1 keeps verifying in-flight messages (its inbound entry
-  ///         survives) while verifier 2 takes new traffic (outbound flipped), and both
+  ///         survives) while verifier 2 takes new traffic (outbound flipped). DriftCheck
+  ///         flags verifier 1's now-undeclared committee until it is revoked, then both
   ///         governance checks read the two-verifier state as clean.
   function test_upgradeCeremony_gen2TakesTrafficWhileGen1KeepsVerifying() public {
     // ---- verifier 1 fully wired ----
@@ -286,13 +287,24 @@ contract DeployAndConfigureTest is CommitteeVerifierSetup {
     // ---- both governance checks agree the two-verifier state is clean ----
     Types.Deployment memory deployment = _deployment();
     deployment.verifiers = new Types.VerifierDeployment[](2);
-    deployment.verifiers[0].versionTag = VERSION_TAG;
-    deployment.verifiers[0].addr = address(verifier);
-    deployment.verifiers[1].versionTag = VERSION_TAG_V2;
-    deployment.verifiers[1].addr = address(verifierV2);
+    deployment.verifiers[0] = _verifierRecord(VERSION_TAG, address(verifier));
+    deployment.verifiers[1] = _verifierRecord(VERSION_TAG_V2, address(verifierV2));
     Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](1);
     lanes[0] = _entryOf(lane);
-    assertEq(driftCheck.checkAll(deployment, _rolesBothVerifiers(), lanes), 0, "DriftCheck clean");
+    // During the drain, verifier 1 still holds the committee for the lane's source, and
+    // no lane declares it for verifier 1 any more: DriftCheck reports exactly that live
+    // authorization, and nothing else.
+    assertEq(
+      driftCheck.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), lanes),
+      1,
+      "DriftCheck: only gen-1's undeclared committee"
+    );
+
+    // Drain complete: revoke gen-1's committee (what REMOVE_UNDECLARED_SIGNATURE_CONFIGS stages).
+    uint64[] memory removals = new uint64[](1);
+    removals[0] = lane.source.chainSelector;
+    _exec(applySig.callFor(address(verifier), removals, new SignatureQuorumValidator.SignatureConfig[](0)));
+    assertEq(driftCheck.checkAll(deployment, _chainConfig(), _rolesBothVerifiers(), lanes), 0, "DriftCheck clean");
 
     LaneParityCheck parity = new LaneParityCheck();
     Types.ChainConfig memory destChain = _chainConfig();
