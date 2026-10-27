@@ -36,7 +36,8 @@ The lane-iterating scripts read the current on-chain value for each lane before
 staging it, and skip the lanes that already match — adding a lane and re-running touches
 just the new lane, not every lane in `config/operator/lanes/`. Each lane is logged as
 `lane STAGED:` or `lane UNCHANGED:`, and a run where everything already matches stages
-nothing and writes no batch file. Reading on-chain state is also why those four need
+nothing, writes no batch file, and deletes the batch an earlier run left at that path
+(see [Safe batches](safe-batches.md)). Reading on-chain state is also why those four need
 `--rpc-url` even in `OUTPUT_MODE=SAFE` — see
 [When an RPC is required](safe-batches.md#when-an-rpc-is-required).
 

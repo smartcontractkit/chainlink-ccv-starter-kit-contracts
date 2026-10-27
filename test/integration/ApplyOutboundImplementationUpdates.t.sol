@@ -7,6 +7,20 @@ import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 
+/// @dev Drives run()'s body in SAFE mode with in-memory config: the env and `config/` are
+///      process-global, so going through them would make the test order-sensitive.
+contract ApplyOutboundImplementationUpdatesHarness is ApplyOutboundImplementationUpdates {
+  function runSafe(
+    string calldata outputAlias,
+    string calldata chainAlias,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) external {
+    _initOutput(OutputMode.SAFE, outputAlias, address(0x5AFE));
+    _run(chainAlias, deployment, lanes);
+  }
+}
+
 /// @notice Exercises the ApplyOutboundImplementationUpdates builder against the real
 ///         audited VersionedVerifierResolver (deployed by the fixture, owned by this test).
 contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
@@ -200,5 +214,30 @@ contract ApplyOutboundImplementationUpdatesTest is CommitteeVerifierSetup {
   ) internal pure returns (Types.LaneConfig[] memory lanes) {
     lanes = new Types.LaneConfig[](1);
     lanes[0] = lane;
+  }
+
+  // ---------------------------------------------------------------------------
+  //  run: a run that stages nothing still clears the previous run's batch
+  // ---------------------------------------------------------------------------
+
+  function test_run_nothingToDo_removesStaleBatch() public {
+    string memory outputAlias = "test/outbound-nothing-to-do";
+    string memory path = _plantStaleBatch(outputAlias, "apply-outbound-implementations");
+    assertTrue(_applyOutbound(_singleArg(DEST_FUJI, address(verifier))), "setup: apply failed");
+
+    new ApplyOutboundImplementationUpdatesHarness()
+      .runSafe(outputAlias, SRC_ALIAS, _deployment(), _oneLane(_outboundLane(SRC_ALIAS, DEST_FUJI, VERSION_TAG)));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
+  function test_run_noOutboundLanes_removesStaleBatch() public {
+    string memory outputAlias = "test/outbound-no-outbound-lanes";
+    string memory path = _plantStaleBatch(outputAlias, "apply-outbound-implementations");
+
+    new ApplyOutboundImplementationUpdatesHarness()
+      .runSafe(outputAlias, SRC_ALIAS, _deployment(), new Types.LaneConfig[](0));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
   }
 }
