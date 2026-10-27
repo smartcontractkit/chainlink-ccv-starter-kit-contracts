@@ -61,8 +61,18 @@ contract PauseLane is BaseScript {
     Types.LaneConfig memory lane = ConfigLib.readLane(laneName);
     string memory chainAlias = lane.source.aliasName;
     _initOutput(chainAlias);
+    _run(laneName, ConfigLib.lanePath(laneName), lane, ConfigLib.readDeployment(chainAlias));
+  }
 
-    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+  /// @dev run() past output selection, with its config reads as parameters so a test can
+  ///      drive it without the env or `config/`. Every path ends in the one `_flush`.
+  function _run(
+    string memory laneName,
+    string memory lanePath,
+    Types.LaneConfig memory lane,
+    Types.Deployment memory deployment
+  ) internal {
+    string memory chainAlias = lane.source.aliasName;
     address verifier = ConfigLib.verifierByTag(deployment, lane.versionTag);
     _assertReachable(verifier, "verifier");
 
@@ -80,10 +90,11 @@ contract PauseLane is BaseScript {
     } else {
       console2.log("[PauseLane] STAGED: router", address(current.router), "-> 0");
       _stage(callFor(verifier, current));
-      _flush(string.concat("pause-lane-", laneName));
     }
+    // Reached with nothing staged too, so a stale batch from an earlier run is removed.
+    _flush(string.concat("pause-lane-", laneName));
 
-    recordPause(ConfigLib.lanePath(laneName), lane.remote.router);
+    recordPause(lanePath, lane.remote.router);
   }
 
   /// @notice Writes `remoteChainConfig.router = 0x0` into the lane file unless it already

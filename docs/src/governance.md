@@ -46,12 +46,27 @@ Reconciles live on-chain state against `config/operator/chains` and
 `config/operator/lanes` — role holders, fee aggregators, storage locations, finality config,
 resolver implementations, and per-lane remote config.
 
+The resolver maps and each recorded verifier's signature configs are compared
+**closed-world**: an on-chain entry that no lane declares is drift too. For signature
+configs that means a committee on this chain's verifier for a source selector that no lane
+with this destination and that verifier's `versionTag` declares, typically left behind by a
+retired lane. Revoke it with `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make
+apply-signature-configs`; see [Retiring a lane](configure.md#retiring-a-lane).
+
 Exit codes: **0** clean, **1** drift, **2** RPC unreachable or another failure.
 
 A run that cannot complete — an unreachable RPC, an RPC pointing at a different chain
 than the alias, a missing deployment record — exits 2, never 1, so CI can distinguish
 "the check broke" from real drift. Both drift and parity verify the connected chainid
 against the chain config before reading anything.
+
+Because the chainid has already matched, a recorded verifier, resolver or factory with **no
+code** on that chain is a bad record, not a bad RPC: a `--broadcast` deploy whose
+transaction never landed (forge writes the record before sending), a deploy against a fork
+with the same chainid, a copy of another chain's file, or a hand-edited entry. Drift reports
+it as `DRIFT_DETECTED ... has NO CODE at its recorded address` (exit 1), skips only that
+contract's checks, and still compares everything else. Re-run an interrupted deploy with
+`--resume`; otherwise fix or remove the entry in `config/deployments/<alias>.json`.
 
 Drift is direction-aware. Running against a chain that is only ever a lane *source* will
 not check signer sets, because those live on the destination. If a chain's inbound
@@ -62,6 +77,10 @@ configuration never seems to be checked, the reverse lane file is probably missi
 `rmn` is immutable with no getter, so it is the one configured value with **zero drift
 coverage** — a wrong value sits there indefinitely looking correct. Verify it before
 deploying; see [Deploying](deploy.md#3-deploy-the-verifier).
+
+A verifier's `remoteChainConfig` has no enumerating getter, so it is compared only for the
+lanes that exist: a retired lane's source-side entry is invisible. Pause the lane before
+retiring its file.
 
 ## Lane parity check
 

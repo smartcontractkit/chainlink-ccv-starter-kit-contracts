@@ -3,9 +3,25 @@ pragma solidity 0.8.26;
 
 import {PauseLane} from "../../script/configure/PauseLane.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
+import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
 import {IRouter} from "@chainlink/contracts-ccip/contracts/interfaces/IRouter.sol";
+
+/// @dev Drives run()'s body in SAFE mode with in-memory config: the env and `config/` are
+///      process-global, so going through them would make the test order-sensitive.
+contract PauseLaneHarness is PauseLane {
+  function runSafe(
+    string calldata outputAlias,
+    string calldata laneName,
+    string calldata lanePath,
+    Types.LaneConfig memory lane,
+    Types.Deployment memory deployment
+  ) external {
+    _initOutput(OutputMode.SAFE, outputAlias, address(0x5AFE));
+    _run(laneName, lanePath, lane, deployment);
+  }
+}
 
 /// @notice Exercises the PauseLane builders against the real CommitteeVerifier (deployed by
 ///         the fixture, owned by this test) and the lane-file write against a scratch copy.
@@ -156,5 +172,29 @@ contract PauseLaneTest is CommitteeVerifierSetup {
 
     assertEq(vm.readFile(path), before, "byte-identical");
     vm.removeFile(path);
+  }
+
+  // ---------------------------------------------------------------------------
+  //  run: a run that stages nothing still clears the previous run's batch
+  // ---------------------------------------------------------------------------
+
+  function test_run_alreadyPaused_removesStaleBatch() public {
+    string memory outputAlias = "test/pause-lane-already-paused";
+    string memory laneName = "zz-scratch-already-paused";
+    string memory batch = _plantStaleBatch(outputAlias, string.concat("pause-lane-", laneName));
+    _configureDest(address(0));
+    // The example lane records router 0x0, so recordPause leaves the scratch copy alone.
+    string memory lanePath = _scratchLane("run-already-paused", vm.readFile(EXAMPLE_LANE));
+
+    Types.LaneConfig memory lane;
+    lane.name = laneName;
+    lane.source.aliasName = "zz-scratch-src-chain";
+    lane.dest.chainSelector = DEST;
+    lane.versionTag = VERSION_TAG;
+
+    new PauseLaneHarness().runSafe(outputAlias, laneName, lanePath, lane, _fixtureDeployment(lane.source.aliasName));
+
+    assertFalse(vm.exists(batch), "stale batch removed rather than left importable");
+    vm.removeFile(lanePath);
   }
 }

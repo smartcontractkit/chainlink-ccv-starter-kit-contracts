@@ -8,6 +8,9 @@ import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
+import {
+  SignatureQuorumValidator
+} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -23,12 +26,17 @@ import {console2} from "forge-std/console2.sol";
 ///      (exit 1) from an RPC/connection failure (exit 2). A clean run returns
 ///      normally (exit 0).
 ///
-/// @dev Unreachable contracts are deliberately NOT drift. A recorded address with no
-///      code almost always means the wrong `--rpc-url`, not a config mismatch, so it
-///      reverts WITHOUT the marker and the wrapper reports exit 2. The code-length
-///      guard is load-bearing for a second reason: a staticcall to a codeless address
-///      SUCCEEDS with empty returndata, and the ensuing ABI-decode failure is not
-///      catchable by try/catch (same trap documented in `BalanceReport`).
+/// @dev A wrong `--rpc-url` is caught before anything is read: `run()` checks the
+///      connected chainid against the chain config (`ConfigLib.assertChain`), and that
+///      revert carries no marker, so the wrapper reports exit 2. Once the chain matches, a
+///      recorded address with no code is a bad RECORD (a broadcast that never landed, a
+///      same-chainid fork deploy, another chain's file, a hand-edited entry), so it is
+///      reported as drift per contract and only that
+///      contract's checks are skipped: one stale entry must not silence every other
+///      comparison on the chain. The code-length guard is load-bearing for a second
+///      reason: a staticcall to a codeless address SUCCEEDS with empty returndata, and the
+///      ensuing ABI-decode failure is not catchable by try/catch (same trap documented in
+///      `BalanceReport`).
 ///
 /// @dev Lane direction follows the same mapping the configure scripts encode, which is
 ///      dictated by where each value is read on-chain:
@@ -43,6 +51,12 @@ import {console2} from "forge-std/console2.sol";
 ///      `verifiers` array), and the resolver maps are compared CLOSED-WORLD: an on-chain
 ///      inbound registration whose tag is not in the record is drift (a registered
 ///      inbound verifier is attack surface), as is an outbound entry no lane declares.
+///      Each recorded verifier's signature configs are compared CLOSED-WORLD too
+///      (`getAllSignatureConfigs()`): a committee for a source selector no lane declares
+///      is still a valid quorum, so it is drift. `remoteChainConfig` is NOT closed-world:
+///      `BaseVerifier` keeps it in a plain mapping with no enumerating getter, so a
+///      retired lane's source-side entry is invisible here (pause it with
+///      `make pause-lane` before retiring the lane file).
 ///
 /// Usage (direct):
 ///   forge script script/governance/DriftCheck.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
@@ -76,12 +90,12 @@ contract DriftCheck is Script {
     Types.OperatorConfig memory operator,
     Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
-    _assertReachable(deployment);
-
+    drift += checkReachability(deployment);
     drift += checkRoles(deployment, operator);
     drift += checkVerifierConfig(deployment, operator);
     drift += checkResolverImplementations(deployment, operator, lanes);
     drift += checkLanes(deployment, operator, lanes);
+    drift += checkSignatureConfigs(deployment, operator, lanes);
   }
 
   /// @notice Owners and admin/fee roles vs `config/operator/chains/<alias>.json`.
@@ -111,6 +125,7 @@ contract DriftCheck is Script {
         ++drift;
         continue;
       }
+      if (!_hasCode(deployment.verifiers[i].addr)) continue; // reported by checkReachability
       Types.VerifierRoles memory expected =
       ConfigLib.verifierConfigByTag(operator, deployment.verifiers[i].versionTag).roles;
 
@@ -134,7 +149,7 @@ contract DriftCheck is Script {
       }
     }
 
-    if (deployment.resolver != address(0)) {
+    if (_hasCode(deployment.resolver)) {
       VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
       drift += _diffAddress("resolver owner", operator.resolver.roles.owner, resolver.owner());
       drift += _diffAddress(
@@ -142,11 +157,11 @@ contract DriftCheck is Script {
       );
     }
 
-    if (deployment.factory != address(0) && operator.factory.roles.owner != address(0)) {
+    if (_hasCode(deployment.factory) && operator.factory.roles.owner != address(0)) {
       drift += _diffAddress("factory owner", operator.factory.roles.owner, CREATE2Factory(deployment.factory).owner());
     }
 
-    if (deployment.factory != address(0)) {
+    if (_hasCode(deployment.factory)) {
       drift += _diffAddressSet(
         "factory allowlist", operator.factory.roles.allowlist, CREATE2Factory(deployment.factory).getAllowList()
       );
@@ -163,6 +178,7 @@ contract DriftCheck is Script {
     Types.OperatorConfig memory operator
   ) public view returns (uint256 drift) {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (!_hasCode(deployment.verifiers[i].addr)) continue; // reported by checkReachability
       CommitteeVerifier verifier = CommitteeVerifier(deployment.verifiers[i].addr);
       string memory prefix = string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag), " ");
 
@@ -205,7 +221,7 @@ contract DriftCheck is Script {
     Types.OperatorConfig memory operator,
     Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
-    if (deployment.resolver == address(0)) return 0;
+    if (!_hasCode(deployment.resolver)) return 0; // unrecorded, or reported by checkReachability
     VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
 
     // ---- inbound: recorded entries -> on-chain ----
@@ -293,6 +309,51 @@ contract DriftCheck is Script {
     }
   }
 
+  /// @notice Every recorded verifier's on-chain signature configs vs the lanes, compared
+  ///         CLOSED-WORLD: on-chain -> lanes. (lanes -> on-chain is `checkLanes`.)
+  /// @dev A committee is declared for a verifier only by a lane whose DEST is this chain
+  ///      and whose versionTag is that verifier's. Anything else on-chain is a signer set
+  ///      that still forms a valid quorum for its source selector, typically left behind
+  ///      by a lane file moved out of `config/operator/lanes/` or repinned to another tag.
+  ///      The fix is `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs`.
+  function checkSignatureConfigs(
+    Types.Deployment memory deployment,
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
+  ) public view returns (uint256 drift) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (!_hasCode(deployment.verifiers[i].addr)) continue; // reported by checkReachability
+      bytes4 tag = deployment.verifiers[i].versionTag;
+      SignatureQuorumValidator.SignatureConfig[] memory onChain =
+        SignatureQuorumValidator(deployment.verifiers[i].addr).getAllSignatureConfigs();
+      for (uint256 j = 0; j < onChain.length; ++j) {
+        bool declared = false;
+        for (uint256 k = 0; k < lanes.length; ++k) {
+          Types.LaneConfig memory lane = lanes[k].lane;
+          if (
+            _stringsEqual(lane.dest.aliasName, operator.aliasName) && lane.versionTag == tag
+              && lane.source.chainSelector == onChain[j].sourceChainSelector
+          ) declared = true;
+        }
+        if (!declared) {
+          console2.log(
+            string.concat(
+              "DRIFT_DETECTED verifier ",
+              ConfigLib.tagToString(tag),
+              " signature config for a source selector no lane declares - remove it: REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=",
+              operator.aliasName,
+              " TAG=",
+              ConfigLib.tagToString(tag)
+            )
+          );
+          console2.log("  source selector:", onChain[j].sourceChainSelector);
+          console2.log("  threshold / signers:", onChain[j].threshold, onChain[j].signers.length);
+          ++drift;
+        }
+      }
+    }
+  }
+
   /// @notice Per-lane verifier state vs `config/operator/lanes/*.json`, direction-aware. Each
   ///         lane is checked on the verifier serving ITS versionTag; a tag with no
   ///         recorded verifier is reported once per leg and the leg skipped.
@@ -326,6 +387,7 @@ contract DriftCheck is Script {
         continue;
       }
       CommitteeVerifier verifier = CommitteeVerifier(ConfigLib.verifierByTag(deployment, lane.versionTag));
+      if (!_hasCode(address(verifier))) continue; // reported by checkReachability
 
       // Inbound leg: the signer set that verifies messages ARRIVING from lane.source
       // lives on this chain only when this chain is the destination.
@@ -356,30 +418,50 @@ contract DriftCheck is Script {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  //  reachability — an environment problem, never drift
-  // ---------------------------------------------------------------------------
-  function _assertReachable(
+  /// @notice Every recorded address has code on the connected chain.
+  /// @dev Runs after `run()` has matched the chainid, so a codeless address here is a bad
+  ///      record, not a bad RPC: it is drift, and every other check skips that contract
+  ///      (see the contract-level notes) instead of the whole run aborting.
+  function checkReachability(
     Types.Deployment memory deployment
-  ) private view {
+  ) public view returns (uint256 drift) {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
-      require(
-        deployment.verifiers[i].addr.code.length != 0,
+      if (_hasCode(deployment.verifiers[i].addr)) continue;
+      console2.log(
         string.concat(
-          "DriftCheck: no code at recorded verifier for versionTag ",
+          "DRIFT_DETECTED verifier ",
           ConfigLib.tagToString(deployment.verifiers[i].versionTag),
-          " (wrong --rpc-url?)"
+          " has NO CODE at its recorded address (stale or wrong-chain record in config/deployments) - its checks are skipped"
         )
       );
+      console2.log("  recorded:", deployment.verifiers[i].addr);
+      ++drift;
     }
-    require(
-      deployment.resolver == address(0) || deployment.resolver.code.length != 0,
-      "DriftCheck: no code at recorded resolver (wrong --rpc-url?)"
+    drift += _reportCodeless("resolver", deployment.resolver);
+    drift += _reportCodeless("factory", deployment.factory);
+  }
+
+  /// @dev An unrecorded (zero) resolver or factory is not drift; a recorded one with no code is.
+  function _reportCodeless(
+    string memory label,
+    address recorded
+  ) private view returns (uint256) {
+    if (recorded == address(0) || _hasCode(recorded)) return 0;
+    console2.log(
+      string.concat(
+        "DRIFT_DETECTED ",
+        label,
+        " has NO CODE at its recorded address (stale or wrong-chain record in config/deployments) - its checks are skipped"
+      )
     );
-    require(
-      deployment.factory == address(0) || deployment.factory.code.length != 0,
-      "DriftCheck: no code at recorded factory (wrong --rpc-url?)"
-    );
+    console2.log("  recorded:", recorded);
+    return 1;
+  }
+
+  function _hasCode(
+    address target
+  ) private view returns (bool) {
+    return target.code.length != 0;
   }
 
   // ---------------------------------------------------------------------------

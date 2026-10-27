@@ -4,7 +4,23 @@ pragma solidity 0.8.26;
 import {SweepFees} from "../../script/fees/SweepFees.s.sol";
 import {BaseScript} from "../../src/lib/BaseScript.sol";
 import {Types} from "../../src/lib/Types.sol";
+import {MockERC20} from "../mocks/MockERC20.sol";
 import {FeeScriptsSetup} from "./FeeScriptsSetup.t.sol";
+
+/// @dev Drives run()'s body in SAFE mode with in-memory config: the env and `config/` are
+///      process-global, so going through them would make the test order-sensitive.
+contract SweepFeesHarness is SweepFees {
+  function runSafe(
+    string calldata outputAlias,
+    Types.Deployment memory deployment,
+    Types.OperatorConfig memory operator,
+    address[] memory feeTokens,
+    bool skipZeroBalances
+  ) external {
+    _initOutput(OutputMode.SAFE, outputAlias, address(0x5AFE));
+    _run(deployment.aliasName, deployment, operator, feeTokens, skipZeroBalances);
+  }
+}
 
 /// @notice Exercises buildSweepBatch - the composed config-in, batch-out seam run()
 ///         drives - and its parts, against the real audited contracts. The only
@@ -332,5 +348,32 @@ contract SweepFeesTest is FeeScriptsSetup {
     assertTrue(ok, "zero-balance token must not revert the sweep");
     assertEq(tokenA.balanceOf(RESOLVER_AGG), RESOLVER_BAL_A);
     assertEq(tokenB.balanceOf(RESOLVER_AGG), 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  //  run: a run that stages nothing still clears the previous run's batch
+  // ---------------------------------------------------------------------------
+
+  function test_run_noFeeTokens_removesStaleBatch() public {
+    string memory outputAlias = "test/sweep-no-fee-tokens";
+    string memory path = _plantStaleBatch(outputAlias, "sweep-fees");
+
+    new SweepFeesHarness()
+      .runSafe(outputAlias, _deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), new address[](0), true);
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
+  function test_run_nothingSweepable_removesStaleBatch() public {
+    string memory outputAlias = "test/sweep-nothing-sweepable";
+    string memory path = _plantStaleBatch(outputAlias, "sweep-fees");
+    // A real fee token that neither contract holds: both are skipped, nothing is staged.
+    address[] memory feeTokens = new address[](1);
+    feeTokens[0] = address(new MockERC20("Unheld Fee Token", "NONE"));
+
+    new SweepFeesHarness()
+      .runSafe(outputAlias, _deployment(), _rolesWithAggregators(VERIFIER_AGG, RESOLVER_AGG), feeTokens, true);
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
   }
 }

@@ -8,6 +8,21 @@ import {Types} from "../../src/lib/Types.sol";
 import {CommitteeVerifierSetup} from "./CommitteeVerifierSetup.t.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
 
+/// @dev Drives run()'s body in SAFE mode with in-memory config: the env and `config/` are
+///      process-global, so going through them would make the test order-sensitive.
+contract ApplyAllowlistUpdatesHarness is ApplyAllowlistUpdates {
+  function runSafe(
+    string calldata outputAlias,
+    string calldata chainAlias,
+    bytes4 versionTag,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) external {
+    _initOutput(OutputMode.SAFE, outputAlias, address(0x5AFE));
+    _run(chainAlias, versionTag, deployment, lanes);
+  }
+}
+
 /// @notice Exercises the ApplyAllowlistUpdates builder against the real audited
 ///         CommitteeVerifier (deployed by the fixture; this test is owner + allowlistAdmin).
 contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
@@ -331,5 +346,34 @@ contract ApplyAllowlistUpdatesTest is CommitteeVerifierSetup {
 
     assertTrue(script.isCurrent(address(verifier), lanes[0]), "dest 111 configured");
     assertTrue(script.isCurrent(address(verifier), lanes[1]), "dest 222 configured");
+  }
+
+  // ---------------------------------------------------------------------------
+  //  run: a run that stages nothing still clears the previous run's batch
+  // ---------------------------------------------------------------------------
+
+  function test_run_nothingToDo_removesStaleBatch() public {
+    string memory outputAlias = "test/allowlist-nothing-to-do";
+    string memory path =
+      _plantStaleBatch(outputAlias, string.concat("apply-allowlist-updates-", SRC_ALIAS, "-0x00010001"));
+    // allowlistEnabled=false with no senders is the verifier's untouched state.
+    Types.LaneConfig memory lane = _selectableLane(SRC_ALIAS, DEST, VERSION_TAG);
+    lane.allowlist.allowlistEnabled = false;
+
+    new ApplyAllowlistUpdatesHarness()
+      .runSafe(outputAlias, SRC_ALIAS, VERSION_TAG, _fixtureDeployment(SRC_ALIAS), _oneLane(lane));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
+  function test_run_noMatchingLanes_removesStaleBatch() public {
+    string memory outputAlias = "test/allowlist-no-matching-lanes";
+    string memory path =
+      _plantStaleBatch(outputAlias, string.concat("apply-allowlist-updates-", SRC_ALIAS, "-0x00010001"));
+
+    new ApplyAllowlistUpdatesHarness()
+      .runSafe(outputAlias, SRC_ALIAS, VERSION_TAG, _fixtureDeployment(SRC_ALIAS), new Types.LaneConfig[](0));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
   }
 }
