@@ -70,7 +70,7 @@ live transactions; `SAFE` writes an `out/safe/` batch and broadcasts nothing. Th
 guess because `EOA` moves real funds and roles, so selecting it is an explicit opt-in. The scripts read the
 same env var through [`src/lib/BaseScript.sol`](src/lib/BaseScript.sol); keep the two in step.
 
-**`forge` is pinned to `1.8.1` in both the `Makefile` (`FOUNDRY_VERSION`) and CI
+**`forge` is pinned to `1.9.0` in both the `Makefile` (`FOUNDRY_VERSION`) and CI
 ([`ci.yml`](.github/workflows/ci.yml)).** `fmt` and `lint` output changes between releases, and
 `foundry.toml`'s `[lint] exclude_lints` names ids that older releases reject as "unknown id", so a version
 drift turns the gate red with no code change. Bump both together.
