@@ -66,7 +66,7 @@ Fork this repository and clone your fork. Your config and deployment records liv
 [`config/`](config/README.md) and belong in your own git history.
 
 ```bash
-make install                # forge 1.8.1 (the version the Makefile and CI pin) + npm ci + git submodules
+make install                # forge 1.9.0 (the version the Makefile and CI pin) + npm ci + git submodules
 cp .env.example .env
 make seed-operator-config   # config/operator.json from the example, if absent
 make build

@@ -106,9 +106,11 @@ abstract contract BaseScript is Script {
     bytes memory data
   ) internal {
     if (outputMode == OutputMode.EOA) {
+      // script-side broadcast; _staged is only used in SAFE mode
+      // forge-lint: disable-next-line(reentrancy-no-eth)
       vm.broadcast();
       // a generic executor: the destination is caller-supplied by design
-      // forge-lint: disable-next-line(arbitrary-send-eth)
+      // forge-lint: disable-next-line(arbitrary-send-eth, reentrancy-eth)
       (bool ok, bytes memory returnData) = to.call{value: value}(data);
       if (!ok) _bubbleRevert(returnData);
     } else {

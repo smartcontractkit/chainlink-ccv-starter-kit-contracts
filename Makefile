@@ -20,7 +20,7 @@
 # Build, fmt and lint are version-sensitive: the forge-lint disable comments name lint
 # ids that older releases reject as "unknown id". Keep in step with the version pinned
 # in .github/workflows/ci.yml.
-FOUNDRY_VERSION = 1.8.1
+FOUNDRY_VERSION = 1.9.0
 
 CHAIN   ?=
 LANE    ?=

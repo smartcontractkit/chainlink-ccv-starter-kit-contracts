@@ -28,7 +28,7 @@ Fork the kit and clone your fork. Your config and deployment records live in
 
 ```bash
 curl -L https://foundry.paradigm.xyz | bash   # Foundry's installer, once per machine — see their guide for alternatives
-make install                          # forge 1.8.1 (the pinned version) + npm ci + forge-std submodule
+make install                          # forge 1.9.0 (the pinned version) + npm ci + forge-std submodule
 cp .env.example .env                  # then fill in RPC URLs and signing config
 make seed-operator-config             # config/operator.json (resolver salt + tag catalog) from the example
 ```
