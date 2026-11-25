@@ -22,8 +22,9 @@ make drift CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL
 
 Wraps `DriftCheck.s.sol`: reconciles live on-chain state against `config/chains`,
 `config/chains/`, `config/operator/chains/` and `config/operator/lanes/` for one chain — role holders, fee aggregators, storage
-locations, finality config, resolver implementations, per-lane remote config. Needs an
-RPC. Direction-aware: a chain that is only ever a lane *source* will not have its signer
+locations, finality config, resolver implementations, per-lane remote config, and each
+recorded verifier's deploy-time `rmn` against the chain config (no RPC needed for that
+one). Needs an RPC. Direction-aware: a chain that is only ever a lane *source* will not have its signer
 sets checked (those live on the destination).
 
 ## `lane-parity-check.sh` — the two chains of one lane vs each other
@@ -70,6 +71,9 @@ afterwards. Emits:
 - **Resolver address parity** — asserts every recorded resolver is the SAME address;
   a divergence prints the distinct addresses and exits `1`, so the generator doubles as
   a CI check
+- **RMN mismatch** — a verifier whose recorded `rmn` differs from its chain config's is
+  marked `❌ RMN MISMATCH` and also exits `1`: `rmn` is immutable, so this needs a
+  redeploy or a corrected chain config
 
 `--check` renders to stdout without writing and additionally exits `1` when the page on
 disk no longer matches `config/`, or is missing entirely — regeneration is a deliberate
@@ -114,3 +118,12 @@ with its live finality, storage locations and role holders, the committee carrie
 an existing operator file. Promote confirmed values
 into `config/operator/chains/<alias>.json` by hand. Output is run-local (snapshots
 hold live role addresses).
+
+For a `BpsFeeCommitteeVerifier` the snapshot also writes that verifier's
+`requireAllTokensPriced` and rebuilds `priceAdapters[]`: per token, the adapter the bps
+verifiers point at (`getPriceAdapter`), else the recorded one, described from its public
+immutables. The verifier cannot enumerate its tokens, so the token list is the deployment
+record's `priceAdapters[]` plus the tokens the current operator file declares; an adapter
+registered by hand for any other token is not captured. A declared adapter not yet
+deployed, or one that is not a type the schema can describe, keeps its declared entry;
+each such case is logged as a `NOTE`.

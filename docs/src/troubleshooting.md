@@ -20,6 +20,7 @@ are always **0** clean, **1** finding, **2** could not run.
 | `BootstrapFactory: deployer nonce != 0` | factory is not this account's first tx on the chain | use a fresh deployer at nonce 0, or accept a non-parity factory address on this chain only |
 | `DeployResolver: deployed address != predicted` | initcode differed (wrong profile, unpinned deps, different machine paths with metadata hash) | `npm ci`, default profile (`forge build`), confirm `bytecode_hash = "none"` |
 | `DeployVerifier: rmn must be non-zero` | chain config has zero or missing RMN | fix `config/chains/<alias>.json`; re-sync from CCIP API if needed |
+| `DeployResolver: resolver.roles.owner unset` | the operator file's `resolver.roles` entry has no owner | set it before deploy — see [Deploying §2](deploy.md#2-deploy-the-resolver) |
 | `DeployVerifier: verifier.owner role unset` (or storageLocationsAdmin / feeAggregator) | no `verifiers[]` entry for this tag in the operator file | add the entry **before** deploy — see [Deploying §3](deploy.md#3-deploy-the-verifier) |
 | resolver addresses differ across chains | factory or initcode diverged | stop; do not configure on top — redeploy from a known-good build on the diverged chain |
 | `deploy-verifier` for a tag already deployed on that chain | record already has the tag | **`DeployVerifier: versionTag … already recorded`** — intended rotation: `ALLOW_TAG_REPLACE=true`; otherwise use a new tag |
@@ -33,19 +34,27 @@ are always **0** clean, **1** finding, **2** could not run.
 | `BaseScript: SAFE output needs SAFE_ADDRESS` | SAFE mode without executing Safe | set `SAFE_ADDRESS=0x…` to the Safe that will import the batch |
 | `BaseScript: no code at verifier …` | RPC points at wrong network or verifier not deployed | check `--rpc-url` matches the chain alias; confirm tag is in deployment record |
 | stray lane configured | extra file in `config/operator/lanes/` | only files in that directory are live inputs — move retired lanes out; see [configure § lane directory](configure.md#the-lane-directory-is-the-input-set) |
+| `ConfigLib: <file a> and <file b> declare the same direction - one file per directed lane` | two lane files describe the same (source, dest) direction, by alias or by selector; every configure script reads lanes through this check, so it blocks runs on every chain | keep one file per direction — to rotate, flip `versionTag` in the existing file and move the copy out; see [configure § one file per directed lane](configure.md#one-file-per-directed-lane) |
+| `WARN undeclared signature config left LIVE` from `apply-signature-configs` | the dest verifier still holds a committee for a source selector no lane declares for this tag (a retired or repinned lane) | if the lane is retired, re-run with `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true` to revoke it; see [Retiring a lane](configure.md#retiring-a-lane) |
 | `allowedSenders requires allowlistEnabled=true` / `InvalidAllowListRequest` | senders listed while `allowlistEnabled: false` | enable the allowlist, or empty `allowedSenders` |
 | committee has no redundancy | threshold == signer count (N-of-N): one offline signer halts the lane | add signers or lower the threshold, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
 | committee threshold too low | threshold ≤ 2/3 of the signer set | raise the threshold, or set `ALLOW_WEAK_COMMITTEE=true` for testnets only |
+| `SetDynamicConfig: verifier feeAggregator is zero` / `SetFeeAggregator: resolver feeAggregator is zero` | the roles entry names no fee aggregator, so every fee withdrawal would revert | set `roles.feeAggregator` (verifier) or `resolver.roles.feeAggregator`, or set `ALLOW_ZERO_FEE_AGGREGATOR=true` to stage a zero deliberately |
+| `WARN allowlistAdmin is ZERO in config: this call CLEARS the on-chain allowlistAdmin` | config has no allowlist admin but the verifier has one | intended: proceed; otherwise set `roles.allowlistAdmin` to keep the admin |
 
 ## Governance checks
 
 | symptom | meaning | fix |
 |---|---|---|
 | `make deployments-check` exit 1 with no records | `deployments.md` on disk does not match `config/` (it still holds another deployment's addresses) | regenerate with `make deployments-doc`; the page reads "No deployments recorded yet" until you deploy |
+| validate-config: `declares the same direction as config/operator/lanes/<other>.json` | two lane files share a source and dest (by alias or by selector), whatever their tags | delete or move out one of them — see [configure § one file per directed lane](configure.md#one-file-per-directed-lane) |
+| `validate-config` fails `zero … feeAggregator` | a `verifiers[]` or `resolver` roles entry names no fee aggregator, so fee withdrawals would revert | set the listed `feeAggregator`, or set `ALLOW_ZERO_FEE_AGGREGATOR=true` to downgrade it to a `WARN` |
 | drift exit 1 | on-chain state ≠ config | read the script output for `DRIFT_DETECTED` lines; fix config or re-run configure |
 | drift exit 2 | RPC down, missing deployment record, or revert without drift marker | fix infrastructure first — not the same as drift |
+| drift: `has NO CODE at its recorded address` | the chainid matched, so the record does not match the chain: a `--broadcast` deploy whose transaction never landed (the record is written before sending), a deploy against a same-chainid fork, another chain's file copied over, or a hand-edited entry | if the deploy was interrupted, re-run it with `--resume`; otherwise fix or remove the entry in `config/deployments/<alias>.json`. The other contracts on the chain are still checked |
 | parity fails on `versionTag` | lane tag ≠ recorded verifier on one chain | deploy verifier with that tag on both chains, or fix the lane file |
 | signer sets never checked on a chain | chain is only ever a lane *source* | signer config lives on the destination — run drift on the dest chain too |
+| drift: `signature config for a source selector no lane declares` | a committee is still live on that verifier for a lane that was retired or repinned to another tag | `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=… TAG=…`; during a verifier rotation, expected until the old verifier drains |
 
 ## Signing and RPC
 
@@ -60,5 +69,6 @@ are always **0** clean, **1** finding, **2** could not run.
 - **Wrong `rmn` at deploy** — immutable, no getter; only prevention is careful review before `deploy-verifier`.
 - **Placeholder config applied cleanly** — drift and parity compare config to chain, not intent to production readiness.
 - **Retired lane still routable on-chain** — deleting a lane file stops configure scripts from mentioning it, but nothing automatically clears the outbound mapping; see [Operational notes](operations.md#rotating-a-verifier).
+- **Retired lane's `remoteChainConfig` on the source verifier** — the verifier keeps it in a mapping with no enumerating getter, so once the lane file is gone neither drift nor any script can see it. Pause the lane (`make pause-lane`) *before* moving its file out; see [Retiring a lane](configure.md#retiring-a-lane). (The destination committee, by contrast, is enumerable: drift flags it and `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true` revokes it.)
 
 For deploy-time revert messages in full, see the table in [Deploying §3](deploy.md#3-deploy-the-verifier).

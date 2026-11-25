@@ -28,13 +28,36 @@ contract SweepFees is BaseScript {
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
+    _run(chainAlias, deployment, operator, chainConfig.feeTokens, skipZeroBalances);
+  }
 
+  /// @dev run() past output selection, with its config reads as parameters so a test can
+  ///      drive it without the env or `config/`. Every path ends in the one `_flush`.
+  function _run(
+    string memory chainAlias,
+    Types.Deployment memory deployment,
+    Types.OperatorConfig memory operator,
+    address[] memory feeTokens,
+    bool skipZeroBalances
+  ) internal {
     console2.log("[SweepFees] chain:", chainAlias);
-    if (chainConfig.feeTokens.length == 0) {
+    if (feeTokens.length == 0) {
       console2.log(string.concat("  no feeTokens in config/chains/", chainAlias, ".json; nothing to sweep (no-op)"));
-      return;
+    } else {
+      _stageSweep(deployment, operator, feeTokens, skipZeroBalances);
     }
-    console2.log("  fee tokens configured:", chainConfig.feeTokens.length);
+    // Reached with nothing staged too, so a stale batch from an earlier run is removed.
+    _flush("sweep-fees");
+  }
+
+  /// @dev Stages the sweep calls, if any; the caller flushes.
+  function _stageSweep(
+    Types.Deployment memory deployment,
+    Types.OperatorConfig memory operator,
+    address[] memory feeTokens,
+    bool skipZeroBalances
+  ) private {
+    console2.log("  fee tokens configured:", feeTokens.length);
 
     // Everything recorded must be deployed and reachable; a partial deployment is an error.
     require(deployment.verifiers.length > 0, "SweepFees: no verifier recorded in config/deployments");
@@ -47,14 +70,13 @@ contract SweepFees is BaseScript {
     }
     _assertReachable(deployment.resolver, "resolver");
 
-    Call[] memory calls = buildSweepBatch(deployment, operator, chainConfig.feeTokens, skipZeroBalances);
+    Call[] memory calls = buildSweepBatch(deployment, operator, feeTokens, skipZeroBalances);
 
     if (calls.length == 0) {
-      console2.log("  nothing sweepable; no batch written");
-      return;
+      console2.log("  nothing sweepable");
+    } else {
+      _stageMany(calls);
     }
-    _stageMany(calls);
-    _flush("sweep-fees");
   }
 
   /// @notice Builds the sweep batch: one withdraw call per verifier holding

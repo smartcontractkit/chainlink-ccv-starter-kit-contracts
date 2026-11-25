@@ -445,4 +445,100 @@ contract ApplySignatureConfigsTest is CommitteeVerifierSetup {
     assertTrue(script.isCurrent(address(verifier), lanes[0]), "source 111 configured");
     assertTrue(script.isCurrent(address(verifier), lanes[1]), "source 222 configured");
   }
+
+  // ---------------------------------------------------------------------------
+  //  removals: on-chain source selectors no lane declares (opt-in revocation)
+  // ---------------------------------------------------------------------------
+
+  /// @dev Applies `entries` directly, as a previous run would have.
+  function _applyLanes(
+    Types.LaneCommittee[] memory entries
+  ) internal {
+    SignatureQuorumValidator.SignatureConfig[] memory configs =
+      new SignatureQuorumValidator.SignatureConfig[](entries.length);
+    for (uint256 i = 0; i < entries.length; ++i) {
+      configs[i] = script.toSignatureConfig(entries[i]);
+    }
+    BaseScript.Call memory call = script.callFor(address(verifier), new uint64[](0), configs);
+    (bool ok,) = call.to.call(call.data);
+    assertTrue(ok, "setup: applying the committees");
+  }
+
+  /// @dev Two committees live on-chain (111, 222); only 111's lane file remains.
+  function _retiredLaneFixture() internal returns (Types.LaneCommittee[] memory remaining) {
+    Types.LaneCommittee[] memory live = new Types.LaneCommittee[](2);
+    live[0] = _laneFrom(DEST_ALIAS, 111, VERSION_TAG);
+    live[1] = _laneFrom(DEST_ALIAS, 222, VERSION_TAG);
+    _applyLanes(live);
+    remaining = _oneLane(live[0]);
+  }
+
+  function test_undeclaredSourceSelectors_listsTheRetiredLane() public {
+    uint64[] memory undeclared =
+      script.undeclaredSourceSelectors(_retiredLaneFixture(), DEST_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(undeclared.length, 1, "only the retired lane's selector");
+    assertEq(undeclared[0], 222);
+  }
+
+  /// @dev A lane declaring the selector for ANOTHER tag is another verifier's committee:
+  ///      it does not account for the entry on this one.
+  function test_undeclaredSourceSelectors_otherTagDoesNotDeclare() public {
+    Types.LaneCommittee[] memory lanes = new Types.LaneCommittee[](2);
+    lanes[0] = _retiredLaneFixture()[0];
+    lanes[1] = _laneFrom(DEST_ALIAS, 222, 0x00020002);
+    uint64[] memory undeclared = script.undeclaredSourceSelectors(lanes, DEST_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(undeclared.length, 1, "repinned lane still leaves the old committee undeclared");
+    assertEq(undeclared[0], 222);
+  }
+
+  function test_removalsFor_withoutFlag_onlyWarns() public {
+    Types.LaneCommittee[] memory lanes = _retiredLaneFixture();
+    assertFalse(script.removeUndeclared(), "removal is opt-in");
+    uint64[] memory removals = script.removalsFor(lanes, DEST_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(removals.length, 0, "nothing staged without REMOVE_UNDECLARED_SIGNATURE_CONFIGS");
+
+    (address[] memory liveSigners, uint8 threshold) = verifier.getSignatureConfig(222);
+    assertEq(threshold, 3, "the undeclared committee stays live");
+    assertEq(liveSigners.length, 4, "with its full signer set");
+  }
+
+  /// @dev With the flag, the removal rides in the same call as the upserts and clears
+  ///      the retired committee on-chain while leaving the declared one alone.
+  function test_removalsFor_withFlag_stagesAndClearsTheCommittee() public {
+    Types.LaneCommittee[] memory lanes = _retiredLaneFixture();
+    script.setRemoveUndeclared(true);
+    uint64[] memory removals = script.removalsFor(lanes, DEST_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(removals.length, 1, "the undeclared selector is staged");
+    assertEq(removals[0], 222);
+
+    (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
+      script.configsFor(lanes, DEST_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(matched, 1, "the remaining lane matched");
+    assertEq(configs.length, 0, "the remaining lane is already current");
+
+    BaseScript.Call memory call = script.callFor(address(verifier), removals, configs);
+    (bool ok,) = call.to.call(call.data);
+    assertTrue(ok, "removal applied");
+
+    (address[] memory remainingSigners, uint8 threshold) = verifier.getSignatureConfig(222);
+    assertEq(threshold, 0, "retired committee revoked");
+    assertEq(remainingSigners.length, 0, "retired signers cleared");
+    assertTrue(script.isCurrent(address(verifier), lanes[0]), "declared committee untouched");
+    assertEq(verifier.getAllSignatureConfigs().length, 1, "only the declared source remains");
+  }
+
+  /// @dev Everything current and nothing undeclared: no configs and no removals, even
+  ///      with the flag set, so `run()` stays a no-op.
+  function test_removalsFor_noOpStaysNoOp() public {
+    Types.LaneCommittee[] memory lanes = _oneLane(_laneFrom(DEST_ALIAS, 111, VERSION_TAG));
+    _applyLanes(lanes);
+    script.setRemoveUndeclared(true);
+
+    (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
+      script.configsFor(lanes, DEST_ALIAS, VERSION_TAG, address(verifier));
+    uint64[] memory removals = script.removalsFor(lanes, DEST_ALIAS, VERSION_TAG, address(verifier));
+    assertEq(matched, 1);
+    assertEq(configs.length, 0, "no upserts");
+    assertEq(removals.length, 0, "no removals");
+  }
 }

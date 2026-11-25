@@ -6,9 +6,9 @@
 .PHONY: help install install-forge build build-dev clean \
         check-forge seed-operator-config \
         test sync-selftest fmt fmt-check lint lint-sh lint-typos \
-        bootstrap-factory deploy-resolver deploy-verifier verify \
+        bootstrap-factory deploy-resolver deploy-verifier deploy-bps-verifier deploy-price-adapter verify \
         apply-remote-config pause-lane apply-allowlists apply-signature-configs \
-        set-dynamic-config set-finality-config update-storage-locations \
+        set-dynamic-config set-finality-config update-storage-locations apply-bps-config remove-price-adapter \
         apply-inbound apply-outbound set-fee-aggregator apply-factory-allowlist \
         transfer-owner accept-owner cancel-owner \
         transfer-sla accept-sla cancel-sla \
@@ -25,7 +25,9 @@ FOUNDRY_VERSION = 1.9.0
 CHAIN   ?=
 LANE    ?=
 TAG     ?=
+TOKEN   ?=                  # token address, for deploy-price-adapter
 SELECTOR ?=                 # CCIP chain selector, for add-chain
+CCIP_ENV ?=                 # discover catalog: mainnet (default) | testnet
 TARGET  ?=                  # ownership target: verifier:<tag> | resolver | factory
 RPC_URL ?=
 SOURCE_RPC ?=
@@ -131,20 +133,24 @@ clean:            ## forge clean
 	forge clean
 
 # ---- chain config (Chainlink CCIP API) ----
-discover:         ## list the CCIP API chain catalog + local config status
-	./script/config/sync-ccip-config.sh discover
+# ALLOW_CUSTOM_API_BASE=true on the make command line (not from the environment) passes
+# --allow-custom-api-base, required to use a CCIP_API_BASE other than the default.
+CUSTOM_API_BASE_FLAG = $(if $(and $(filter command line,$(origin ALLOW_CUSTOM_API_BASE)),$(filter true 1,$(ALLOW_CUSTOM_API_BASE))),--allow-custom-api-base)
+
+discover:         ## list the CCIP API chain catalog (CCIP_ENV=mainnet|testnet, default mainnet) + local config status
+	./script/config/sync-ccip-config.sh discover $(if $(CCIP_ENV),--env $(CCIP_ENV)) $(CUSTOM_API_BASE_FLAG)
 
 add-chain:        ## seed config/chains/<alias>.json from the API; never overwrites
 	@test -n "$(CHAIN)"    || { echo "CHAIN is required, e.g. make add-chain CHAIN=sepolia SELECTOR=16015286601757825753"; exit 2; }
 	@test -n "$(SELECTOR)" || { echo "SELECTOR is required (the chain's CCIP selector; make discover lists them)"; exit 2; }
-	./script/config/sync-ccip-config.sh bootstrap $(CHAIN) $(SELECTOR)
+	./script/config/sync-ccip-config.sh bootstrap $(CHAIN) $(SELECTOR) $(CUSTOM_API_BASE_FLAG)
 
 sync-check:       ## config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run
-	./script/config/sync-ccip-config.sh check --all
+	./script/config/sync-ccip-config.sh check --all $(CUSTOM_API_BASE_FLAG)
 
-sync-chain:       ## accept upstream CCIP values for ONE chain
+sync-chain:       ## accept upstream CCIP values for ONE chain; a router or rmn change needs ALLOW_ROUTER_CHANGE=true / ALLOW_RMN_CHANGE=true
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make sync-chain CHAIN=sepolia"; exit 2; }
-	./script/config/sync-ccip-config.sh sync $(CHAIN)
+	./script/config/sync-ccip-config.sh sync $(CHAIN) $(CUSTOM_API_BASE_FLAG)
 
 # ---- deploy (EOA path) ----
 # FOUNDRY_PROFILE is pinned inline: the resolver's CREATE2 address depends on its
@@ -169,7 +175,21 @@ deploy-verifier:  ## CommitteeVerifier for TAG; appends to the deployment record
 	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployVerifier.s.sol \
 		--sig "run(string,bytes4)" $(CHAIN) $(TAG) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
 
-verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag> | caller=deployer | mode=n/a
+deploy-bps-verifier: ## BpsFeeCommitteeVerifier for TAG; same config + record as deploy-verifier | caller=deployer | mode=eoa
+	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-bps-verifier CHAIN=sepolia TAG=0x00020001"; exit 2; }
+	@test -n "$(TAG)"     || { echo "TAG is required (the verifier's bytes4 versionTag, e.g. TAG=0x00020001)"; exit 2; }
+	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
+	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployBpsVerifier.s.sol --tc DeployBpsVerifier \
+		--sig "run(string,bytes4)" $(CHAIN) $(TAG) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
+
+deploy-price-adapter: ## price adapter declared for TOKEN in the operator file; appends to the deployment record | caller=deployer | mode=eoa
+	@test -n "$(CHAIN)"   || { echo "CHAIN is required, e.g. make deploy-price-adapter CHAIN=sepolia TOKEN=0x..."; exit 2; }
+	@test -n "$(TOKEN)"   || { echo "TOKEN is required (the token the adapter prices; its priceAdapters[] entry is read from config)"; exit 2; }
+	@test -n "$(RPC_URL)" || { echo "RPC_URL is required (that chain's endpoint)";                exit 2; }
+	@FOUNDRY_PROFILE=default OUTPUT_MODE=EOA forge script script/deploy/DeployPriceAdapter.s.sol --tc DeployPriceAdapter \
+		--sig "run(string,address)" $(CHAIN) $(TOKEN) --rpc-url $(RPC_URL) --broadcast $(SIGNER)
+
+verify:           ## source-verify recorded contracts; ONLY=factory|resolver|verifiers|verifier:<tag>|adapters|adapter:<token> | caller=deployer | mode=n/a
 	@test -n "$(CHAIN)" || { echo "CHAIN is required, e.g. make verify CHAIN=sepolia"; exit 2; }
 # `origin`, not the value: an unset ONLY means "verify everything" and omits the flag,
 # while ONLY= is a target the caller meant to give and forgot, so it is passed through
@@ -203,6 +223,15 @@ set-finality-config: ## verifier allowed-finality cap from operator config | cal
 update-storage-locations: ## verifier storageLocations (caller: storageLocationsAdmin) | caller=storageLocationsAdmin | mode=eoa,safe
 	$(need-tag)
 	$(call run-script,script/configure/UpdateStorageLocations.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
+
+# ---- configure: BpsFeeCommitteeVerifier only (apply: CHAIN + TAG; remove: CHAIN + TOKEN) ----
+apply-bps-config: ## bps verifier only: recorded price adapters, lane bpsFeeConfig, requireAllTokensPriced; after apply-remote-config | caller=owner | mode=eoa,safe
+	$(need-tag)
+	$(call run-script,script/configure/ApplyBpsFeeConfig.s.sol,"run(string,bytes4)",$(CHAIN) $(TAG))
+
+remove-price-adapter: ## bps verifiers only: unregister TOKEN's adapter on every bps verifier, then drop its record entry; delete its priceAdapters entry first | caller=owner | mode=eoa,safe
+	@test -n "$(TOKEN)" || { echo "TOKEN is required (the token whose adapter to retire)"; exit 2; }
+	$(call run-script,script/configure/RemovePriceAdapter.s.sol,"run(string,address)",$(CHAIN) $(TOKEN))
 
 # ---- configure: resolver-scoped (CHAIN only) ----
 apply-inbound:    ## resolver inbound map (versionTag -> verifier) for lanes INTO this chain | caller=owner | mode=eoa,safe
@@ -270,7 +299,7 @@ deployments-doc:  ## regenerate docs/src/deployments.md from config/ | caller=an
 # "CI" here means an operator's own deployment repo, not this kit's CI: the check reads
 # real config/deployments/ records, which an operator commits in their fork. This kit
 # ships only the template, so there is nothing to check upstream; do not wire it here.
-deployments-check: ## CI: fail if the doc is stale, or if the resolver address diverges | caller=any | mode=n/a
+deployments-check: ## CI: fail if the doc is stale, the resolver address diverges, or a recorded rmn differs from config | caller=any | mode=n/a
 	@./script/governance/deployments-report.sh --check > /dev/null
 
 validate-config:  ## parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC | caller=any | mode=n/a

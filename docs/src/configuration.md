@@ -30,8 +30,8 @@ the sync tooling never touches.
 Onboarding a new chain:
 
 ```bash
-# 1. find the chain's selector — requires: nothing
-make discover
+# 1. find the chain's selector — requires: nothing (mainnet by default)
+make discover CCIP_ENV=testnet
 
 # 2. create config/chains/<alias>.json with the Chainlink fields filled in
 #    requires: CHAIN, SELECTOR
@@ -54,9 +54,22 @@ make sync-chain CHAIN=sepolia  # accept upstream values, one chain — requires:
 (**0** clean, **1** drift, **2** couldn't run), so it slots into the same CI shape.
 
 `sync-chain` accepts upstream values one chain at a time, because `rmn` is **immutable
-inside a deployed verifier and has no getter** — the config file is the only record of
-what was deployed. Treat a post-deploy `rmn` drift as something to investigate, one
-chain at a time.
+inside a deployed verifier and has no getter**. Treat a post-deploy `rmn` drift as
+something to investigate, one chain at a time.
+
+`router` and `rmn` are the two security-relevant fields, so `sync-chain` refuses to change
+them without an explicit override, and writes nothing for that chain when it refuses:
+
+- **`rmn`**, when a verifier recorded in `config/deployments/<alias>.json` was built on the
+  current value: `ALLOW_RMN_CHANGE=true make sync-chain CHAIN=<alias>`. Those verifiers keep
+  the old RMN, so `make drift` then flags each one until it is redeployed.
+- **`router`**, always: `ALLOW_ROUTER_CHANGE=true make sync-chain CHAIN=<alias>`. Every
+  lane without a router override picks it up on the next `make apply-remote-config`.
+
+`sync-check` stays read-only and names a pending change with the override it would need.
+
+A `chainId` that differs from upstream is a `CONFLICT` in both `sync-check` and `sync-chain` and is never
+written; only a `0` chainId is filled in.
 
 `explorerAddressPath` is nullable upstream. When the API serves no explorer for a chain
 the field is skipped entirely — never compared, never written — so a value you set by
@@ -69,7 +82,8 @@ Field semantics, the `--env mainnet` flag, and debugging the raw API output are 
 
 A lane file describes traffic in **one direction only**: `<source>-to-<dest>.json` covers
 source → destination. Traffic the other way is its own lane — a second file with the
-names flipped.
+names flipped. Each direction has exactly **one** file, even across a verifier rotation:
+[one file per directed lane](configure.md#one-file-per-directed-lane).
 
 This is not bookkeeping — each field belongs to one side, so reversing the direction
 changes what every value means:

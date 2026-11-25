@@ -36,7 +36,8 @@ The lane-iterating scripts read the current on-chain value for each lane before
 staging it, and skip the lanes that already match — adding a lane and re-running touches
 just the new lane, not every lane in `config/operator/lanes/`. Each lane is logged as
 `lane STAGED:` or `lane UNCHANGED:`, and a run where everything already matches stages
-nothing and writes no batch file. Reading on-chain state is also why those four need
+nothing, writes no batch file, and deletes the batch an earlier run left at that path
+(see [Safe batches](safe-batches.md)). Reading on-chain state is also why those four need
 `--rpc-url` even in `OUTPUT_MODE=SAFE` — see
 [When an RPC is required](safe-batches.md#when-an-rpc-is-required).
 
@@ -63,6 +64,57 @@ Every lane a run takes is logged as `[<Script>] lane: <name>` — check that lis
 the lanes you meant to configure. The Safe batch under `out/safe/<alias>/` is not a
 per-lane view: each configure script collapses every matched lane into a single call, so
 one entry covers all of them. Keep retired and in-progress lanes outside `config/operator/lanes/`.
+
+### One file per directed lane
+
+Each (source, destination) pair has exactly one lane file. The call each script sends is
+keyed by a chain selector — the destination for the remote-chain config, allowlist and
+outbound map, the source for the signature config — and the contract keeps one value per
+key, so a second file for the same direction would override the first inside one call (for
+the allowlist, both deltas are taken against the same on-chain set and compose into neither
+file's list). A different `versionTag` does not make a second file legitimate: the resolver's
+outbound map has no tag dimension. To rotate a verifier, flip the tag in the existing file
+(see [Rotating a verifier](operations.md#rotating-a-verifier)); do not copy it to a `-v2` file.
+
+`make validate-config` fails such a pair (`declares the same direction as …`, matched on the
+aliases or on the selectors). The configure scripts that read every lane refuse to run, on
+any chain and before anything is sent, until one file is removed:
+`ConfigLib: <file a> and <file b> declare the same direction - one file per directed lane`.
+`make pause-lane` reads only the lane it is given, so pausing still works while a duplicate
+is in place. `make drift` keeps running and reports the pair as
+`DRIFT_DETECTED lanes <a> and <b> declare the same direction`; re-applying does not clear
+it, removing one file does.
+
+### Retiring a lane
+
+Moving a lane file out of `config/operator/lanes/` stops the scripts from staging it, but
+does **not** undo anything already on-chain. Most importantly, the destination verifier
+keeps the lane's committee: its signers and threshold remain a valid quorum for messages
+from that source selector until they are removed explicitly. To retire a lane completely:
+
+1. On the **source** chain, pause it first: `make pause-lane LANE=<name>` (router = 0).
+   The verifier's `remoteChainConfig` cannot be listed on-chain, so neither the scripts nor
+   `DriftCheck` will notice it once the file is gone.
+2. Move the lane file out of `config/operator/lanes/`.
+3. On the **destination** chain, revoke the committee by re-running
+   `apply-signature-configs` with the removal opt-in:
+
+   ```bash
+   REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true \
+     make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_RPC_URL OUTPUT_MODE=SAFE
+   ```
+
+   This removes every source selector configured on that verifier that no lane in
+   `config/operator/lanes/` declares for it (destination = `CHAIN`, `versionTag` = `TAG`).
+   Without the flag the run only prints a `WARN undeclared signature config left LIVE` line
+   per selector and stages the upserts alone. The same applies after repinning a lane to a
+   new `versionTag`: the old verifier's committee for that source stays live until you run
+   the removal against the old tag.
+4. `make drift CHAIN=<dest>` reports any committee still left behind as
+   `DRIFT_DETECTED verifier <tag> signature config for a source selector no lane declares`.
+5. On the source chain, drift also reports the resolver's outbound entry for the retired
+   destination as `resolver outbound impl for a dest selector no lane declares`; see
+   [Operational notes](operations.md#rotating-a-verifier).
 
 ## What each script configures
 
@@ -103,6 +155,10 @@ make apply-allowlists     CHAIN=sepolia TAG=$TAG RPC_URL=$SEPOLIA_RPC_URL OUTPUT
 make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_RPC_URL OUTPUT_MODE=EOA
 ```
 
+A `BpsFeeCommitteeVerifier` takes one more step on the source chain, after
+`apply-remote-config`: `make apply-bps-config` registers its price adapters and applies
+each lane's `bpsFeeConfig`. See [BPS fee configuration](deploy.md#bps-fee-configuration).
+
 - **`ApplyRemoteChainConfigUpdates`** — per destination: the local router to send through,
   the fee in US dollar cents, and the gas and payload size reserved for verifying on
   arrival. A zero `router` here is the **only outbound pause** in the system, so the script
@@ -120,7 +176,10 @@ make apply-signature-configs CHAIN=base_sepolia TAG=$TAG RPC_URL=$BASE_SEPOLIA_R
   every time, because the contract clears the existing set first. The script enforces two
   properties unless `ALLOW_WEAK_COMMITTEE=true`: liveness, so no N-of-N committee (one
   offline signer would halt the lane), and safety, so the threshold must exceed 2/3 of the
-  set. The smallest committee that needs no waiver is 3-of-4.
+  set. The smallest committee that needs no waiver is 3-of-4. A source selector configured
+  on the verifier that no lane declares for this destination and tag is left live and
+  reported with a WARN, unless `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true` is set, in which case the
+  same call removes it; see [Retiring a lane](#retiring-a-lane).
 
 ### Per chain (verifier)
 
@@ -136,7 +195,12 @@ make update-storage-locations CHAIN=sepolia TAG=$TAG RPC_URL=$SEPOLIA_RPC_URL OU
 - **`SetDynamicConfig`** — sets `{ feeAggregator, allowlistAdmin }` as one struct for the
   selected verifier, so it always writes both. Changing one means passing the current value
   of the other; both come from the `verifiers[]` entry for `$TAG` in
-  `config/operator/chains/<alias>.json`.
+  `config/operator/chains/<alias>.json`. A zero `feeAggregator` is refused unless
+  `ALLOW_ZERO_FEE_AGGREGATOR=true`, the same rule `DeployVerifier` enforces: with no
+  aggregator every fee withdrawal reverts, so fees accrue with nowhere to go. A zero
+  `allowlistAdmin` is allowed (no admin; the owner still manages allowlists), but when the
+  verifier has a non-zero admin on-chain the script prints a prominent `WARN` that the call
+  will clear it. When the on-chain config already matches, nothing is staged.
 - **`SetAllowedFinalityConfig`** — the finality requests the verifier will accept, from
   the `allowedFinality` block. `{}` is full finality only; `{ "minBlockDepth": 1 }` also
   permits the depth-1 fast path. One value per verifier, **not per lane** —
@@ -172,7 +236,8 @@ make set-fee-aggregator CHAIN=sepolia RPC_URL=$SEPOLIA_RPC_URL OUTPUT_MODE=EOA
   not by source chain** — an incoming message carries the tag it was sealed with. Tags
   already matching on-chain are skipped, so `--rpc-url` is required even in SAFE mode.
 - **`SetFeeAggregator`** — where the resolver sends withdrawn fees. Distinct from the
-  verifier's aggregator; see below.
+  verifier's aggregator; see below. A zero `resolver.roles.feeAggregator` is refused unless
+  `ALLOW_ZERO_FEE_AGGREGATOR=true`.
 
 ## Pruning the factory allowlist
 
@@ -219,7 +284,9 @@ is pre-set except what you configure explicitly (`SetFeeAggregator`, inbound/out
 The verifier's `DynamicConfig.feeAggregator` and the resolver's `setFeeAggregator` are
 **different settings on different contracts**, and each contract withdraws its own fees to
 its own aggregator. Set both. A zero aggregator makes `withdrawFeeTokens` revert on that
-contract.
+contract, so `SetDynamicConfig`, `SetFeeAggregator`, `DeployVerifier` and
+`make validate-config` refuse one. `ALLOW_ZERO_FEE_AGGREGATOR=true` waives it everywhere except
+`DeployVerifier`.
 
 `SetDynamicConfig` handles the verifier's, and a fresh deploy already carries it.
 `SetFeeAggregator` handles the resolver's, which is unset until you run it. `BalanceReport`

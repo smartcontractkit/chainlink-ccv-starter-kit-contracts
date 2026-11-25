@@ -131,35 +131,44 @@ contract ApplyAllowlistUpdates is BaseScript {
   ) external {
     require(versionTag != bytes4(0), "ApplyAllowlistUpdates: versionTag cannot be zero");
     _initOutput(chainAlias);
+    _run(chainAlias, versionTag, ConfigLib.readDeployment(chainAlias), ConfigLib.readLanes());
+  }
 
-    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+  /// @dev run() past output selection, with its config reads as parameters so a test can
+  ///      drive it without the env or `config/`. Every path ends in the one `_flush`.
+  function _run(
+    string memory chainAlias,
+    bytes4 versionTag,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) internal {
     address verifier = ConfigLib.verifierByTag(deployment, versionTag);
     _assertReachable(verifier, "verifier");
 
     console2.log("[ApplyAllowlistUpdates] target chain:", chainAlias);
     console2.log("  target verifier:", verifier);
 
-    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) =
-      argsFor(ConfigLib.readLanes(), chainAlias, versionTag, verifier);
+    (BaseVerifier.AllowlistConfigArgs[] memory args, uint256 matched) = argsFor(lanes, chainAlias, versionTag, verifier);
 
-    require(
-      matched > 0,
-      string.concat(
-        "ApplyAllowlistUpdates: no lanes with source ",
-        chainAlias,
-        " pinned to versionTag ",
-        ConfigLib.tagToString(versionTag)
-      )
-    );
-    if (args.length == 0) {
+    if (matched == 0) {
+      console2.log(
+        string.concat(
+          "[ApplyAllowlistUpdates] nothing to do: no lanes with source ",
+          chainAlias,
+          " pinned to versionTag ",
+          ConfigLib.tagToString(versionTag)
+        )
+      );
+    } else if (args.length == 0) {
       console2.log("[ApplyAllowlistUpdates] nothing to do: every lane is already current:", matched);
-      return;
+    } else {
+      console2.log("[ApplyAllowlistUpdates] staged lanes:", args.length, "of", matched);
+      _stage(callFor(verifier, args));
     }
-    console2.log("[ApplyAllowlistUpdates] staged lanes:", args.length, "of", matched);
-    _stage(callFor(verifier, args));
 
     // The tag is part of the batch name: per-tag runs on the same chain must not
-    // overwrite each other's Safe batch.
+    // overwrite each other's Safe batch. Reached with nothing staged too, so a stale
+    // batch from an earlier run is removed.
     _flush(string.concat("apply-allowlist-updates-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 

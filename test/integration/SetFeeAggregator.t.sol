@@ -50,4 +50,20 @@ contract SetFeeAggregatorTest is CommitteeVerifierSetup {
       "two distinct fee destinations"
     );
   }
+
+  // ---- feeAggregator policy: fatal unless ALLOW_ZERO_FEE_AGGREGATOR waives it ----
+
+  function test_nonZeroFeeAggregator_passesWithoutWaiver() public view {
+    script.validateFeeAggregator(RESOLVER_FEE_AGG);
+  }
+
+  function test_reverts_zeroFeeAggregatorWithoutWaiver() public {
+    vm.expectRevert(bytes(script.ZERO_FEE_AGGREGATOR_ERROR()));
+    script.validateFeeAggregator(address(0));
+  }
+
+  function test_allowZeroFeeAggregator_waivesZero() public {
+    script.setAllowZeroFeeAggregator(true);
+    script.validateFeeAggregator(address(0));
+  }
 }

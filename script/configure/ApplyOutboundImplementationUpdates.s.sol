@@ -34,8 +34,16 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     string calldata chainAlias
   ) external {
     _initOutput(chainAlias);
+    _run(chainAlias, ConfigLib.readDeployment(chainAlias), ConfigLib.readLanes());
+  }
 
-    Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
+  /// @dev run() past output selection, with its config reads as parameters so a test can
+  ///      drive it without the env or `config/`. Every path ends in the one `_flush`.
+  function _run(
+    string memory chainAlias,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) internal {
     // The diff below reads the resolver, so an unreachable one must fail here with a
     // legible reason rather than as a bare revert inside the first getter call.
     _assertReachable(deployment.resolver, "resolver");
@@ -47,16 +55,17 @@ contract ApplyOutboundImplementationUpdates is BaseScript {
     // the local verifier serving the lane's versionTag. Destinations already mapped to
     // it are left out, so re-running after adding a lane stages only the lane that changed.
     (VersionedVerifierResolver.OutboundImplementationArgs[] memory args, uint256 matched) =
-      argsFor(ConfigLib.readLanes(), chainAlias, deployment);
-    require(matched > 0, string.concat("ApplyOutboundImplementationUpdates: no outbound lanes for ", chainAlias));
-
-    if (args.length == 0) {
+      argsFor(lanes, chainAlias, deployment);
+    if (matched == 0) {
+      console2.log("  nothing to do: no outbound lanes for", chainAlias);
+    } else if (args.length == 0) {
       console2.log("  nothing to do: every outbound destination is already current:", matched);
-      return;
+    } else {
+      console2.log("  staging destinations:", args.length, "of", matched);
+      _stage(callFor(deployment.resolver, args));
     }
-    console2.log("  staging destinations:", args.length, "of", matched);
 
-    _stage(callFor(deployment.resolver, args));
+    // Reached with nothing staged too, so a stale batch from an earlier run is removed.
     _flush("apply-outbound-implementations");
   }
 

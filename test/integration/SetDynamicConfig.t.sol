@@ -58,4 +58,73 @@ contract SetDynamicConfigTest is CommitteeVerifierSetup {
       dynamicConfig.allowlistAdmin, address(0x2000000000000000000000000000000000000003), "allowlist admin from roles"
     );
   }
+
+  // ---- feeAggregator policy: fatal unless ALLOW_ZERO_FEE_AGGREGATOR waives it ----
+
+  function test_nonZeroFeeAggregator_passesWithoutWaiver() public view {
+    script.validateFeeAggregator(FEE_AGG);
+  }
+
+  function test_reverts_zeroFeeAggregatorWithoutWaiver() public {
+    vm.expectRevert(bytes(script.ZERO_FEE_AGGREGATOR_ERROR()));
+    script.validateFeeAggregator(address(0));
+  }
+
+  function test_allowZeroFeeAggregator_waivesZero() public {
+    script.setAllowZeroFeeAggregator(true);
+    script.validateFeeAggregator(address(0));
+  }
+
+  // ---- allowlistAdmin: zero is allowed, but clearing a live admin is called out ----
+
+  function test_clearsAllowlistAdmin_whenConfigZeroAndChainSet() public view {
+    // The fixture deploys with allowlistAdmin == this test.
+    assertTrue(
+      script.clearsAllowlistAdmin(address(verifier), _dynamicConfig(FEE_AGGREGATOR, address(0))),
+      "zero in config clears the live admin"
+    );
+  }
+
+  function test_clearsAllowlistAdmin_falseWhenConfigNamesAnAdmin() public view {
+    assertFalse(
+      script.clearsAllowlistAdmin(address(verifier), _dynamicConfig(FEE_AGGREGATOR, ALLOWLIST_ADMIN)),
+      "re-pointing the admin is not a clear"
+    );
+  }
+
+  function test_clearsAllowlistAdmin_falseWhenChainAlreadyZero() public {
+    assertTrue(_applyDynamicConfig(FEE_AGGREGATOR, address(0)), "apply failed");
+    assertFalse(
+      script.clearsAllowlistAdmin(address(verifier), _dynamicConfig(FEE_AGGREGATOR, address(0))),
+      "nothing left to clear"
+    );
+  }
+
+  // ---- isCurrent: what keeps a re-run from restaging an applied config ----
+
+  function test_isCurrent_trueWhenBothFieldsMatch() public view {
+    assertTrue(
+      script.isCurrent(address(verifier), _dynamicConfig(FEE_AGGREGATOR, address(this))), "fixture config is current"
+    );
+  }
+
+  function test_isCurrent_falseWhenFeeAggregatorDiffers() public view {
+    assertFalse(script.isCurrent(address(verifier), _dynamicConfig(FEE_AGG, address(this))), "feeAggregator change");
+  }
+
+  function test_isCurrent_falseWhenAllowlistAdminDiffers() public view {
+    assertFalse(script.isCurrent(address(verifier), _dynamicConfig(FEE_AGGREGATOR, address(0))), "allowlistAdmin clear");
+  }
+
+  function test_isCurrent_trueAfterApply() public {
+    assertTrue(_applyDynamicConfig(FEE_AGG, ALLOWLIST_ADMIN), "apply failed");
+    assertTrue(script.isCurrent(address(verifier), _dynamicConfig(FEE_AGG, ALLOWLIST_ADMIN)), "applied config");
+  }
+
+  function _dynamicConfig(
+    address feeAggregator,
+    address allowlistAdmin
+  ) internal pure returns (CommitteeVerifier.DynamicConfig memory) {
+    return CommitteeVerifier.DynamicConfig({feeAggregator: feeAggregator, allowlistAdmin: allowlistAdmin});
+  }
 }

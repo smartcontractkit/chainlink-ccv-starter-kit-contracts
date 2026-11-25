@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ccip-config-source.sh <chainSelector>
+# ccip-config-source.sh <chainSelector> [--allow-custom-api-base]
 #
 # The PUBLIC CCIP REST API v2 config source (https://api.ccip.chain.link/v2): the fetch + select
 # half of the config-sync seam (real prod/testnet chains).
@@ -18,13 +18,17 @@
 # Exit-code contract (stderr becomes the caller's error reason):
 #   0  OK (flat JSON on stdout)
 #   2  MISSING_TOOL     curl or jq not installed
+#   3  BAD_INPUT        CCIP_API_BASE is not an https:// URL, is not the default without
+#                       --allow-custom-api-base, or the selector is not 1-20 digits
 #   4  NOT_FOUND        HTTP 404 - no chain for this selector
 #   5  API_UNREACHABLE  network error / timeout / 5xx (flake, not drift - retry later)
 #   6  BAD_BODY         200 but chainConfig lacks an active core entry
 #   7  NOT_EVM          the chain exists but its family is not EVM (Solana, Aptos, ...);
 #                       this kit is EVM-only (Foundry/cast, 20-byte addresses)
 #
-# CCIP_API_BASE overrides the API base URL (default https://api.ccip.chain.link/v2).
+# CCIP_API_BASE overrides the API base URL (default https://api.ccip.chain.link/v2). It must be
+# https://, and a non-default base is refused unless --allow-custom-api-base is passed, then
+# warned about on stderr. The request itself is pinned to https and TLS >= 1.2 (see _ccip-api.sh).
 #
 # This serves the CCV v2 deployment. Router 1.2.0 multiplexes per destination, so the one
 # active chainConfig.router reaches OnRamp 1.6.0 or OnRamp 2.0.0 depending on the lane —
@@ -40,14 +44,30 @@ for tool in curl jq; do
     }
 done
 
-SELECTOR="${1:?usage: ccip-config-source.sh <chainSelector>}"
-BASE_URL="${CCIP_API_BASE:-https://api.ccip.chain.link/v2}"
+# shellcheck source=script/config/_ccip-api.sh
+. "$(dirname "$0")/_ccip-api.sh"
+
+SELECTOR="${1:?usage: ccip-config-source.sh <chainSelector> [--allow-custom-api-base]}"
+ALLOW_CUSTOM_API_BASE=0
+case "${2:-}" in
+    "") ;;
+    --allow-custom-api-base) ALLOW_CUSTOM_API_BASE=1 ;;
+    *)
+        err "BAD_INPUT: unknown arg '$2'"
+        exit 3
+        ;;
+esac
+# A chain selector is a uint64: 1-20 decimal digits.
+[[ "$SELECTOR" =~ ^[0-9]{1,20}$ ]] || {
+    err "BAD_INPUT: chain selector '${SELECTOR}' is not 1-20 decimal digits"
+    exit 3
+}
+BASE_URL="$(ccip_api_base "$ALLOW_CUSTOM_API_BASE")" || exit 3
 
 body_file="$(mktemp)"
 trap 'rm -f "$body_file"' EXIT
 
-http_code="$(curl -sS --retry 3 --max-time 30 -o "$body_file" -w '%{http_code}' \
-    "${BASE_URL}/chains/${SELECTOR}" 2> /dev/null)" || {
+http_code="$(ccip_api_get "${BASE_URL}/chains/${SELECTOR}" "$body_file" 2> /dev/null)" || {
     err "API_UNREACHABLE: could not reach ${BASE_URL}/chains/${SELECTOR} (network error/timeout after retries) - retry later or fix CCIP_API_BASE"
     exit 5
 }

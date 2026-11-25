@@ -15,6 +15,18 @@ contract ApplyInboundImplementationUpdatesHarness is ApplyInboundImplementationU
   ) external pure returns (bytes4[] memory) {
     return _dedupedDestTags(lanes, chainAlias);
   }
+
+  /// @dev Drives run()'s body in SAFE mode with in-memory config: the env and `config/`
+  ///      are process-global, so going through them would make the test order-sensitive.
+  function runSafe(
+    string calldata outputAlias,
+    string calldata chainAlias,
+    Types.Deployment memory deployment,
+    Types.LaneConfig[] memory lanes
+  ) external {
+    _initOutput(OutputMode.SAFE, outputAlias, address(0x5AFE));
+    _run(chainAlias, deployment, lanes);
+  }
 }
 
 /// @notice Exercises the ApplyInboundImplementationUpdates builder against the real
@@ -112,5 +124,32 @@ contract ApplyInboundImplementationUpdatesTest is CommitteeVerifierSetup {
     lanes[0] = _lane("a", "b", 0x00010001);
 
     assertEq(script.dedupedDestTags(lanes, "elsewhere").length, 0, "no lane has this chain as destination");
+  }
+
+  // ---------------------------------------------------------------------------
+  //  run: a run that stages nothing still clears the previous run's batch
+  // ---------------------------------------------------------------------------
+
+  string internal constant DEST_ALIAS = "zz-scratch-dest-chain";
+
+  function test_run_noDestLanes_removesStaleBatch() public {
+    string memory outputAlias = "test/inbound-no-dest-lanes";
+    string memory path = _plantStaleBatch(outputAlias, "apply-inbound-implementations");
+
+    script.runSafe(outputAlias, DEST_ALIAS, _fixtureDeployment(DEST_ALIAS), new Types.LaneConfig[](0));
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
+  }
+
+  function test_run_everyVersionCurrent_removesStaleBatch() public {
+    string memory outputAlias = "test/inbound-every-version-current";
+    string memory path = _plantStaleBatch(outputAlias, "apply-inbound-implementations");
+    assertTrue(_applyInbound(VERSION, address(verifier)), "setup: apply failed");
+    Types.LaneConfig[] memory lanes = new Types.LaneConfig[](1);
+    lanes[0] = _lane("zz-scratch-src-chain", DEST_ALIAS, VERSION);
+
+    script.runSafe(outputAlias, DEST_ALIAS, _fixtureDeployment(DEST_ALIAS), lanes);
+
+    assertFalse(vm.exists(path), "stale batch removed rather than left importable");
   }
 }

@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {BpsFeeCommitteeVerifier} from "../../src/bps/BpsFeeCommitteeVerifier.sol";
+import {BpsFeeConfig} from "../../src/bps/BpsFeeConfig.sol";
+import {BpsConfigLib} from "../../src/lib/BpsConfigLib.sol";
 import {ConfigLib} from "../../src/lib/ConfigLib.sol";
 import {FinalityConfigLib} from "../../src/lib/FinalityConfigLib.sol";
+import {PriceAdapterLib} from "../../src/lib/PriceAdapterLib.sol";
 import {Types} from "../../src/lib/Types.sol";
 import {CREATE2Factory} from "@chainlink/contracts-ccip/contracts/CREATE2Factory.sol";
 import {CommitteeVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/CommitteeVerifier.sol";
 import {VersionedVerifierResolver} from "@chainlink/contracts-ccip/contracts/ccvs/VersionedVerifierResolver.sol";
 import {BaseVerifier} from "@chainlink/contracts-ccip/contracts/ccvs/components/BaseVerifier.sol";
+import {
+  SignatureQuorumValidator
+} from "@chainlink/contracts-ccip/contracts/ccvs/components/SignatureQuorumValidator.sol";
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 
@@ -23,12 +30,17 @@ import {console2} from "forge-std/console2.sol";
 ///      (exit 1) from an RPC/connection failure (exit 2). A clean run returns
 ///      normally (exit 0).
 ///
-/// @dev Unreachable contracts are deliberately NOT drift. A recorded address with no
-///      code almost always means the wrong `--rpc-url`, not a config mismatch, so it
-///      reverts WITHOUT the marker and the wrapper reports exit 2. The code-length
-///      guard is load-bearing for a second reason: a staticcall to a codeless address
-///      SUCCEEDS with empty returndata, and the ensuing ABI-decode failure is not
-///      catchable by try/catch (same trap documented in `BalanceReport`).
+/// @dev A wrong `--rpc-url` is caught before anything is read: `run()` checks the
+///      connected chainid against the chain config (`ConfigLib.assertChain`), and that
+///      revert carries no marker, so the wrapper reports exit 2. Once the chain matches, a
+///      recorded address with no code is a bad RECORD (a broadcast that never landed, a
+///      same-chainid fork deploy, another chain's file, a hand-edited entry), so it is
+///      reported as drift per contract and only that
+///      contract's checks are skipped: one stale entry must not silence every other
+///      comparison on the chain. The code-length guard is load-bearing for a second
+///      reason: a staticcall to a codeless address SUCCEEDS with empty returndata, and the
+///      ensuing ABI-decode failure is not catchable by try/catch (same trap documented in
+///      `BalanceReport`).
 ///
 /// @dev Lane direction follows the same mapping the configure scripts encode, which is
 ///      dictated by where each value is read on-chain:
@@ -43,6 +55,25 @@ import {console2} from "forge-std/console2.sol";
 ///      `verifiers` array), and the resolver maps are compared CLOSED-WORLD: an on-chain
 ///      inbound registration whose tag is not in the record is drift (a registered
 ///      inbound verifier is attack surface), as is an outbound entry no lane declares.
+///      Each recorded verifier's signature configs are compared CLOSED-WORLD too
+///      (`getAllSignatureConfigs()`): a committee for a source selector no lane declares
+///      is still a valid quorum, so it is drift. `remoteChainConfig` is NOT closed-world:
+///      `BaseVerifier` keeps it in a plain mapping with no enumerating getter, so a
+///      retired lane's source-side entry is invisible here (pause it with
+///      `make pause-lane` before retiring the lane file).
+///
+/// @dev One check needs no RPC: each recorded verifier's deploy-time `rmn` against the
+///      chain config's (`checkRecordedRmn`). `rmn` is an immutable constructor argument
+///      with no on-chain getter, and `sync-ccip-config.sh` rewrites the config side from
+///      the CCIP API, so the record is the only place the two can be compared.
+///
+/// @dev A recorded BpsFeeCommitteeVerifier gets one more pass, `checkBpsFees`, over the
+///      settings only it has. It is separate from `checkAll` and reads nothing for a
+///      stock verifier, so the standard path is unchanged.
+///
+/// @dev Recorded price adapters get `checkPriceAdapters`: each adapter's immutables read
+///      back on-chain vs the args the record says it was built from. The operator file's
+///      declaration vs the record is `make validate-config`'s job (no RPC needed).
 ///
 /// Usage (direct):
 ///   forge script script/governance/DriftCheck.s.sol --sig "run(string)" sepolia --rpc-url $SEPOLIA_RPC_URL
@@ -55,14 +86,19 @@ contract DriftCheck is Script {
     string calldata chainAlias
   ) external view {
     ConfigLib.assertChain(chainAlias);
+    Types.ChainConfig memory chainConfig = ConfigLib.readChain(chainAlias);
     Types.Deployment memory deployment = ConfigLib.readDeployment(chainAlias);
     Types.OperatorConfig memory operator = ConfigLib.readOperator(chainAlias);
-    Types.LaneCommittee[] memory lanes = ConfigLib.readLaneCommittees();
+    Types.LaneCommittee[] memory lanes = ConfigLib.readLaneCommitteesAllowingDuplicates();
 
     console2.log("[DriftCheck] chain:", chainAlias);
     console2.log("  lanes considered:", lanes.length);
 
-    uint256 drift = checkAll(deployment, operator, lanes);
+    uint256 drift = checkAll(deployment, chainConfig, operator, lanes);
+    // A no-op unless the record holds a BpsFeeCommitteeVerifier.
+    drift += checkBpsFees(deployment, BpsConfigLib.readLaneBpsFees(), BpsConfigLib.readVerifierPolicies(chainAlias));
+    // A no-op unless the record holds price adapters.
+    drift += checkPriceAdapters(deployment);
 
     if (drift > 0) {
       console2.log("DRIFT_DETECTED total mismatches:", drift);
@@ -73,15 +109,51 @@ contract DriftCheck is Script {
 
   function checkAll(
     Types.Deployment memory deployment,
+    Types.ChainConfig memory chainConfig,
     Types.OperatorConfig memory operator,
     Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
-    _assertReachable(deployment);
-
+    drift += checkReachability(deployment);
+    drift += checkRecordedRmn(deployment, chainConfig);
     drift += checkRoles(deployment, operator);
     drift += checkVerifierConfig(deployment, operator);
     drift += checkResolverImplementations(deployment, operator, lanes);
     drift += checkLanes(deployment, operator, lanes);
+    drift += checkSignatureConfigs(deployment, operator, lanes);
+    drift += checkLaneDirections(operator, lanes);
+  }
+
+  /// @notice Two lane files for the same direction (`ConfigLib.sameDirection`), reported
+  ///         once per pair that touches this chain.
+  function checkLaneDirections(
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
+  ) public pure returns (uint256 drift) {
+    for (uint256 i = 0; i < lanes.length; ++i) {
+      Types.LaneConfig memory lane = lanes[i].lane;
+      for (uint256 j = i + 1; j < lanes.length; ++j) {
+        Types.LaneConfig memory other = lanes[j].lane;
+        if (!ConfigLib.sameDirection(lane, other)) continue;
+        if (!_touches(lane, operator.aliasName) && !_touches(other, operator.aliasName)) continue;
+        console2.log(
+          string.concat(
+            "DRIFT_DETECTED lanes ",
+            lane.name,
+            " and ",
+            other.name,
+            " declare the same direction - remove one file; every configure script refuses to run until then"
+          )
+        );
+        ++drift;
+      }
+    }
+  }
+
+  function _touches(
+    Types.LaneConfig memory lane,
+    string memory aliasName
+  ) private pure returns (bool) {
+    return _stringsEqual(lane.source.aliasName, aliasName) || _stringsEqual(lane.dest.aliasName, aliasName);
   }
 
   /// @notice Owners and admin/fee roles vs `config/operator/chains/<alias>.json`.
@@ -111,6 +183,7 @@ contract DriftCheck is Script {
         ++drift;
         continue;
       }
+      if (!_hasCode(deployment.verifiers[i].addr)) continue; // reported by checkReachability
       Types.VerifierRoles memory expected =
       ConfigLib.verifierConfigByTag(operator, deployment.verifiers[i].versionTag).roles;
 
@@ -134,7 +207,7 @@ contract DriftCheck is Script {
       }
     }
 
-    if (deployment.resolver != address(0)) {
+    if (_hasCode(deployment.resolver)) {
       VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
       drift += _diffAddress("resolver owner", operator.resolver.roles.owner, resolver.owner());
       drift += _diffAddress(
@@ -142,11 +215,11 @@ contract DriftCheck is Script {
       );
     }
 
-    if (deployment.factory != address(0) && operator.factory.roles.owner != address(0)) {
+    if (_hasCode(deployment.factory) && operator.factory.roles.owner != address(0)) {
       drift += _diffAddress("factory owner", operator.factory.roles.owner, CREATE2Factory(deployment.factory).owner());
     }
 
-    if (deployment.factory != address(0)) {
+    if (_hasCode(deployment.factory)) {
       drift += _diffAddressSet(
         "factory allowlist", operator.factory.roles.allowlist, CREATE2Factory(deployment.factory).getAllowList()
       );
@@ -163,6 +236,7 @@ contract DriftCheck is Script {
     Types.OperatorConfig memory operator
   ) public view returns (uint256 drift) {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (!_hasCode(deployment.verifiers[i].addr)) continue; // reported by checkReachability
       CommitteeVerifier verifier = CommitteeVerifier(deployment.verifiers[i].addr);
       string memory prefix = string.concat("verifier ", ConfigLib.tagToString(deployment.verifiers[i].versionTag), " ");
 
@@ -192,6 +266,30 @@ contract DriftCheck is Script {
     }
   }
 
+  /// @notice Each recorded verifier's deploy-time `rmn` vs `config/chains/<alias>.json` `.rmn`.
+  /// @dev `rmn` is immutable on-chain (`BaseVerifier.i_rmn`, internal, no getter), so the
+  ///      record is the only witness of what each verifier was built with. A mismatch is
+  ///      unfixable by configuration: either the upstream ARMProxy moved and that verifier
+  ///      needs a redeploy, or the chain config is wrong. Left unflagged, the next
+  ///      `deploy-verifier` would silently build a verifier on a different RMN than its
+  ///      siblings. Pure record-vs-config, so it runs even for a codeless record.
+  function checkRecordedRmn(
+    Types.Deployment memory deployment,
+    Types.ChainConfig memory chainConfig
+  ) public pure returns (uint256 drift) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      drift += _diffAddress(
+        string.concat(
+          "verifier ",
+          ConfigLib.tagToString(deployment.verifiers[i].versionTag),
+          " rmn (IMMUTABLE - recorded deploy arg vs config/chains; not fixable by configuration: redeploy the verifier, or the chain config is wrong)"
+        ),
+        deployment.verifiers[i].rmn,
+        chainConfig.rmn
+      );
+    }
+  }
+
   /// @notice Resolver inbound/outbound implementation maps vs deployments + lanes,
   ///         compared CLOSED-WORLD in both directions.
   /// @dev Inbound must equal exactly the recorded verifiers: a recorded tag missing
@@ -205,7 +303,7 @@ contract DriftCheck is Script {
     Types.OperatorConfig memory operator,
     Types.LaneCommittee[] memory lanes
   ) public view returns (uint256 drift) {
-    if (deployment.resolver == address(0)) return 0;
+    if (!_hasCode(deployment.resolver)) return 0; // unrecorded, or reported by checkReachability
     VersionedVerifierResolver resolver = VersionedVerifierResolver(deployment.resolver);
 
     // ---- inbound: recorded entries -> on-chain ----
@@ -293,6 +391,51 @@ contract DriftCheck is Script {
     }
   }
 
+  /// @notice Every recorded verifier's on-chain signature configs vs the lanes, compared
+  ///         CLOSED-WORLD: on-chain -> lanes. (lanes -> on-chain is `checkLanes`.)
+  /// @dev A committee is declared for a verifier only by a lane whose DEST is this chain
+  ///      and whose versionTag is that verifier's. Anything else on-chain is a signer set
+  ///      that still forms a valid quorum for its source selector, typically left behind
+  ///      by a lane file moved out of `config/operator/lanes/` or repinned to another tag.
+  ///      The fix is `REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs`.
+  function checkSignatureConfigs(
+    Types.Deployment memory deployment,
+    Types.OperatorConfig memory operator,
+    Types.LaneCommittee[] memory lanes
+  ) public view returns (uint256 drift) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (!_hasCode(deployment.verifiers[i].addr)) continue; // reported by checkReachability
+      bytes4 tag = deployment.verifiers[i].versionTag;
+      SignatureQuorumValidator.SignatureConfig[] memory onChain =
+        SignatureQuorumValidator(deployment.verifiers[i].addr).getAllSignatureConfigs();
+      for (uint256 j = 0; j < onChain.length; ++j) {
+        bool declared = false;
+        for (uint256 k = 0; k < lanes.length; ++k) {
+          Types.LaneConfig memory lane = lanes[k].lane;
+          if (
+            _stringsEqual(lane.dest.aliasName, operator.aliasName) && lane.versionTag == tag
+              && lane.source.chainSelector == onChain[j].sourceChainSelector
+          ) declared = true;
+        }
+        if (!declared) {
+          console2.log(
+            string.concat(
+              "DRIFT_DETECTED verifier ",
+              ConfigLib.tagToString(tag),
+              " signature config for a source selector no lane declares - remove it: REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=",
+              operator.aliasName,
+              " TAG=",
+              ConfigLib.tagToString(tag)
+            )
+          );
+          console2.log("  source selector:", onChain[j].sourceChainSelector);
+          console2.log("  threshold / signers:", onChain[j].threshold, onChain[j].signers.length);
+          ++drift;
+        }
+      }
+    }
+  }
+
   /// @notice Per-lane verifier state vs `config/operator/lanes/*.json`, direction-aware. Each
   ///         lane is checked on the verifier serving ITS versionTag; a tag with no
   ///         recorded verifier is reported once per leg and the leg skipped.
@@ -326,6 +469,7 @@ contract DriftCheck is Script {
         continue;
       }
       CommitteeVerifier verifier = CommitteeVerifier(ConfigLib.verifierByTag(deployment, lane.versionTag));
+      if (!_hasCode(address(verifier))) continue; // reported by checkReachability
 
       // Inbound leg: the signer set that verifies messages ARRIVING from lane.source
       // lives on this chain only when this chain is the destination.
@@ -356,30 +500,196 @@ contract DriftCheck is Script {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  //  reachability — an environment problem, never drift
-  // ---------------------------------------------------------------------------
-  function _assertReachable(
-    Types.Deployment memory deployment
-  ) private view {
+  /// @notice The bps-only state of every recorded BpsFeeCommitteeVerifier vs config:
+  ///         requireAllTokensPriced vs its verifier entry, each recorded price adapter vs
+  ///         the verifier's token -> adapter mapping, and each lane leaving this chain
+  ///         under its tag vs the fee config keyed by the lane's destination. An absent
+  ///         `bpsFeeConfig` / `requireAllTokensPriced` expects the contract default.
+  /// @dev The token -> adapter mapping cannot be enumerated on-chain, so only tokens the
+  ///      record knows are compared. Bps settings declared for a verifier the record says
+  ///      is a stock CommitteeVerifier can never be applied, so they count as drift too.
+  function checkBpsFees(
+    Types.Deployment memory deployment,
+    BpsConfigLib.LaneBpsFee[] memory laneFees,
+    BpsConfigLib.VerifierBpsPolicy[] memory policies
+  ) public view returns (uint256 drift) {
     for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      Types.VerifierDeployment memory entry = deployment.verifiers[i];
+      string memory prefix = string.concat("verifier ", ConfigLib.tagToString(entry.versionTag), " ");
+      bool declaredRequireAll = BpsConfigLib.requireAllTokensPricedFor(policies, entry.versionTag);
+
+      if (!BpsConfigLib.isBpsVerifier(entry)) {
+        drift += _bpsDeclaredOnStockVerifier(deployment.aliasName, entry.versionTag, declaredRequireAll, laneFees);
+        continue;
+      }
+
+      require(entry.addr.code.length != 0, "DriftCheck: no code at recorded bps verifier (wrong --rpc-url?)");
+      BpsFeeCommitteeVerifier bps = BpsFeeCommitteeVerifier(entry.addr);
+      drift += _diffBool(
+        string.concat(prefix, "requireAllTokensPriced"), declaredRequireAll, bps.requireAllTokensPriced()
+      );
+
+      for (uint256 j = 0; j < deployment.priceAdapters.length; ++j) {
+        address token = deployment.priceAdapters[j].args.token;
+        drift += _diffAddress(
+          string.concat(prefix, "price adapter for token ", vm.toString(token)),
+          deployment.priceAdapters[j].addr,
+          address(bps.getPriceAdapter(token))
+        );
+      }
+
+      for (uint256 j = 0; j < laneFees.length; ++j) {
+        if (!_appliesTo(laneFees[j], deployment.aliasName, entry.versionTag)) continue;
+        drift += _diffFeeConfig(
+          string.concat("lane ", laneFees[j].laneName, " bpsFeeConfig"),
+          laneFees[j].fee,
+          bps.getFeeConfig(laneFees[j].destSelector)
+        );
+      }
+    }
+  }
+
+  /// @notice Each recorded price adapter's on-chain getters vs its recorded args, one drift
+  ///         per differing field. An adapter that is not one of the two known kinds (or
+  ///         prices another token) is one drift: its args cannot be read back.
+  /// @dev Adapters are immutable, so drift here never means "someone changed it": it
+  ///      means the record names the wrong address, or was edited after the deploy.
+  ///      A codeless adapter reverts without the marker, like every other contract.
+  function checkPriceAdapters(
+    Types.Deployment memory deployment
+  ) public view returns (uint256 drift) {
+    for (uint256 i = 0; i < deployment.priceAdapters.length; ++i) {
+      Types.PriceAdapterDeployment memory recorded = deployment.priceAdapters[i];
+      string memory label =
+        string.concat("price adapter ", vm.toString(recorded.addr), " for token ", vm.toString(recorded.args.token));
       require(
-        deployment.verifiers[i].addr.code.length != 0,
+        recorded.addr.code.length != 0, string.concat("DriftCheck: no code at recorded ", label, " (wrong --rpc-url?)")
+      );
+      (bool known, Types.PriceAdapterConfig memory live) = PriceAdapterLib.describe(recorded.addr);
+      if (!known) {
+        console2.log(
+          string.concat(
+            "DRIFT_DETECTED ",
+            label,
+            " is not a ",
+            ConfigLib.L1_PRICE_ADAPTER,
+            " or ",
+            ConfigLib.L2_PRICE_ADAPTER,
+            " (recorded as ",
+            recorded.args.contractName,
+            ")"
+          )
+        );
+        ++drift;
+        continue;
+      }
+      string[] memory fields = PriceAdapterLib.diff(recorded.args, live);
+      for (uint256 j = 0; j < fields.length; ++j) {
+        console2.log(string.concat("DRIFT_DETECTED ", label, " (recorded != on-chain): ", fields[j]));
+      }
+      drift += fields.length;
+    }
+  }
+
+  /// @dev Bps settings aimed at a stock CommitteeVerifier: each one is drift.
+  function _bpsDeclaredOnStockVerifier(
+    string memory chainAlias,
+    bytes4 tag,
+    bool declaredRequireAll,
+    BpsConfigLib.LaneBpsFee[] memory laneFees
+  ) private pure returns (uint256 drift) {
+    string memory suffix =
+      string.concat(" - verifier ", ConfigLib.tagToString(tag), " is not a BpsFeeCommitteeVerifier");
+    if (declaredRequireAll) {
+      console2.log(string.concat("DRIFT_DETECTED requireAllTokensPriced declared", suffix));
+      ++drift;
+    }
+    for (uint256 j = 0; j < laneFees.length; ++j) {
+      if (!_appliesTo(laneFees[j], chainAlias, tag) || !BpsConfigLib.isDeclared(laneFees[j].fee)) continue;
+      console2.log(string.concat("DRIFT_DETECTED lane ", laneFees[j].laneName, " declares a bpsFeeConfig", suffix));
+      ++drift;
+    }
+  }
+
+  function _appliesTo(
+    BpsConfigLib.LaneBpsFee memory lane,
+    string memory chainAlias,
+    bytes4 tag
+  ) private pure returns (bool) {
+    return _stringsEqual(lane.sourceAlias, chainAlias) && lane.versionTag == tag;
+  }
+
+  function _diffFeeConfig(
+    string memory label,
+    BpsFeeConfig memory expected,
+    BpsFeeConfig memory actual
+  ) private pure returns (uint256) {
+    if (BpsConfigLib.feeConfigEq(expected, actual)) return 0;
+    console2.log(string.concat("DRIFT_DETECTED ", label));
+    console2.log("  expected:", _describeFee(expected));
+    console2.log("  actual:  ", _describeFee(actual));
+    return 1;
+  }
+
+  function _describeFee(
+    BpsFeeConfig memory fee
+  ) private pure returns (string memory) {
+    return string.concat(
+      "enabled=",
+      vm.toString(fee.enabled),
+      " feeBps=",
+      vm.toString(uint256(fee.feeBps)),
+      " minFeeUSDCents=",
+      vm.toString(uint256(fee.minFeeUSDCents)),
+      " capUSDCents=",
+      vm.toString(uint256(fee.capUSDCents))
+    );
+  }
+
+  /// @notice Every recorded address has code on the connected chain.
+  /// @dev Runs after `run()` has matched the chainid, so a codeless address here is a bad
+  ///      record, not a bad RPC: it is drift, and every other check skips that contract
+  ///      (see the contract-level notes) instead of the whole run aborting.
+  function checkReachability(
+    Types.Deployment memory deployment
+  ) public view returns (uint256 drift) {
+    for (uint256 i = 0; i < deployment.verifiers.length; ++i) {
+      if (_hasCode(deployment.verifiers[i].addr)) continue;
+      console2.log(
         string.concat(
-          "DriftCheck: no code at recorded verifier for versionTag ",
+          "DRIFT_DETECTED verifier ",
           ConfigLib.tagToString(deployment.verifiers[i].versionTag),
-          " (wrong --rpc-url?)"
+          " has NO CODE at its recorded address (stale or wrong-chain record in config/deployments) - its checks are skipped"
         )
       );
+      console2.log("  recorded:", deployment.verifiers[i].addr);
+      ++drift;
     }
-    require(
-      deployment.resolver == address(0) || deployment.resolver.code.length != 0,
-      "DriftCheck: no code at recorded resolver (wrong --rpc-url?)"
+    drift += _reportCodeless("resolver", deployment.resolver);
+    drift += _reportCodeless("factory", deployment.factory);
+  }
+
+  /// @dev An unrecorded (zero) resolver or factory is not drift; a recorded one with no code is.
+  function _reportCodeless(
+    string memory label,
+    address recorded
+  ) private view returns (uint256) {
+    if (recorded == address(0) || _hasCode(recorded)) return 0;
+    console2.log(
+      string.concat(
+        "DRIFT_DETECTED ",
+        label,
+        " has NO CODE at its recorded address (stale or wrong-chain record in config/deployments) - its checks are skipped"
+      )
     );
-    require(
-      deployment.factory == address(0) || deployment.factory.code.length != 0,
-      "DriftCheck: no code at recorded factory (wrong --rpc-url?)"
-    );
+    console2.log("  recorded:", recorded);
+    return 1;
+  }
+
+  function _hasCode(
+    address target
+  ) private view returns (bool) {
+    return target.code.length != 0;
   }
 
   // ---------------------------------------------------------------------------

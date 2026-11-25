@@ -22,6 +22,12 @@ import {console2} from "forge-std/console2.sol";
 /// @dev This is a FULL-SET REPLACEMENT: the contract clears the
 ///      existing signer set for that source and re-adds `signers`.
 ///
+/// @dev Removals: a source selector configured on the verifier that no lane declares
+///      (dest == chainAlias, versionTag == the run's tag) is a committee that still forms
+///      a valid quorum, typically left behind by a retired lane file. Clearing it is
+///      OPT-IN: with REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true the run stages it in the
+///      same call's `sourceChainSelectorsToRemove`; without it the run only WARNs.
+///
 /// Usage (chainAlias is the lane's DESTINATION chain — signatures are verified there):
 ///   OUTPUT_MODE=SAFE forge script script/configure/ApplySignatureConfigs.s.sol \
 ///     --sig "run(string,bytes4)" base_sepolia 0x00010001 --rpc-url $BASE_SEPOLIA_RPC_URL
@@ -31,11 +37,22 @@ contract ApplySignatureConfigs is BaseScript {
   ///         ALLOW_WEAK_COMMITTEE; callers and tests set it directly.
   bool public allowWeakCommittee;
 
+  /// @notice Stages the removal of undeclared source selectors. `run()` sets it from
+  ///         REMOVE_UNDECLARED_SIGNATURE_CONFIGS; callers and tests set it directly.
+  bool public removeUndeclared;
+
   /// @notice Sets the waiver directly, for tests and callers that never reach `run()`.
   function setAllowWeakCommittee(
     bool allowed
   ) external {
     allowWeakCommittee = allowed;
+  }
+
+  /// @notice Sets the removal opt-in directly, for tests and callers that never reach `run()`.
+  function setRemoveUndeclared(
+    bool enabled
+  ) external {
+    removeUndeclared = enabled;
   }
 
   /// @notice Which deployment a lane's signature config targets: the DEST chain.
@@ -47,7 +64,7 @@ contract ApplySignatureConfigs is BaseScript {
 
   /// @notice Single source of truth for the applySignatureConfigs calldata.
   /// @param verifier The CommitteeVerifier to configure.
-  /// @param removals Source chain selectors whose config should be cleared (usually empty).
+  /// @param removals Source chain selectors whose config should be cleared (see `removalsFor`).
   /// @param configs  The desired signer configs to set (full-set replacement per source).
   function callFor(
     address verifier,
@@ -118,6 +135,67 @@ contract ApplySignatureConfigs is BaseScript {
     }
   }
 
+  /// @notice Source selectors configured on `verifier` that no lane declares: on-chain
+  ///         (`getAllSignatureConfigs`) minus the sources of lanes whose DESTINATION is
+  ///         `chainAlias` and whose tag is `versionTag` — the same filters as `configsFor`.
+  function undeclaredSourceSelectors(
+    Types.LaneCommittee[] memory lanes,
+    string memory chainAlias,
+    bytes4 versionTag,
+    address verifier
+  ) public view returns (uint64[] memory undeclared) {
+    SignatureQuorumValidator.SignatureConfig[] memory onChain =
+      SignatureQuorumValidator(verifier).getAllSignatureConfigs();
+    undeclared = new uint64[](onChain.length);
+    uint256 count = 0;
+    for (uint256 i = 0; i < onChain.length; ++i) {
+      bool declared = false;
+      for (uint256 j = 0; j < lanes.length; ++j) {
+        Types.LaneConfig memory lane = lanes[j].lane;
+        if (
+          _stringsEqual(_targetAlias(lane), chainAlias) && lane.versionTag == versionTag
+            && lane.source.chainSelector == onChain[i].sourceChainSelector
+        ) declared = true;
+      }
+      if (!declared) undeclared[count++] = onChain[i].sourceChainSelector;
+    }
+    // Trim to the undeclared count; same idiom as `configsFor`.
+    // solhint-disable-next-line no-inline-assembly
+    assembly {
+      mstore(undeclared, count)
+    }
+  }
+
+  /// @notice The removals a run would stage: every undeclared selector when
+  ///         `removeUndeclared` is set, otherwise none, with a WARN per selector.
+  function removalsFor(
+    Types.LaneCommittee[] memory lanes,
+    string memory chainAlias,
+    bytes4 versionTag,
+    address verifier
+  ) public view returns (uint64[] memory removals) {
+    uint64[] memory undeclared = undeclaredSourceSelectors(lanes, chainAlias, versionTag, verifier);
+    for (uint256 i = 0; i < undeclared.length; ++i) {
+      if (removeUndeclared) {
+        console2.log("[ApplySignatureConfigs] source REMOVAL STAGED (no lane declares it):", undeclared[i]);
+      } else {
+        console2.log("  WARN undeclared signature config left LIVE: no lane declares source selector", undeclared[i]);
+      }
+    }
+    if (removeUndeclared) return undeclared;
+    if (undeclared.length > 0) {
+      console2.log(
+        string.concat(
+          "  WARN its committee is still a valid quorum. To clear it: REMOVE_UNDECLARED_SIGNATURE_CONFIGS=true make apply-signature-configs CHAIN=",
+          chainAlias,
+          " TAG=",
+          ConfigLib.tagToString(versionTag)
+        )
+      );
+    }
+    return new uint64[](0);
+  }
+
   /// @notice The lanes with this chain as destination that are pinned to `versionTag` —
   ///         ONE verifier per run. Different verifiers can have different owners,
   ///         and a Safe batch is all-or-nothing, so calls needing different
@@ -129,6 +207,7 @@ contract ApplySignatureConfigs is BaseScript {
     require(versionTag != bytes4(0), "ApplySignatureConfigs: versionTag cannot be zero");
     _initOutput(chainAlias);
     allowWeakCommittee = vm.envOr("ALLOW_WEAK_COMMITTEE", false);
+    removeUndeclared = vm.envOr("REMOVE_UNDECLARED_SIGNATURE_CONFIGS", false);
 
     address verifier = ConfigLib.verifierByTag(ConfigLib.readDeployment(chainAlias), versionTag);
     _assertReachable(verifier, "verifier");
@@ -136,27 +215,32 @@ contract ApplySignatureConfigs is BaseScript {
     console2.log("[ApplySignatureConfigs] target chain:", chainAlias);
     console2.log("  target verifier:", verifier);
 
+    Types.LaneCommittee[] memory lanes = ConfigLib.readLaneCommittees();
     (SignatureQuorumValidator.SignatureConfig[] memory configs, uint256 matched) =
-      configsFor(ConfigLib.readLaneCommittees(), chainAlias, versionTag, verifier);
+      configsFor(lanes, chainAlias, versionTag, verifier);
 
-    require(
-      matched > 0,
-      string.concat(
-        "ApplySignatureConfigs: no lanes with destination ",
-        chainAlias,
-        " pinned to versionTag ",
-        ConfigLib.tagToString(versionTag)
-      )
-    );
-    if (configs.length == 0) {
+    uint64[] memory removals = removalsFor(lanes, chainAlias, versionTag, verifier);
+
+    if (configs.length == 0 && removals.length == 0 && matched == 0) {
+      console2.log(
+        string.concat(
+          "[ApplySignatureConfigs] nothing to do: no lanes with destination ",
+          chainAlias,
+          " pinned to versionTag ",
+          ConfigLib.tagToString(versionTag)
+        )
+      );
+    } else if (configs.length == 0 && removals.length == 0) {
       console2.log("[ApplySignatureConfigs] nothing to do: every lane is already current:", matched);
-      return;
+    } else {
+      console2.log("[ApplySignatureConfigs] staged lanes:", configs.length, "of", matched);
+      console2.log("[ApplySignatureConfigs] staged removals:", removals.length);
+      _stage(callFor(verifier, removals, configs));
     }
-    console2.log("[ApplySignatureConfigs] staged lanes:", configs.length, "of", matched);
-    _stage(callFor(verifier, new uint64[](0), configs));
 
     // The tag is part of the batch name: per-tag runs on the same chain must not
-    // overwrite each other's Safe batch.
+    // overwrite each other's Safe batch. Reached with nothing staged too, so a stale
+    // batch from an earlier run is removed.
     _flush(string.concat("apply-signature-configs-", chainAlias, "-", ConfigLib.tagToString(versionTag)));
   }
 

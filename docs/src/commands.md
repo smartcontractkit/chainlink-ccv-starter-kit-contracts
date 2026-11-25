@@ -32,10 +32,10 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 
 | Target | Purpose | Caller | Mode | Key inputs |
 |---|---|---|---|---|
-| `make discover` | list the CCIP API chain catalog + local config status | n/a | n/a | none |
+| `make discover` | list the CCIP API chain catalog (CCIP_ENV=mainnet\|testnet, default mainnet) + local config status | n/a | n/a | none |
 | `make add-chain` | seed config/chains/<alias>.json from the API; never overwrites | n/a | n/a | CHAIN, SELECTOR |
 | `make sync-check` | config vs the CCIP API, all chains; read-only; exit 0 clean / 1 drift / 2 could not run | n/a | n/a | none |
-| `make sync-chain` | accept upstream CCIP values for ONE chain | n/a | n/a | CHAIN |
+| `make sync-chain` | accept upstream CCIP values for ONE chain; a router or rmn change needs ALLOW_ROUTER_CHANGE=true / ALLOW_RMN_CHANGE=true | n/a | n/a | CHAIN |
 
 ## Deploy
 
@@ -44,7 +44,9 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 | `make bootstrap-factory` | CREATE2Factory; must be the deployer's FIRST tx on the chain | deployer | eoa | CHAIN, RPC_URL |
 | `make deploy-resolver` | resolver via CREATE2; must land at the same address on every chain | deployer | eoa | CHAIN, RPC_URL |
 | `make deploy-verifier` | CommitteeVerifier for TAG; appends to the deployment record | deployer | eoa | CHAIN, TAG, RPC_URL |
-| `make verify` | source-verify recorded contracts; ONLY=factory\|resolver\|verifiers\|verifier:<tag> | deployer | n/a | CHAIN |
+| `make deploy-bps-verifier` | BpsFeeCommitteeVerifier for TAG; same config + record as deploy-verifier | deployer | eoa | CHAIN, TAG, RPC_URL |
+| `make deploy-price-adapter` | price adapter declared for TOKEN in the operator file; appends to the deployment record | deployer | eoa | CHAIN, RPC_URL |
+| `make verify` | source-verify recorded contracts; ONLY=factory\|resolver\|verifiers\|verifier:<tag>\|adapters\|adapter:<token> | deployer | n/a | CHAIN |
 
 ## Configure
 
@@ -57,6 +59,8 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 | `make set-dynamic-config` | verifier { feeAggregator, allowlistAdmin } from operator config | owner | eoa,safe | CHAIN, TAG, RPC_URL, SAFE_ADDRESS (mode=safe only) |
 | `make set-finality-config` | verifier allowed-finality cap from operator config | owner | eoa,safe | CHAIN, TAG, RPC_URL, SAFE_ADDRESS (mode=safe only) |
 | `make update-storage-locations` | verifier storageLocations (caller: storageLocationsAdmin) | storageLocationsAdmin | eoa,safe | CHAIN, TAG, RPC_URL, SAFE_ADDRESS (mode=safe only) |
+| `make apply-bps-config` | bps verifier only: recorded price adapters, lane bpsFeeConfig, requireAllTokensPriced; after apply-remote-config | owner | eoa,safe | CHAIN, TAG, RPC_URL, SAFE_ADDRESS (mode=safe only) |
+| `make remove-price-adapter` | bps verifiers only: unregister TOKEN's adapter on every bps verifier, then drop its record entry; delete its priceAdapters entry first | owner | eoa,safe | CHAIN, RPC_URL, SAFE_ADDRESS (mode=safe only) |
 | `make apply-inbound` | resolver inbound map (versionTag -> verifier) for lanes INTO this chain | owner | eoa,safe | CHAIN, RPC_URL, SAFE_ADDRESS (mode=safe only) |
 | `make apply-outbound` | resolver outbound map (dest selector -> verifier) for lanes FROM this chain | owner | eoa,safe | CHAIN, RPC_URL, SAFE_ADDRESS (mode=safe only) |
 | `make set-fee-aggregator` | resolver feeAggregator from operator config | owner | eoa,safe | CHAIN, RPC_URL, SAFE_ADDRESS (mode=safe only) |
@@ -87,7 +91,7 @@ the target does not broadcast, or broadcasts unconditionally as EOA.
 | `make snapshot` | write live roles + verifier settings to out/governance/ (read-only) | any | n/a | CHAIN, RPC_URL |
 | `make drift` | CI-schedulable; exit 0 clean / 1 drift / 2 rpc-unavailable | any | n/a | CHAIN, RPC_URL |
 | `make deployments-doc` | regenerate docs/src/deployments.md from config/ | any | n/a | none |
-| `make deployments-check` | CI: fail if the doc is stale, or if the resolver address diverges | any | n/a | none |
+| `make deployments-check` | CI: fail if the doc is stale, the resolver address diverges, or a recorded rmn differs from config | any | n/a | none |
 | `make validate-config` | parse every config/ file + cross-checks (lanes vs chains, operator, catalog); no RPC | any | n/a | none |
 | `make parity-config` | LANE=<name>; config-vs-config only — no RPC | any | n/a | LANE |
 | `make parity` | LANE=<name> SOURCE_RPC=.. DEST_RPC=..; all three legs, worst-of exit | any | n/a | LANE, SOURCE_RPC, DEST_RPC |
